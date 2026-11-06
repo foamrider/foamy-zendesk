@@ -1,0 +1,17 @@
+[package]
+name = "foamy-zendesk-helper"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+# Keep the list short; every entry says why it is here.
+[dependencies]
+# JSON replies, bounded child processes (secret-tool), locks, SHA-256 for
+# PKCE, deadlines, and HTTPS crypto plus the system trust store (`tls`:
+# Graviola, no C compiled).
+foamy-helper = { path = "../kit/rust/foamy-helper", features = ["tls"] }
+# Request and reply bodies; already in the tree through foamy-helper.
+serde_json = "1"
+# Blocking HTTP/1.1 with proxies and a global deadline (same as foamy-train).
+ureq = { version = "3", default-features = false, features = ["rustls-no-provider"] }

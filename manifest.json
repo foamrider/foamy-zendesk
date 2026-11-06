@@ -1,0 +1,145 @@
+{
+  "schemaVersion": 1,
+  "id": "foamy.zendesk",
+  "name": "Foamy Zendesk",
+  "version": "0.1.0",
+  "author": "foamrider",
+  "description": "A native Zendesk inbox for Omarchy: your tickets and unassigned tickets in your groups, with OAuth sign-in.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Zendesk",
+    "description": "Unread Zendesk tickets with read state, grouping, a schedule and a link to each ticket.",
+    "category": "Information",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "hideRead": false,
+      "unreadFirst": false,
+      "groupWaiting": true,
+      "scheduleEnabled": false,
+      "scheduleOutsideMode": "mute",
+      "scheduleMonday": "",
+      "scheduleTuesday": "",
+      "scheduleWednesday": "",
+      "scheduleThursday": "",
+      "scheduleFriday": "",
+      "scheduleSaturday": "",
+      "scheduleSunday": "",
+      "zendeskAddress": "",
+      "oauthClientId": "",
+      "oauthPort": "",
+      "refreshSeconds": 60
+    },
+    "schema": [
+      {
+        "key": "hideRead",
+        "type": "boolean",
+        "label": "Hide read tickets",
+        "defaultValue": false
+      },
+      {
+        "key": "unreadFirst",
+        "type": "boolean",
+        "label": "Show unread first",
+        "defaultValue": false
+      },
+      {
+        "key": "groupWaiting",
+        "type": "boolean",
+        "label": "Group waiting tickets",
+        "defaultValue": true
+      },
+      {
+        "key": "scheduleEnabled",
+        "type": "boolean",
+        "label": "Use a weekly schedule",
+        "defaultValue": false
+      },
+      {
+        "key": "scheduleOutsideMode",
+        "type": "enum",
+        "label": "Outside the schedule",
+        "defaultValue": "mute",
+        "options": [
+          "mute",
+          "hide"
+        ]
+      },
+      {
+        "key": "scheduleMonday",
+        "type": "string",
+        "label": "Monday",
+        "defaultValue": ""
+      },
+      {
+        "key": "scheduleTuesday",
+        "type": "string",
+        "label": "Tuesday",
+        "defaultValue": ""
+      },
+      {
+        "key": "scheduleWednesday",
+        "type": "string",
+        "label": "Wednesday",
+        "defaultValue": ""
+      },
+      {
+        "key": "scheduleThursday",
+        "type": "string",
+        "label": "Thursday",
+        "defaultValue": ""
+      },
+      {
+        "key": "scheduleFriday",
+        "type": "string",
+        "label": "Friday",
+        "defaultValue": ""
+      },
+      {
+        "key": "scheduleSaturday",
+        "type": "string",
+        "label": "Saturday",
+        "defaultValue": ""
+      },
+      {
+        "key": "scheduleSunday",
+        "type": "string",
+        "label": "Sunday",
+        "defaultValue": ""
+      },
+      {
+        "key": "zendeskAddress",
+        "type": "string",
+        "label": "Zendesk address",
+        "defaultValue": ""
+      },
+      {
+        "key": "oauthClientId",
+        "type": "string",
+        "label": "OAuth client ID",
+        "defaultValue": ""
+      },
+      {
+        "key": "oauthPort",
+        "type": "string",
+        "label": "Redirect port (empty: 47823)",
+        "defaultValue": ""
+      },
+      {
+        "key": "refreshSeconds",
+        "type": "integer",
+        "label": "Check every (seconds)",
+        "defaultValue": 60,
+        "min": 60,
+        "max": 900,
+        "step": 60
+      }
+    ]
+  },
+  "license": "MIT"
+}

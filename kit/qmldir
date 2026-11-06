@@ -1,0 +1,34 @@
+# foamy-kit 0.5.1 408a838ba3828f7c79dce28feca8b9c47c59aabc2cead19558a9c67821f26382 — do not edit; change foamy-kit and run sync
+FoamyAction 1.0 FoamyAction.qml
+FoamyButton 1.0 FoamyButton.qml
+FoamyCursor 1.0 FoamyCursor.qml
+FoamyCursorSurface 1.0 FoamyCursorSurface.qml
+FoamyDropdown 1.0 FoamyDropdown.qml
+FoamyHeader 1.0 FoamyHeader.qml
+FoamyHeroBand 1.0 FoamyHeroBand.qml
+singleton FoamyI18n 1.0 FoamyI18n.qml
+FoamyIcon 1.0 FoamyIcon.qml
+FoamyInfoNote 1.0 FoamyInfoNote.qml
+FoamyIpc 1.0 FoamyIpc.qml
+FoamyIpcPreference 1.0 FoamyIpcPreference.qml
+FoamyMember 1.0 FoamyMember.qml
+FoamyMenu 1.0 FoamyMenu.qml
+FoamyMenuItem 1.0 FoamyMenuItem.qml
+singleton FoamyMotion 1.0 FoamyMotion.qml
+FoamyNumberField 1.0 FoamyNumberField.qml
+singleton FoamyPalette 1.0 FoamyPalette.qml
+FoamyPanelFooter 1.0 FoamyPanelFooter.qml
+FoamyPopup 1.0 FoamyPopup.qml
+FoamyPrefsQueue 1.0 FoamyPrefsQueue.qml
+FoamySettingsError 1.0 FoamySettingsError.qml
+FoamySettingsHeader 1.0 FoamySettingsHeader.qml
+FoamySettingsPage 1.0 FoamySettingsPage.qml
+FoamySettingsSection 1.0 FoamySettingsSection.qml
+FoamySettingsState 1.0 FoamySettingsState.qml
+singleton FoamyShared 1.0 FoamyShared.qml
+singleton FoamyStyle 1.0 FoamyStyle.qml
+FoamyTextSettingField 1.0 FoamyTextSettingField.qml
+FoamyToggle 1.0 FoamyToggle.qml
+FoamyWallClock 1.0 FoamyWallClock.qml
+FoamyWheelScroll 1.0 FoamyWheelScroll.qml
+SafeTextField 1.0 SafeTextField.qml
