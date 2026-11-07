@@ -43,6 +43,9 @@ PanelKeyCatcher {
   FoamyCursor { id: cursor; count: root.firstTicketStop + TicketStore.count * 3 + (ZendeskAccount.signedIn ? 1 : 0) }
   // Minute ticks for "Updated 3 minutes ago" while the popup is open.
   FoamyWallClock { id: clock; enabled: root.active }
+  // The time ticket rows are dated against ("10:40", "Yesterday", "Thu"): the
+  // wall clock, or a fixed time in ms (the preview's, so its dates never drift).
+  property double fixedNow: 0
   Connections {
     target: TicketStore
     // Reset releases readers on every monitor, not only the panel that invoked it.
@@ -273,7 +276,7 @@ PanelKeyCatcher {
           compact: model.read
           sectionTitle: model.sectionHead ? root.sectionTitles[model.sectionHead] : ""
           sectionCount: model.sectionSize
-          now: clock.date.getTime()
+          now: root.fixedNow > 0 ? root.fixedNow : clock.date.getTime()
           x: FoamyStyle.gapLarge
           width: body.width - FoamyStyle.gapLarge * 2
           expanded: root.expandedIds.indexOf(model.id) >= 0

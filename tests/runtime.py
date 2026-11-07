@@ -97,6 +97,14 @@ ShellRoot {
         break;
       case 2:
         if (!check(view !== null && view.repeater.count === 3, "real popup loads ticket cards")) return;
+        // Rows are dated against the wall clock, or the preview's fixed time.
+        var dated = shell.find(view, "ticket-4824");
+        if (!check(dated !== null && Math.abs(dated.now - Date.now()) < 120000, "rows date against the wall clock")) return;
+        view.fixedNow = Fixtures.NOW;
+        if (!check(dated.now === Fixtures.NOW && dated.when(Fixtures.BASE - 26 * 3600000) === "Yesterday"
+                   && dated.when(Fixtures.BASE) === dated.format(Fixtures.BASE, "HH:mm"), "a fixed time dates the rows")) return;
+        view.fixedNow = 0;
+        if (!check(Math.abs(dated.now - Date.now()) < 120000, "back on the wall clock")) return;
         if (!check(shell.find(view, "emptyState").visible === false && view.band.meta.indexOf("3 unread") === 0, "header counts unread")) return;
         for (var m = 0; m < 3; m++) view.moveRequested(0, 1);
         if (!check(view.cursor.index === view.firstTicketStop, "keyboard walks Mark all and settings before tickets")) return;
