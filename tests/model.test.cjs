@@ -14,7 +14,7 @@ test('a snapshot lists tickets newest first; unread counts only comments from ot
   const state = seeded();
   assert.deepEqual(ids(state), ['4821', '4818', '4824']);
   const vpn = Model.visible(state)[0];
-  assert.equal(vpn.updates, 2, "Tomas's own reply is never unread");
+  assert.equal(vpn.updates, 2, "Alex's own reply is never unread");
   assert.equal(vpn.sender, 'Anna');
   assert.equal(vpn.senderMine, false);
   assert.equal(vpn.history.length, 4);
@@ -37,7 +37,7 @@ test('my own reply after reading keeps the ticket read', () => {
   const state = seeded();
   Model.markRead(state, '4824');
   const list = Fixtures.tickets();
-  list[2].comments.unshift({ id: 48242, author: 'Tomas', mine: true, public: true, created: Fixtures.BASE, body: 'On my way.' });
+  list[2].comments.unshift({ id: 48242, author: 'Alex', mine: true, public: true, created: Fixtures.BASE, body: 'On my way.' });
   list[2].updated_at = '2026-11-06T09:41:00Z';
   Model.applySnapshot(state, list);
   assert.equal(Model.visible(state).find(t => t.id === '4824').read, true);

@@ -100,7 +100,7 @@ ShellRoot {
         // From here on: signed in, with the sample inbox.
         store.loadFixtures(Fixtures.tickets());
         account.state = "signed_in";
-        account.user = { name: "Tomas", email: "tomas@acme.example" };
+        account.user = { name: "Alex", email: "alex@acme.example" };
         if (!check(store.count === 3 && store.unreadCount === 3, "fixture inbox loaded")) return;
         if (!check(one.barContent.countLabel.visible && one.barContent.countLabel.text === "3" && one.barContent.icon.known
                    && one.barContent.countLabel.color == bar.urgent && one.barContent.icon.color == button.foreground, "bar badge counts unread tickets")) return;

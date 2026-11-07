@@ -134,6 +134,16 @@ To remove it, sign out first (that revokes the token and removes it from the
 keyring), then run `omarchy plugin remove foamy.zendesk`. Read markers stay in
 `$XDG_STATE_HOME/foamy-zendesk/`.
 
+## License
+
+Licensed under [MIT](LICENSE). Omarchy and Lucide notices are in
+[kit/LICENSE-OMARCHY](kit/LICENSE-OMARCHY) and [kit/LICENSE-LUCIDE](kit/LICENSE-LUCIDE).
+The Zendesk mark comes from [Simple Icons](https://github.com/simple-icons/simple-icons)
+(CC0). Zendesk is a trademark of Zendesk, Inc.; this plugin is not affiliated
+with or endorsed by Zendesk.
+
+Provided **as is**, without warranty or guaranteed support. Use at your own risk.
+
 ## Validation
 
 Uses the existing Quickshell, Node.js, Python and foamy-kit tools. The
