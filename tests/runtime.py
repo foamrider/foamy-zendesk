@@ -136,6 +136,11 @@ ShellRoot {
         view.repeater.itemAt(0).readButton.clicked();
         if (!check(store.count === 3 && store.unreadCount === 2 && view.repeater.itemAt(0).read && one.barContent.countLabel.text === "2", "Mark as read keeps the ticket and lowers the count")) return;
         if (!check(view.repeater.itemAt(0).compact && String(shell.find(view.repeater.itemAt(0), "rail").color) !== shell.railUnread, "a read ticket takes one line and loses the unread rail")) return;
+        view.cursor.reset();
+        if (!check(!view.repeater.itemAt(0).readActionShown && view.repeater.itemAt(1).readActionShown && view.repeater.itemAt(0).readButton.visible,
+                   "Mark as unread waits for hover, keeping its place; Mark as read stays shown")) return;
+        view.cursor.index = view.firstTicketStop + 1;
+        if (!check(view.repeater.itemAt(0).readActionShown, "the keyboard cursor shows Mark as unread")) return;
         view.repeater.itemAt(0).readButton.clicked();
         if (!check(store.unreadCount === 3 && !view.repeater.itemAt(0).read && view.repeater.itemAt(0).unread === 1, "Mark as unread brings back the newest reply")) return;
         view.markAllRead();
