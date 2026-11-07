@@ -34,6 +34,7 @@
   "Hide": "Skjul",
   "Hide read tickets": "Skjul leste saker",
   "High": "Høy",
+  "HTTPS isn't supported on this CPU (foamy helpers need AES, carry-less multiply, AVX2, BMI2 and ADX on x86-64, or the crypto extensions on ARMv8)": "HTTPS støttes ikke på denne prosessoren (foamy-hjelpeprogrammene trenger AES, carry-less multiply, AVX2, BMI2 og ADX på x86-64, eller kryptoutvidelsene på ARMv8)",
   "Loading tickets…": "Henter saker…",
   "Loading…": "Henter…",
   "Local time. Turn a day off to skip it. Overnight ranges are supported.": "Lokal tid. Slå av en dag for å hoppe over den. Perioder over midnatt støttes.",

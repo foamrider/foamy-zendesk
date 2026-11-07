@@ -34,6 +34,7 @@
   "Hide": "Hide",
   "Hide read tickets": "Hide read tickets",
   "High": "High",
+  "HTTPS isn't supported on this CPU (foamy helpers need AES, carry-less multiply, AVX2, BMI2 and ADX on x86-64, or the crypto extensions on ARMv8)": "HTTPS isn't supported on this CPU (foamy helpers need AES, carry-less multiply, AVX2, BMI2 and ADX on x86-64, or the crypto extensions on ARMv8)",
   "Loading tickets…": "Loading tickets…",
   "Loading…": "Loading…",
   "Local time. Turn a day off to skip it. Overnight ranges are supported.": "Local time. Turn a day off to skip it. Overnight ranges are supported.",

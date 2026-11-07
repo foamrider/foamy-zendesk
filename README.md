@@ -52,10 +52,12 @@ its panel does), so text and order stay stable while reading.
 
 English and Norwegian (`i18n/en.json`, `i18n/no.json`), following the
 shell's language. Every text the panel shows is a catalog key, including the
-helper's errors: their varying details (an HTTP status, a port) follow the
-key after U+001F separators and fill its `%1`, `%2`. `tests/i18n.test.cjs`
-checks that both catalogs cover the plugin, the kit components, ticket
-statuses and priorities, day names and the helper's errors, with matching
+helper's errors (only an internal failure passes on the system's own error
+text): their varying details (an HTTP status, a port) follow the key after
+U+001F separators and fill its `%1`, `%2`. `tests/i18n.test.cjs` checks that
+both catalogs cover the plugin, the kit components, ticket statuses and
+priorities, day names and the helper's errors (also those it takes from the
+kit, such as `tls::UNSUPPORTED`, read from `kit/rust`), with matching
 placeholders and no unused entries.
 
 ## Zendesk sign-in
@@ -101,12 +103,12 @@ markers live in `$XDG_STATE_HOME/foamy-zendesk/read-<account>.json` (private
 directory); markers of tickets that left the inbox are kept 30 days.
 
 Requirements: `secret-tool` (libsecret) with a running keyring (Omarchy's
-gnome-keyring), and an x86_64 CPU with AES, carry-less multiply, AVX2, BMI2
-and ADX (Broadwell or Zen and newer) or an aarch64 CPU with the ARMv8 crypto
-extensions for HTTPS; on older CPUs the panel says HTTPS isn't supported. The
-helper is `bin/<arch>/foamy-zendesk-helper`, built from `native/` with the
-foamy-kit native toolchain; its contract is the comment at the top of
-`native/src/main.rs`.
+gnome-keyring). HTTPS needs AES, carry-less multiply, AVX2, BMI2 and ADX on
+x86-64 (Intel Broadwell, AMD Zen or newer), or the crypto extensions on ARMv8
+(a Raspberry Pi 5, not a Pi 4); without them the panel says HTTPS isn't
+supported on this CPU. The helper is `bin/<arch>/foamy-zendesk-helper`, built
+from `native/` with the foamy-kit native toolchain; its contract is the
+comment at the top of `native/src/main.rs`.
 
 ## Keyboard
 
