@@ -45,7 +45,7 @@ Item {
     account.clientId = signedIn ? "foamy_zendesk" : "";
     account.port = signedIn ? 47823 : 0;
     account.state = signedIn ? "signed_in" : "not_configured";
-    account.user = signedIn ? { name: "Tomas", email: "tomas@acme.example" } : null;
+    account.user = signedIn ? { name: "Alex", email: "alex@acme.example" } : null;
     account.verified = signedIn;
     view.preferences = signedIn ? { zendeskAddress: "acme", oauthClientId: "foamy_zendesk" }
       : previewState === "schedule" ? { scheduleEnabled: true, scheduleOutsideMode: "mute",

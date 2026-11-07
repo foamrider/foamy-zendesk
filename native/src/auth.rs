@@ -524,7 +524,7 @@ mod tests {
             ),
             ("GET", "/api/v2/users/me.json") => (
                 200,
-                json!({"user": {"name": "Tomas", "email": "t@acme.com"}}),
+                json!({"user": {"name": "Alex", "email": "alex@acme.com"}}),
             ),
             _ => (404, json!({})),
         }));
@@ -550,7 +550,7 @@ mod tests {
             })
             .unwrap();
         assert_eq!(result["state"], "signed_in");
-        assert_eq!(result["user"]["name"], "Tomas");
+        assert_eq!(result["user"]["name"], "Alex");
         let seen = seen.lock().unwrap();
         let exchange = &seen[0].3;
         assert_eq!(exchange["grant_type"], "authorization_code");
@@ -639,7 +639,7 @@ mod tests {
             ),
             ("GET", "/api/v2/users/me.json") => (
                 200,
-                json!({"user": {"name": "Tomas", "email": "t@acme.com"}}),
+                json!({"user": {"name": "Alex", "email": "alex@acme.com"}}),
             ),
             _ => (400, json!({"error": "invalid_grant"})),
         }));
@@ -663,7 +663,7 @@ mod tests {
             ),
             (Some("A2"), Some("R2"))
         );
-        assert_eq!(stored["user"]["email"], "t@acme.com");
+        assert_eq!(stored["user"]["email"], "alex@acme.com");
         let seen = seen.lock().unwrap();
         assert_eq!(seen[0].3["grant_type"], "refresh_token");
         assert_eq!(seen[1].2, "Bearer A2");
@@ -690,7 +690,7 @@ mod tests {
         let vault = Memory::default();
         vault
             .put(
-                &json!({"access_token": "A1", "user": {"name": "Tomas", "email": "t@acme.com"}})
+                &json!({"access_token": "A1", "user": {"name": "Alex", "email": "alex@acme.com"}})
                     .to_string(),
             )
             .unwrap();
@@ -701,7 +701,7 @@ mod tests {
             (status["state"].as_str(), status["verified"].as_bool()),
             (Some("signed_in"), Some(false))
         );
-        assert_eq!(status["user"]["name"], "Tomas");
+        assert_eq!(status["user"]["name"], "Alex");
         assert_eq!(
             account("http://127.0.0.1:1", &Memory::default())
                 .status()
@@ -716,7 +716,7 @@ mod tests {
             assert_eq!(method, "GET");
             let path = path.to_string();
             if path == "/api/v2/users/me.json" {
-                (200, json!({"user": {"id": 7, "name": "Tomas"}}))
+                (200, json!({"user": {"id": 7, "name": "Alex"}}))
             } else if path == "/api/v2/users/7/groups.json" {
                 (200, json!({"groups": [{"id": 30, "name": "IT support"}]}))
             } else if path.starts_with("/api/v2/groups.json") {
@@ -746,7 +746,7 @@ mod tests {
             } else if path.starts_with("/api/v2/users/show_many.json?ids=7,9") {
                 (
                     200,
-                    json!({"users": [{"id": 7, "name": "Tomas"}, {"id": 9, "name": "Maria"}]}),
+                    json!({"users": [{"id": 7, "name": "Alex"}, {"id": 9, "name": "Maria"}]}),
                 )
             } else {
                 (404, json!({"error": path}))
@@ -786,7 +786,7 @@ mod tests {
         let comments = display["comments"].as_array().unwrap();
         assert_eq!(
             comments[0],
-            json!({"id": 502, "author": "Tomas", "mine": true, "public": false, "created": 1_793_957_280_000_i64, "body": "Checking"})
+            json!({"id": 502, "author": "Alex", "mine": true, "public": false, "created": 1_793_957_280_000_i64, "body": "Checking"})
         );
         assert_eq!(comments[1]["author"], "Maria");
         let seen = seen.lock().unwrap();

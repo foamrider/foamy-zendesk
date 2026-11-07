@@ -7,7 +7,7 @@ var BASE = 1793958000000 // 06 Nov 2026, 10:40 (Europe/Oslo)
 var NOW = BASE
 
 function comment(id, author, minutesAgo, body, extra) {
-  return Object.assign({ id: id, author: author, mine: author === "Tomas", public: true, created: BASE - minutesAgo * 60000, body: body }, extra || {})
+  return Object.assign({ id: id, author: author, mine: author === "Alex", public: true, created: BASE - minutesAgo * 60000, body: body }, extra || {})
 }
 
 function iso(ms) {
@@ -16,15 +16,15 @@ function iso(ms) {
 
 function tickets() {
   return [
-    { id: "4821", subject: "VPN disconnects after sign-in", status: "Open", priority: "High", assignee: "Tomas", mine: true,
+    { id: "4821", subject: "VPN disconnects after sign-in", status: "Open", priority: "High", assignee: "Alex", mine: true,
       group: "IT support", requester: "Anna", updated_at: iso(BASE),
       comments: [
         comment(48213, "Anna", 0, "The VPN connects successfully, but drops as soon as I open the shared project drive. It happens on both the office Wi-Fi and my phone hotspot.\n\nI have restarted the laptop and signed in again. Other websites work normally while the VPN is disconnected.\n\nThe message is “Your connection was interrupted.” Can you check whether anything has changed for my account?"),
-        comment(48212, "Tomas", 10, "Could you restart the client and try another network? Please also send the exact error message if it disconnects again."),
+        comment(48212, "Alex", 10, "Could you restart the client and try another network? Please also send the exact error message if it disconnects again."),
         comment(48211, "Anna", 20, "The VPN disconnects when I open the project drive. It started this morning. Could you take a look?"),
-        comment(48210, "Tomas", 25, "Thanks for reporting it. I'm looking into it now.", { public: false })
+        comment(48210, "Alex", 25, "Thanks for reporting it. I'm looking into it now.", { public: false })
       ] },
-    { id: "4818", subject: "Access to the project folder", status: "Pending", priority: "Normal", assignee: "Tomas", mine: true,
+    { id: "4818", subject: "Access to the project folder", status: "Pending", priority: "Normal", assignee: "Alex", mine: true,
       group: "IT support", requester: "Erik", updated_at: iso(BASE - 6 * 60000),
       comments: [comment(48181, "Erik", 6, "The group membership is correct now. Waiting for the requester to sign out and try again.")] },
     // From yesterday, unassigned in another of the agent's groups.
