@@ -139,7 +139,7 @@ use a fake Zendesk on loopback and an in-memory keyring; nothing touches a
 real account.
 
 ```sh
-FOAMY_HOST_45=/usr/share/omarchy/shell bash tests/run.sh
+bash tests/run.sh
 KIT=../foamy-kit   # a foamy-kit checkout, 0.5.1 as in foamy-kit.lock
 $KIT/tools/build-native.sh . --test     # fmt, clippy, cargo test
 $KIT/tools/build-native.sh .            # rebuild bin/<arch>/ and native/native.pin
@@ -153,12 +153,16 @@ Mark all as read, hidden read tickets, grouped waiting tickets, signed out,
 loading, failed and offline states, an empty inbox, settings (signed in and
 signed out), the schedule, outside the schedule, a narrow popup, keyboard
 focus and scrolling. Render with `--theme light` to check the light palette.
-`FOAMY_KIT` overrides the sibling kit path used by runtime tests.
+`FOAMY_KIT` overrides the kit path used by runtime tests (default: a sibling
+`foamy-kit`, else `~/GitHub/Personal/foamy-kit`).
 
 Shared components are copied from foamy-kit and pinned by `foamy-kit.lock`.
 Change the kit source and sync; never edit its stamped copies here.
 
-Validated against the installed Omarchy 4.5 shell. The installed Qt formatter
+The tests run on Omarchy 4.5, the installed `/usr/share/omarchy/shell`
+(`FOAMY_HOST_45` picks another 4.5 tree); `python3 tests/runtime.py 4.0` runs
+only when `FOAMY_HOST_40` names a 4.0 shell tree and otherwise prints a SKIP
+line. The installed Qt formatter
 cannot process typed `void` IPC methods in `Panel.qml` (also true for existing
 Foamy plugins); the runtime test loads and exercises that file without removing
 its types.
