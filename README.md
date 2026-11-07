@@ -4,7 +4,7 @@ An Omarchy bar plugin for your Zendesk tickets: the unsolved tickets assigned
 to you, and the unassigned ones in your groups. It signs in with OAuth and
 reads only; nothing in Zendesk changes. No desktop notifications are used.
 
-![Zendesk inbox](preview.png)
+![Foamy Zendesk inbox with sample tickets assigned to you, unassigned in your groups and waiting on others](preview.png)
 
 The bar shows the Zendesk icon followed by a red count of unread tickets,
 like Teams. Click it to open the inbox: your tickets under **Assigned to
@@ -28,8 +28,9 @@ ticket is unread while it has comments from someone else newer than when you
 marked it read; your own replies never make it unread. **Opening a ticket
 marks it read**: the count drops at once, while the open ticket keeps its
 place and its "new" marks until it closes (then it moves, or hides with
-**Hide read tickets**). Read tickets stay listed, dimmed, with **Mark as
-unread**. The header's **Mark all as read** marks every unread ticket; an
+**Hide read tickets**). Read tickets stay listed, dimmed; their **Mark as
+unread** button shows while the pointer or the keyboard cursor is on the
+ticket. The header's **Mark all as read** marks every unread ticket; an
 Undo link restores that batch. Viewing a ticket in Zendesk changes nothing.
 
 Settings (the gear, `s`, or right-click the bar icon):
@@ -89,7 +90,8 @@ and when the popup opens on an inbox older than 30 seconds, the helper's
 
 - searches `type:ticket status<solved assignee:me`, and
   `type:ticket status<solved assignee:none group:<id>` for each of your groups
-  (Zendesk's search can lag a few minutes behind);
+  (up to 20 groups and 100 tickets; Zendesk's search can lag a few minutes
+  behind);
 - fetches the latest 20 comments only for tickets whose `updated_at` changed
   (at most 25 per run; the rest follow next run);
 - looks up the names of assignees, requesters and comment authors in one call.
@@ -99,8 +101,9 @@ markers live in `$XDG_STATE_HOME/foamy-zendesk/read-<account>.json` (private
 directory); markers of tickets that left the inbox are kept 30 days.
 
 Requirements: `secret-tool` (libsecret) with a running keyring (Omarchy's
-gnome-keyring), and an x86_64 CPU with AVX2/BMI2/ADX (Broadwell or Zen and
-newer) or an aarch64 CPU with the ARMv8 crypto extensions for HTTPS. The
+gnome-keyring), and an x86_64 CPU with AES, carry-less multiply, AVX2, BMI2
+and ADX (Broadwell or Zen and newer) or an aarch64 CPU with the ARMv8 crypto
+extensions for HTTPS; on older CPUs the panel says HTTPS isn't supported. The
 helper is `bin/<arch>/foamy-zendesk-helper`, built from `native/` with the
 foamy-kit native toolchain; its contract is the comment at the top of
 `native/src/main.rs`.
@@ -113,12 +116,17 @@ Escape closes, and Tab switches shell panels. `r` refreshes, `m` shows every
 comment of the ticket under the cursor in full, `u` undoes Mark all as read
 and `s` opens settings.
 
-## Local installation
+IPC: `omarchy-shell foamy.zendesk <open|close|toggle|settings>`.
 
-For this local checkout, `~/.config/omarchy/plugins/foamy.zendesk` links to
-`~/GitHub/Personal/foamy-zendesk`. Enable `foamy.zendesk` in the shell bar
-using Omarchy's plugin/bar controls. Restart the shell after source changes;
-the isolated tests below do not change the running desktop.
+## Install
+
+```sh
+omarchy plugin add https://github.com/foamrider/foamy-zendesk.git --enable
+```
+
+To remove it, sign out first (that revokes the token and removes it from the
+keyring), then run `omarchy plugin remove foamy.zendesk`. Read markers stay in
+`$XDG_STATE_HOME/foamy-zendesk/`.
 
 ## Validation
 
@@ -132,7 +140,7 @@ real account.
 
 ```sh
 FOAMY_HOST_45=/usr/share/omarchy/shell bash tests/run.sh
-KIT=../foamy-kit   # a checkout with the native-helpers toolchain (kit 0.5.0)
+KIT=../foamy-kit   # a foamy-kit checkout, 0.5.1 as in foamy-kit.lock
 $KIT/tools/build-native.sh . --test     # fmt, clippy, cargo test
 $KIT/tools/build-native.sh .            # rebuild bin/<arch>/ and native/native.pin
 $KIT/tools/build-native.sh . --verify   # byte-identical clean rebuild
