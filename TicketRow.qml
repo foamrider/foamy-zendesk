@@ -7,8 +7,8 @@ import "Model.js" as Model
 // comments newest first: those unread when it was opened (opening marks it
 // read) and the one before them, the rest (and long comments) behind "Show
 // earlier".
-// Read tickets stay listed, dimmed, with "Mark as unread" in place of "Mark as
-// read". `compact` (read tickets) is one line: subject, sender, time and
+// Read tickets stay listed, dimmed, with "Mark as unread" (shown on hover) in
+// place of "Mark as read". `compact` (read tickets) is one line: subject, sender, time and
 // actions; expanding a compact ticket shows it in full.
 Item {
   id: ticketRow
@@ -59,6 +59,11 @@ Item {
   // Read tickets are dimmed, except the one being read.
   readonly property bool muted: read && !expanded
   readonly property bool oneLine: compact && !expanded
+  // The pointer is over the ticket (its actions included).
+  readonly property bool pointerOver: rowHover.hovered || readButton.hovered || openButton.hovered
+  // "Mark as unread" is an undo: it shows only on hover or under the keyboard
+  // cursor, and keeps its place so nothing shifts when it appears.
+  readonly property bool readActionShown: !read || pointerOver || cursorPart === 1
   readonly property int pad: oneLine ? FoamyStyle.gapSmall + 2 : FoamyStyle.rowPadding
   readonly property int unread: read ? 0 : ticket.updates
   readonly property color priorityTone: ticket.priority === "Urgent" ? FoamyPalette.onSurface(FoamyPalette.error)
@@ -141,6 +146,7 @@ Item {
       hasCursor: ticketRow.cursorPart === 0
       onHovered: ticketRow.hovered(0)
       onClicked: ticketRow.toggleRequested()
+      HoverHandler { id: rowHover }
       Accessible.role: Accessible.Button
       Accessible.name: ticketRow.ticket.subject + (ticketRow.read ? "" : ", " + FoamyI18n.t("unread"))
       Accessible.description: ticketRow.expanded ? FoamyI18n.t("Collapse ticket") : FoamyI18n.t("Expand ticket")
@@ -190,6 +196,8 @@ Item {
               iconName: ticketRow.read ? "undo-dot" : "check"
               tooltipText: ticketRow.read ? FoamyI18n.t("Mark as unread") : FoamyI18n.t("Mark as read")
               foreground: FoamyPalette.secondaryText
+              opacity: ticketRow.readActionShown ? 1 : 0
+              Behavior on opacity { NumberAnimation { duration: FoamyMotion.hover } }
               hasCursor: ticketRow.cursorPart === 1
               onHoveredChanged: if (hovered) ticketRow.hovered(1)
               onClicked: ticketRow.readToggleRequested()
