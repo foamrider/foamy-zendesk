@@ -26,6 +26,8 @@ Item {
     var account = Plugin.ZendeskAccount;
     view.closeReading();
     view.editingSettings = false;
+    // Rows are dated against the fixtures' time, not the render's.
+    view.fixedNow = Fixtures.NOW;
     store.openUrl = function(url) { console.log("preview: would open " + url); };
     store.hideRead = previewState === "hide-read";
     store.unreadFirst = false;

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "foamy.zendesk",
   "name": "Foamy Zendesk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "foamrider",
   "description": "A native Zendesk inbox for Omarchy: your tickets and unassigned tickets in your groups, with OAuth sign-in.",
   "kinds": [

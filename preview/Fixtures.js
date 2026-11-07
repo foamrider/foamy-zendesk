@@ -2,6 +2,9 @@
 // preview and the tests only. Fictional people and tickets; the plugin itself
 // never shows these.
 var BASE = 1793958000000 // 06 Nov 2026, 10:40 (Europe/Oslo)
+// The preview's clock (InboxView.fixedNow): when #4821's latest reply came in,
+// so #4821 reads "10:40" and #4824 "Yesterday" on any day.
+var NOW = BASE
 
 function comment(id, author, minutesAgo, body, extra) {
   return Object.assign({ id: id, author: author, mine: author === "Tomas", public: true, created: BASE - minutesAgo * 60000, body: body }, extra || {})
@@ -46,4 +49,4 @@ function update(sequence, newTicket) {
   return list
 }
 
-if (typeof module !== "undefined") module.exports = { BASE, tickets, update }
+if (typeof module !== "undefined") module.exports = { BASE, NOW, tickets, update }

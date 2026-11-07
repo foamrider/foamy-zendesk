@@ -42,8 +42,30 @@ function helperKeys() {
   ];
   for (const pattern of patterns) for (const [, key] of rust.matchAll(pattern)) keys.add(JSON.parse(`"${key}"`));
   for (const [, key] of rust.matchAll(/"KEYRING_UNAVAILABLE",[\s\S]*?"((?:[^"\\]|\\.)*)"\.to_string\(\)/g)) keys.add(key);
+  // Messages named by a constant, the plugin's own or the vendored kit's
+  // (`tls::UNSUPPORTED`): the catalog must follow the kit's text.
+  for (const [, modules, name] of rust.matchAll(/Failure::coded\(\s*"[A-Z_]+",\s*((?:[a-z_]+::)*)([A-Z][A-Z0-9_]*)\s*,?\s*\)/g)) {
+    const text = messageConstant(modules, name);
+    assert.ok(text !== undefined, `helper message constant not found: ${modules}${name}`);
+    keys.add(text);
+  }
   // The usage line answers only a wrong command line, never shown in the panel.
   return [...keys].filter(key => !key.startsWith('usage:'));
+}
+
+// `const NAME: &str = "…"` in the module its path names (`tls::` is the
+// helper's own module of that name or the vendored kit's), else anywhere in
+// the helper's sources.
+function messageConstant(modules, name) {
+  const module = modules.split('::').filter(m => m && m !== 'crate' && m !== 'foamy_helper').pop();
+  const candidates = module
+    ? [`native/src/${module}.rs`, `kit/rust/foamy-helper/src/${module}.rs`]
+    : files('native/src', ['.rs']);
+  for (const file of candidates.filter(f => fs.existsSync(path.join(root, f)))) {
+    const found = read(file).match(new RegExp(`\\bconst ${name}: &str = "((?:[^"\\\\]|\\\\.)*)";`));
+    if (found) return JSON.parse(`"${found[1]}"`);
+  }
+  return undefined;
 }
 
 function dataKeys() {

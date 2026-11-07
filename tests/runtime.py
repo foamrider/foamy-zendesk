@@ -3,6 +3,12 @@
 The account check runs the real helper (the isolated session has no keyring,
 so it reports that); the inbox is then filled from preview/Fixtures.js, as if
 signed in, and ticket links go to a stub instead of a browser.
+
+  python3 tests/runtime.py [4.5|4.0]
+
+The host is Omarchy 4.5, the installed /usr/share/omarchy/shell
+(FOAMY_HOST_45 picks another 4.5 tree). 4.0 runs only when FOAMY_HOST_40
+names a 4.0 shell tree; otherwise it prints a SKIP line.
 """
 import os
 import shutil
@@ -10,7 +16,12 @@ import sys
 from pathlib import Path
 
 plugin = Path(__file__).resolve().parents[1]
-kit = Path(os.environ.get("FOAMY_KIT", plugin.parent / "foamy-kit"))
+# The sibling checkout, else the usual one (a worktree has no sibling kit).
+kit = Path(os.environ.get("FOAMY_KIT") or next(
+    (p for p in (plugin.parent / "foamy-kit", Path.home() / "GitHub/Personal/foamy-kit") if p.is_dir()),
+    plugin.parent / "foamy-kit"))
+# Set before the harness reads them.
+os.environ.setdefault("FOAMY_HOST_45", "/usr/share/omarchy/shell")
 sys.path.insert(0, str(kit / "preview"))
 import harness
 
@@ -29,6 +40,7 @@ ShellRoot {
   property string railUnread: ""
   property real savedScroll: 0
   property int waited: 0
+  property int fetchProbe: 0
   property var opened: []
   // The shell reflects saved settings back to every instance, like the host.
   property var entry: ({})
@@ -97,6 +109,14 @@ ShellRoot {
         break;
       case 2:
         if (!check(view !== null && view.repeater.count === 3, "real popup loads ticket cards")) return;
+        // Rows are dated against the wall clock, or the preview's fixed time.
+        var dated = shell.find(view, "ticket-4824");
+        if (!check(dated !== null && Math.abs(dated.now - Date.now()) < 120000, "rows date against the wall clock")) return;
+        view.fixedNow = Fixtures.NOW;
+        if (!check(dated.now === Fixtures.NOW && dated.when(Fixtures.BASE - 26 * 3600000) === "Yesterday"
+                   && dated.when(Fixtures.BASE) === dated.format(Fixtures.BASE, "HH:mm"), "a fixed time dates the rows")) return;
+        view.fixedNow = 0;
+        if (!check(Math.abs(dated.now - Date.now()) < 120000, "back on the wall clock")) return;
         if (!check(shell.find(view, "emptyState").visible === false && view.band.meta.indexOf("3 unread") === 0, "header counts unread")) return;
         for (var m = 0; m < 3; m++) view.moveRequested(0, 1);
         if (!check(view.cursor.index === view.firstTicketStop, "keyboard walks Mark all and settings before tickets")) return;
@@ -136,6 +156,11 @@ ShellRoot {
         view.repeater.itemAt(0).readButton.clicked();
         if (!check(store.count === 3 && store.unreadCount === 2 && view.repeater.itemAt(0).read && one.barContent.countLabel.text === "2", "Mark as read keeps the ticket and lowers the count")) return;
         if (!check(view.repeater.itemAt(0).compact && String(shell.find(view.repeater.itemAt(0), "rail").color) !== shell.railUnread, "a read ticket takes one line and loses the unread rail")) return;
+        view.cursor.reset();
+        if (!check(!view.repeater.itemAt(0).readActionShown && view.repeater.itemAt(1).readActionShown && view.repeater.itemAt(0).readButton.visible,
+                   "Mark as unread waits for hover, keeping its place; Mark as read stays shown")) return;
+        view.cursor.index = view.firstTicketStop + 1;
+        if (!check(view.repeater.itemAt(0).readActionShown, "the keyboard cursor shows Mark as unread")) return;
         view.repeater.itemAt(0).readButton.clicked();
         if (!check(store.unreadCount === 3 && !view.repeater.itemAt(0).read && view.repeater.itemAt(0).unread === 1, "Mark as unread brings back the newest reply")) return;
         view.markAllRead();
@@ -240,10 +265,32 @@ ShellRoot {
         one.close();
         break;
       case 12:
+        if (shell.fetchProbe === 1) {
+          // Let the on-demand fetch end (the isolated session has no keyring), then go back to the sample inbox.
+          if (store.fetchProcess.running) { shell.step--; if (++shell.waited > 160) check(false, "the on-demand fetch finished"); return; }
+          store.fixtures = true;
+          store.error = "";
+          store.failures = 0;
+          store.loadFixtures(shell.many());
+          shell.fetchProbe = 2;
+        }
         if (!check(!store.reading && store.pending === null, "closing releases the waiting inbox")) return;
         one.prefs.save("scheduleEnabled", true);
         // The default week has no days, so the schedule is off right now.
         if (!check(!store.withinSchedule && button.dimmed && one.visible && two.visible && !store.active, "outside the schedule the widget dims and nothing is fetched")) return;
+        if (shell.fetchProbe === 0) {
+          // A real (non-sample) inbox outside the schedule: no background checks,
+          // but opening the popup refreshes a stale inbox, with the footer's spinner.
+          store.fixtures = false;
+          store.lastUpdated = 0;
+          if (!check(store.connected && !store.active && !store.pollTimer.running, "outside the schedule nothing is checked in the background")) return;
+          store.refreshIfStale(30000);
+          if (!check(store.fetchProcess.running, "outside the schedule, opening the popup refreshes on demand")) return;
+          shell.fetchProbe = 1;
+          shell.waited = 0;
+          shell.step--;
+          return;
+        }
         if (!check(!one.barContent.countLabel.visible && store.unreadCount > 0, "outside the schedule the bar shows no count")) return;
         one.prefs.save("scheduleOutsideMode", "hide");
         if (!check(!one.visible && !two.visible, "hide mode hides the widget")) return;
@@ -286,6 +333,9 @@ ShellRoot {
 '''
 
 host = sys.argv[1] if len(sys.argv) > 1 else "4.5"
+if host == "4.0" and not os.environ.get("FOAMY_HOST_40"):
+    print("4.0: SKIP (set FOAMY_HOST_40 to a 4.0 shell tree to run it)")
+    sys.exit(0)
 run = harness.Run(host, SHELL, plugin=plugin, prefix="foamy-zendesk-runtime-")
 try:
     run.run(timeout=60)

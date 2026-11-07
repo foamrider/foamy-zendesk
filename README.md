@@ -4,7 +4,7 @@ An Omarchy bar plugin for your Zendesk tickets: the unsolved tickets assigned
 to you, and the unassigned ones in your groups. It signs in with OAuth and
 reads only; nothing in Zendesk changes. No desktop notifications are used.
 
-![Zendesk inbox](preview.png)
+![Foamy Zendesk inbox with sample tickets assigned to you, unassigned in your groups and waiting on others](preview.png)
 
 The bar shows the Zendesk icon followed by a red count of unread tickets,
 like Teams. Click it to open the inbox: your tickets under **Assigned to
@@ -28,8 +28,9 @@ ticket is unread while it has comments from someone else newer than when you
 marked it read; your own replies never make it unread. **Opening a ticket
 marks it read**: the count drops at once, while the open ticket keeps its
 place and its "new" marks until it closes (then it moves, or hides with
-**Hide read tickets**). Read tickets stay listed, dimmed, with **Mark as
-unread**. The header's **Mark all as read** marks every unread ticket; an
+**Hide read tickets**). Read tickets stay listed, dimmed; their **Mark as
+unread** button shows while the pointer or the keyboard cursor is on the
+ticket. The header's **Mark all as read** marks every unread ticket; an
 Undo link restores that batch. Viewing a ticket in Zendesk changes nothing.
 
 Settings (the gear, `s`, or right-click the bar icon):
@@ -39,8 +40,10 @@ Settings (the gear, `s`, or right-click the bar icon):
   "Waiting on others" section at the end; a new reply brings them back up.
 - **Use a weekly schedule**: per-day working hours (local time; overnight
   ranges carry into the next day), as in Foamy Train. Outside them nothing is
-  fetched and the bar icon dims without its count, or the widget hides (it
-  stays while its popup is open).
+  fetched in the background and the bar icon dims without its count, or the
+  widget hides (it stays while its popup is open). Opening the popup still
+  refreshes the inbox, and **Refresh** works; the footer's refresh icon spins
+  while it loads.
 - **Zendesk** (at the bottom): the account, and **Check every** (1 to 15
   minutes, default 1). Signed out, it also holds the connection fields below.
 
@@ -51,10 +54,12 @@ its panel does), so text and order stay stable while reading.
 
 English and Norwegian (`i18n/en.json`, `i18n/no.json`), following the
 shell's language. Every text the panel shows is a catalog key, including the
-helper's errors: their varying details (an HTTP status, a port) follow the
-key after U+001F separators and fill its `%1`, `%2`. `tests/i18n.test.cjs`
-checks that both catalogs cover the plugin, the kit components, ticket
-statuses and priorities, day names and the helper's errors, with matching
+helper's errors (only an internal failure passes on the system's own error
+text): their varying details (an HTTP status, a port) follow the key after
+U+001F separators and fill its `%1`, `%2`. `tests/i18n.test.cjs` checks that
+both catalogs cover the plugin, the kit components, ticket statuses and
+priorities, day names and the helper's errors (also those it takes from the
+kit, such as `tls::UNSUPPORTED`, read from `kit/rust`), with matching
 placeholders and no unused entries.
 
 ## Zendesk sign-in
@@ -84,12 +89,13 @@ revokes the token and removes it from the keyring.
 ## Fetching
 
 Every minute (your **Check every**) while signed in and within the schedule,
-and when the popup opens on an inbox older than 30 seconds, the helper's
-`fetch`:
+and, in or outside the schedule, when the popup opens on an inbox older than
+30 seconds or on **Refresh**, the helper's `fetch`:
 
 - searches `type:ticket status<solved assignee:me`, and
   `type:ticket status<solved assignee:none group:<id>` for each of your groups
-  (Zendesk's search can lag a few minutes behind);
+  (up to 20 groups and 100 tickets; Zendesk's search can lag a few minutes
+  behind);
 - fetches the latest 20 comments only for tickets whose `updated_at` changed
   (at most 25 per run; the rest follow next run);
 - looks up the names of assignees, requesters and comment authors in one call.
@@ -99,11 +105,12 @@ markers live in `$XDG_STATE_HOME/foamy-zendesk/read-<account>.json` (private
 directory); markers of tickets that left the inbox are kept 30 days.
 
 Requirements: `secret-tool` (libsecret) with a running keyring (Omarchy's
-gnome-keyring), and an x86_64 CPU with AVX2/BMI2/ADX (Broadwell or Zen and
-newer) or an aarch64 CPU with the ARMv8 crypto extensions for HTTPS. The
-helper is `bin/<arch>/foamy-zendesk-helper`, built from `native/` with the
-foamy-kit native toolchain; its contract is the comment at the top of
-`native/src/main.rs`.
+gnome-keyring). HTTPS needs AES, carry-less multiply, AVX2, BMI2 and ADX on
+x86-64 (Intel Broadwell, AMD Zen or newer), or the crypto extensions on ARMv8
+(a Raspberry Pi 5, not a Pi 4); without them the panel says HTTPS isn't
+supported on this CPU. The helper is `bin/<arch>/foamy-zendesk-helper`, built
+from `native/` with the foamy-kit native toolchain; its contract is the
+comment at the top of `native/src/main.rs`.
 
 ## Keyboard
 
@@ -113,12 +120,19 @@ Escape closes, and Tab switches shell panels. `r` refreshes, `m` shows every
 comment of the ticket under the cursor in full, `u` undoes Mark all as read
 and `s` opens settings.
 
-## Local installation
+IPC: `omarchy-shell foamy.zendesk <open|close|toggle|settings>`.
 
-For this local checkout, `~/.config/omarchy/plugins/foamy.zendesk` links to
-`~/GitHub/Personal/foamy-zendesk`. Enable `foamy.zendesk` in the shell bar
-using Omarchy's plugin/bar controls. Restart the shell after source changes;
-the isolated tests below do not change the running desktop.
+## Install
+
+Requires Omarchy 4.5.
+
+```sh
+omarchy plugin add https://github.com/foamrider/foamy-zendesk.git --enable
+```
+
+To remove it, sign out first (that revokes the token and removes it from the
+keyring), then run `omarchy plugin remove foamy.zendesk`. Read markers stay in
+`$XDG_STATE_HOME/foamy-zendesk/`.
 
 ## Validation
 
@@ -131,8 +145,8 @@ use a fake Zendesk on loopback and an in-memory keyring; nothing touches a
 real account.
 
 ```sh
-FOAMY_HOST_45=/usr/share/omarchy/shell bash tests/run.sh
-KIT=../foamy-kit   # a checkout with the native-helpers toolchain (kit 0.5.0)
+bash tests/run.sh
+KIT=../foamy-kit   # a foamy-kit checkout, 0.5.1 as in foamy-kit.lock
 $KIT/tools/build-native.sh . --test     # fmt, clippy, cargo test
 $KIT/tools/build-native.sh .            # rebuild bin/<arch>/ and native/native.pin
 $KIT/tools/build-native.sh . --verify   # byte-identical clean rebuild
@@ -145,12 +159,16 @@ Mark all as read, hidden read tickets, grouped waiting tickets, signed out,
 loading, failed and offline states, an empty inbox, settings (signed in and
 signed out), the schedule, outside the schedule, a narrow popup, keyboard
 focus and scrolling. Render with `--theme light` to check the light palette.
-`FOAMY_KIT` overrides the sibling kit path used by runtime tests.
+`FOAMY_KIT` overrides the kit path used by runtime tests (default: a sibling
+`foamy-kit`, else `~/GitHub/Personal/foamy-kit`).
 
 Shared components are copied from foamy-kit and pinned by `foamy-kit.lock`.
 Change the kit source and sync; never edit its stamped copies here.
 
-Validated against the installed Omarchy 4.5 shell. The installed Qt formatter
+The tests run on Omarchy 4.5, the installed `/usr/share/omarchy/shell`
+(`FOAMY_HOST_45` picks another 4.5 tree); `python3 tests/runtime.py 4.0` runs
+only when `FOAMY_HOST_40` names a 4.0 shell tree and otherwise prints a SKIP
+line. The installed Qt formatter
 cannot process typed `void` IPC methods in `Panel.qml` (also true for existing
 Foamy plugins); the runtime test loads and exercises that file without removing
 its types.

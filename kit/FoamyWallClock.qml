@@ -1,4 +1,4 @@
-// foamy-kit 0.5.1 18f9db090554dd0efeb47c94c10d52815cbfc1817e02477ab424d84a610b9256 — do not edit; change foamy-kit and run sync
+// foamy-kit 0.5.2 18f9db090554dd0efeb47c94c10d52815cbfc1817e02477ab424d84a610b9256 — do not edit; change foamy-kit and run sync
 import QtQuick
 
 // Epoch-aligned ticks avoid SystemClock's negative delays in the repeated
