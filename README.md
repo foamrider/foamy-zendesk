@@ -122,6 +122,8 @@ IPC: `omarchy-shell foamy.zendesk <open|close|toggle|settings>`.
 
 ## Install
 
+Requires Omarchy 4.5.
+
 ```sh
 omarchy plugin add https://github.com/foamrider/foamy-zendesk.git --enable
 ```
