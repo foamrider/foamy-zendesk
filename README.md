@@ -40,8 +40,10 @@ Settings (the gear, `s`, or right-click the bar icon):
   "Waiting on others" section at the end; a new reply brings them back up.
 - **Use a weekly schedule**: per-day working hours (local time; overnight
   ranges carry into the next day), as in Foamy Train. Outside them nothing is
-  fetched and the bar icon dims without its count, or the widget hides (it
-  stays while its popup is open).
+  fetched in the background and the bar icon dims without its count, or the
+  widget hides (it stays while its popup is open). Opening the popup still
+  refreshes the inbox, and **Refresh** works; the footer's refresh icon spins
+  while it loads.
 - **Zendesk** (at the bottom): the account, and **Check every** (1 to 15
   minutes, default 1). Signed out, it also holds the connection fields below.
 
@@ -87,8 +89,8 @@ revokes the token and removes it from the keyring.
 ## Fetching
 
 Every minute (your **Check every**) while signed in and within the schedule,
-and when the popup opens on an inbox older than 30 seconds, the helper's
-`fetch`:
+and, in or outside the schedule, when the popup opens on an inbox older than
+30 seconds or on **Refresh**, the helper's `fetch`:
 
 - searches `type:ticket status<solved assignee:me`, and
   `type:ticket status<solved assignee:none group:<id>` for each of your groups

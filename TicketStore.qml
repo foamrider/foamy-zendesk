@@ -42,7 +42,8 @@ QtObject {
   onUnreadFirstChanged: sync()
   onGroupWaitingChanged: sync()
 
-  // Weekly schedule: outside it the bar widget dims or hides and nothing is fetched.
+  // Weekly schedule: outside it the bar widget dims or hides and nothing is
+  // fetched in the background; opening the popup still refreshes on demand.
   property bool scheduleEnabled: false
   property var week: []
   property FoamyWallClock clock: FoamyWallClock { enabled: store.scheduleEnabled }
@@ -54,7 +55,10 @@ QtObject {
   property var openUrl: function(url) { Qt.openUrlExternally(url); }
 
   readonly property string account: ZendeskAccount.signedIn ? Model.host(ZendeskAccount.address) + " " + ZendeskAccount.clientId : ""
-  readonly property bool active: !fixtures && account !== "" && withinSchedule && !helperMissing
+  // Signed in with a working helper: refreshing on demand is possible.
+  readonly property bool connected: !fixtures && account !== "" && !helperMissing
+  // Also within the schedule: the inbox is checked in the background.
+  readonly property bool active: connected && withinSchedule
   onAccountChanged: if (!fixtures) restart()
   onActiveChanged: if (active) refresh()
 
@@ -143,7 +147,7 @@ QtObject {
   // ---- fetching -------------------------------------------------------------
   property bool refreshAgain: false
   function refresh() {
-    if (!active) return;
+    if (!connected) return;
     if (fetchProcess.running) { refreshAgain = true; return; }
     fetchProcess.input = JSON.stringify({ known: Model.known(state) }) + "\n";
     fetchProcess.command = ["timeout", "--kill-after=2s", "150s"].concat(FoamyNative.command(pluginDir, "foamy-zendesk-helper",
@@ -153,7 +157,7 @@ QtObject {
   }
   // Opening the popup refreshes an inbox older than this.
   function refreshIfStale(maxAgeMs) {
-    if (active && !loading && Date.now() - lastUpdated > maxAgeMs) refresh();
+    if (connected && !loading && Date.now() - lastUpdated > maxAgeMs) refresh();
   }
   function fetched(text, code) {
     if (FoamyNative.unavailable(code)) {

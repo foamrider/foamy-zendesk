@@ -305,7 +305,7 @@ PanelKeyCatcher {
     statusTooltip: TicketStore.error !== "" && TicketStore.loaded ? FoamyI18n.updatedAgo(TicketStore.lastUpdated, clock.date.getTime()) : ""
     showRefresh: ZendeskAccount.signedIn
     refreshing: TicketStore.loading
-    refreshEnabled: TicketStore.active && !TicketStore.loading
+    refreshEnabled: TicketStore.connected && !TicketStore.loading
     refreshHasCursor: cursor.at(root.refreshStop)
     onRefreshHovered: function(hovered) { if (hovered) cursor.hover(root.refreshStop); }
     onRefreshClicked: TicketStore.refresh()

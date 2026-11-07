@@ -40,6 +40,7 @@ ShellRoot {
   property string railUnread: ""
   property real savedScroll: 0
   property int waited: 0
+  property int fetchProbe: 0
   property var opened: []
   // The shell reflects saved settings back to every instance, like the host.
   property var entry: ({})
@@ -264,10 +265,32 @@ ShellRoot {
         one.close();
         break;
       case 12:
+        if (shell.fetchProbe === 1) {
+          // Let the on-demand fetch end (the isolated session has no keyring), then go back to the sample inbox.
+          if (store.fetchProcess.running) { shell.step--; if (++shell.waited > 160) check(false, "the on-demand fetch finished"); return; }
+          store.fixtures = true;
+          store.error = "";
+          store.failures = 0;
+          store.loadFixtures(shell.many());
+          shell.fetchProbe = 2;
+        }
         if (!check(!store.reading && store.pending === null, "closing releases the waiting inbox")) return;
         one.prefs.save("scheduleEnabled", true);
         // The default week has no days, so the schedule is off right now.
         if (!check(!store.withinSchedule && button.dimmed && one.visible && two.visible && !store.active, "outside the schedule the widget dims and nothing is fetched")) return;
+        if (shell.fetchProbe === 0) {
+          // A real (non-sample) inbox outside the schedule: no background checks,
+          // but opening the popup refreshes a stale inbox, with the footer's spinner.
+          store.fixtures = false;
+          store.lastUpdated = 0;
+          if (!check(store.connected && !store.active && !store.pollTimer.running, "outside the schedule nothing is checked in the background")) return;
+          store.refreshIfStale(30000);
+          if (!check(store.fetchProcess.running, "outside the schedule, opening the popup refreshes on demand")) return;
+          shell.fetchProbe = 1;
+          shell.waited = 0;
+          shell.step--;
+          return;
+        }
         if (!check(!one.barContent.countLabel.visible && store.unreadCount > 0, "outside the schedule the bar shows no count")) return;
         one.prefs.save("scheduleOutsideMode", "hide");
         if (!check(!one.visible && !two.visible, "hide mode hides the widget")) return;
