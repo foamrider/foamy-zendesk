@@ -116,17 +116,31 @@ Item {
       visible: ticketRow.sectionTitle.length > 0
       width: parent.width
       height: FoamyStyle.rowHeight - FoamyStyle.gapSmall
-      PlainText {
+      // The count is its own text a full gap after the title, so it never
+      // runs into the title, whatever the font or language.
+      Row {
         id: sectionLabel
         x: FoamyStyle.rowPadding - 2
         anchors.verticalCenter: parent.verticalCenter
-        text: ticketRow.sectionTitle.toUpperCase() + "  " + FoamyI18n.number(ticketRow.sectionCount)
-        color: FoamyPalette.mutedText
-        font.pixelSize: FoamyStyle.font.caption
-        font.weight: Font.DemiBold
-        font.letterSpacing: 0.8
-        wrapMode: Text.NoWrap
+        spacing: FoamyStyle.gap
         Accessible.role: Accessible.Heading
+        Accessible.name: ticketRow.sectionTitle + " " + FoamyI18n.number(ticketRow.sectionCount)
+        PlainText {
+          text: ticketRow.sectionTitle.toUpperCase()
+          color: FoamyPalette.mutedText
+          font.pixelSize: FoamyStyle.font.caption
+          font.weight: Font.DemiBold
+          font.letterSpacing: 0.8
+          wrapMode: Text.NoWrap
+        }
+        PlainText {
+          objectName: "sectionCount"
+          text: FoamyI18n.number(ticketRow.sectionCount)
+          color: FoamyPalette.text
+          font.pixelSize: FoamyStyle.font.caption
+          font.weight: Font.DemiBold
+          wrapMode: Text.NoWrap
+        }
       }
       Rectangle {
         anchors.left: sectionLabel.right
