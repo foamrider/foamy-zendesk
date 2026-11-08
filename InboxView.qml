@@ -50,13 +50,22 @@ PanelKeyCatcher {
     target: TicketStore
     // Reset releases readers on every monitor, not only the panel that invoked it.
     function onResetting() { root.closeReading(); list.contentY = 0; }
+    // Signed in (or the helper found) while open: fetch now, not at the next
+    // background check (outside the schedule there is none). Later, so an
+    // account change's restart runs first.
+    function onConnectedChanged() { if (root.active && TicketStore.connected) Qt.callLater(root.refreshIfStale); }
   }
 
   function closeReading() { expandedIds = []; cursor.reset(); band.closeMenu(); }
+  // Opening the popup refreshes an inbox older than 30 seconds.
+  function refreshIfStale() { if (root.active) TicketStore.refreshIfStale(30000); }
   onActiveChanged: {
-    if (active) TicketStore.refreshIfStale(30000);
+    if (active) refreshIfStale();
     else { closeReading(); editingSettings = false; }
   }
+  // The popup builds this view on its first open with `active` already true,
+  // so onActiveChanged never fires for that open.
+  Component.onCompleted: refreshIfStale()
   onEditingSettingsChanged: {
     if (editingSettings) { closeReading(); settingsPage.resetScroll(); Qt.callLater(settingsPage.focusBack); }
     else Qt.callLater(function() { root.forceActiveFocus(); });
@@ -229,10 +238,21 @@ PanelKeyCatcher {
             : emptyState.kind === "failed" ? FoamyPalette.error : FoamyPalette.accent
           color: Qt.alpha(tone, 0.14)
           FoamyIcon {
+            id: emptyIcon
+            objectName: "emptyIcon"
             anchors.centerIn: parent; width: 22; height: 22
             name: emptyState.kind === "caughtup" ? "check-check" : emptyState.kind === "failed" ? "disconnected"
               : emptyState.kind === "loading" ? "refresh-cw" : "zendesk"
             color: FoamyPalette.onSurface(parent.tone)
+            // Turns while the first inbox is being fetched, like the footer's Refresh.
+            RotationAnimation on rotation {
+              running: emptyState.kind === "loading" && TicketStore.loading && emptyState.visible && root.active && !FoamyMotion.reduceMotion
+              from: 0
+              to: 360
+              duration: FoamyMotion.spin
+              loops: Animation.Infinite
+              onStopped: emptyIcon.rotation = 0
+            }
           }
         }
         PlainText {
