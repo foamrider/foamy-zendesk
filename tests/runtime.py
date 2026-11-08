@@ -268,6 +268,7 @@ ShellRoot {
         if (shell.fetchProbe === 1) {
           // Let the on-demand fetch end (the isolated session has no keyring), then go back to the sample inbox.
           if (store.fetchProcess.running) { shell.step--; if (++shell.waited > 160) check(false, "the on-demand fetch finished"); return; }
+          two.close();
           store.fixtures = true;
           store.error = "";
           store.failures = 0;
@@ -281,11 +282,14 @@ ShellRoot {
         if (shell.fetchProbe === 0) {
           // A real (non-sample) inbox outside the schedule: no background checks,
           // but opening the popup refreshes a stale inbox, with the footer's spinner.
+          // The second monitor's popup has never been opened: its first open
+          // builds the view with `active` already true, and must still refresh.
           store.fixtures = false;
           store.lastUpdated = 0;
           if (!check(store.connected && !store.active && !store.pollTimer.running, "outside the schedule nothing is checked in the background")) return;
-          store.refreshIfStale(30000);
-          if (!check(store.fetchProcess.running, "outside the schedule, opening the popup refreshes on demand")) return;
+          if (!check(two.popup.bodyItem === null, "the second popup was never opened")) return;
+          two.open();
+          if (!check(two.popup.bodyItem !== null && store.fetchProcess.running, "outside the schedule, the popup's first open refreshes on demand")) return;
           shell.fetchProbe = 1;
           shell.waited = 0;
           shell.step--;
