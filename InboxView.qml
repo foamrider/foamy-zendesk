@@ -164,13 +164,14 @@ PanelKeyCatcher {
     else if (text === "r") TicketStore.refresh();
     else if (text === "m") showMore();
   }
-  // The ticket under the cursor with every comment in full.
+  // The ticket under the cursor opens; once open, each press shows one more
+  // thing: the newest clipped comment in full, then the earlier comments.
   function showMore() {
     var index = ticketIndex();
     var row = cursor.index >= firstTicketStop ? ticketRows.itemAt(index) : null;
     if (!row) return;
     if (!row.expanded) toggleTicket(row.ticket.id);
-    row.showAll = true;
+    else row.showMore();
   }
   readonly property var sectionTitles: ({
     mine: FoamyI18n.t("Assigned to you"),

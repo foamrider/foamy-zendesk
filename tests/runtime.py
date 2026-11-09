@@ -27,6 +27,7 @@ import harness
 
 SHELL = r'''
 import QtQuick
+import QtTest
 import Quickshell
 import "harness"
 import "plugin" as Plugin
@@ -37,13 +38,13 @@ ShellRoot {
   property int step: 0
   property real savedY: 0
   property string savedBody: ""
-  property string railUnread: ""
   property real savedScroll: 0
   property int waited: 0
   property int fetchProbe: 0
   property var opened: []
   // The shell reflects saved settings back to every instance, like the host.
   property var entry: ({})
+  TestEvent { id: ev }
   function find(item, name) {
     if (!item) return null;
     if (item.objectName === name) return item;
@@ -122,7 +123,11 @@ ShellRoot {
                    "Snooze and Settings are in the ⋯ menu")) return;
         for (var m = 0; m < 3; m++) view.moveRequested(0, 1);
         if (!check(view.cursor.index === view.firstTicketStop, "keyboard walks Mark all and ⋯ before tickets")) return;
-        view.repeater.itemAt(0).bodyItem.clicked();
+        var closed = view.repeater.itemAt(0);
+        if (!check(closed.unreadDot.visible && !closed.frameItem.visible && closed.bodyItem.height === closed.bodyItem.parent.height,
+                   "closed, an unread ticket has the dot and the whole card is its target")) return;
+        // A real click low on the closed card, on its latest comment, opens it.
+        ev.mouseClick(closed.bodyItem, closed.bodyItem.width / 3, closed.bodyItem.height - 12, Qt.LeftButton, Qt.NoModifier, -1);
         break;
       case 3:
         var card = view.repeater.itemAt(0);
@@ -130,14 +135,30 @@ ShellRoot {
         if (!check(card.commentItem.textFormat === Text.PlainText, "comments use plain text")) return;
         if (!check(card.historyRepeater.count === 4 && card.historyRepeater.itemAt(1).textItem.text.indexOf("restart the client") >= 0, "expanded history includes the agent's reply")) return;
         if (!check(card.shownCount === 3 && !card.historyRepeater.itemAt(3).visible && card.moreButton.visible, "the timeline shows the unread comments and the one before them")) return;
-        card.moreButton.clicked();
-        if (!check(card.showAll && card.historyRepeater.itemAt(3).visible && !card.moreButton.visible, "Show earlier reveals the rest")) return;
-        shell.railUnread = String(shell.find(view.repeater.itemAt(1), "rail").color);
+        if (!check(card.frameItem.visible && !card.unreadDot.visible && card.bodyItem.height < card.height / 3, "open, the card is framed and its header band is the only toggle")) return;
+        // Real clicks: none of these may collapse the ticket.
+        var click = function(item, x, y) { ev.mouseClick(item, x === undefined ? item.width / 2 : x, y === undefined ? item.height / 2 : y, Qt.LeftButton, Qt.NoModifier, -1); };
+        var longest = card.historyRepeater.itemAt(0);
+        click(longest.textItem, 12, 6);
+        click(shell.find(card, "cardFooter"), 12);
+        if (!check(card.expanded, "clicks on a comment or the footer leave the ticket open")) return;
+        if (!check(longest.clipped && shell.find(longest, "fade").visible && longest.lengthButton.visible && longest.lengthButton.text === "Show more"
+                   && !card.historyRepeater.itemAt(1).lengthButton.visible, "a long comment is clipped and fades, with its own Show more")) return;
+        click(longest.lengthButton);
+        if (!check(card.expanded && longest.full && !longest.clipped && !shell.find(longest, "fade").visible && longest.lengthButton.text === "Show less"
+                   && !card.historyRepeater.itemAt(1).full && card.shownCount === 3, "Show more expands only that comment")) return;
+        click(longest.lengthButton);
+        if (!check(card.expanded && !longest.full && longest.clipped && longest.lengthButton.text === "Show more", "Show less folds it back")) return;
+        if (!check(card.showMore() && longest.full, "m shows the clipped comment in full first")) return;
+        ev.mouseClick(card.moreButton, card.moreButton.width / 2, card.moreButton.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
+        if (!check(card.expanded && card.showEarlier && card.historyRepeater.itemAt(3).visible && !card.moreButton.visible
+                   && !card.historyRepeater.itemAt(3).full, "Show earlier lists the rest without expanding them, and the ticket stays open")) return;
+        if (!check(!card.showMore(), "m has nothing more to show")) return;
         if (!check(card.historyRepeater.itemAt(0).textItem.textFormat === Text.PlainText, "history uses plain text")) return;
         if (!check(card.read && store.unreadCount === 2 && one.barContent.countLabel.text === "2", "opening a ticket marks it read")) return;
         if (!check(card.openedUpdates === 2 && card.historyRepeater.itemAt(0).fresh && !card.historyRepeater.itemAt(1).fresh && card.historyRepeater.itemAt(2).fresh,
                    "the opened ticket still marks what was new; my reply never is")) return;
-        if (!check(store.tickets.get(0).id === "4821" && String(shell.find(card, "rail").color) !== shell.railUnread, "it stays in place, without the unread rail")) return;
+        if (!check(store.tickets.get(0).id === "4821" && view.repeater.itemAt(1).unreadDot.visible, "it stays in place; the next ticket still has its unread dot")) return;
         shell.savedY = card.mapToItem(view, 0, 0).y;
         shell.savedBody = card.commentItem.text;
         store.receive(Fixtures.update(1, false));
@@ -150,14 +171,16 @@ ShellRoot {
         if (!check(shell.find(view, "statusBar").visible, "waiting updates are announced without moving the ticket")) return;
         if (!check(shell.opened.length === 1 && shell.opened[0] === "https://acme.zendesk.com/agent/tickets/4821" && card.expanded,
                    "View opens the ticket in Zendesk; it stays open")) return;
-        card.bodyItem.clicked();
+        // A real click on the header band (left of the actions) closes it.
+        ev.mouseClick(card.bodyItem, card.bodyItem.width / 3, card.bodyItem.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
         break;
       case 5:
         if (!check(store.pending === null && store.tickets.get(0).updates === 1 && store.tickets.get(0).history.count === 5, "collapse applies the waiting inbox; only the newer reply is unread")) return;
-        if (!check(!view.repeater.itemAt(0).showAll, "collapsing forgets Show earlier")) return;
+        if (!check(!view.repeater.itemAt(0).showEarlier, "collapsing forgets Show earlier")) return;
         view.repeater.itemAt(0).readButton.clicked();
         if (!check(store.count === 3 && store.unreadCount === 2 && view.repeater.itemAt(0).read && one.barContent.countLabel.text === "2", "Mark as read keeps the ticket and lowers the count")) return;
-        if (!check(view.repeater.itemAt(0).compact && String(shell.find(view.repeater.itemAt(0), "rail").color) !== shell.railUnread, "a read ticket takes one line and loses the unread rail")) return;
+        if (!check(view.repeater.itemAt(0).compact && !view.repeater.itemAt(0).unreadDot.visible && shell.find(view.repeater.itemAt(0), "when").text.indexOf("Anna · ") === 0,
+                   "a read ticket takes one line: no unread dot, the sender and time by the subject")) return;
         view.cursor.reset();
         if (!check(!view.repeater.itemAt(0).readActionShown && view.repeater.itemAt(1).readActionShown && view.repeater.itemAt(0).readButton.visible,
                    "Mark as unread waits for hover, keeping its place; Mark as read stays shown")) return;
@@ -239,7 +262,7 @@ ShellRoot {
         break;
       case 8:
         var waitingRow = view.repeater.itemAt(store.firstWaitingIndex);
-        if (!check(waitingRow.bodyItem.height >= shell.savedY && waitingRow.detailsItem.visible, "an expanded waiting ticket shows in full")) return;
+        if (!check(waitingRow.bodyItem.parent.height >= shell.savedY && waitingRow.detailsItem.visible, "an expanded waiting ticket shows in full")) return;
         view.toggleTicket("4818");
         store.markUnread("4818");
         if (!check(store.firstWaitingIndex === -1 && store.tickets.get(1).id === "4818", "marking it unread brings it back up")) return;
