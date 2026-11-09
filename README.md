@@ -105,7 +105,9 @@ and, in or outside the schedule, when the popup opens on an inbox older than
   (up to 20 groups and 100 tickets; Zendesk's search can lag a few minutes
   behind);
 - fetches the latest 20 comments only for tickets whose `updated_at` changed
-  (at most 25 per run; the rest follow next run);
+  (at most 25 per run; the rest follow next run) and shows their plain text,
+  with the HTML entities Zendesk leaves in it (`&nbsp;`, `&amp;`, …) decoded
+  and blank lines collapsed;
 - looks up the names of assignees, requesters and comment authors in one call.
 
 Failures back off (2×, 4×, … up to 15 minutes) and keep the last inbox. Read

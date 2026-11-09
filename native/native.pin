@@ -6,6 +6,6 @@ crate native
 binary foamy-zendesk-helper
 toolchain 1.99.1
 kit 0.5.2
-source 91becbeac59cd1301a0b34134bdf301db5aff55b9110932d1c5174cdce9f476e
-0a87a74fe6791533fc33d81b0862fd03a00a531a10283c4be039d74da852744c  bin/aarch64/foamy-zendesk-helper
-058a040f448b8e358009eb2fabc76267e6990f5173afadc8ad8c17c3f49b853d  bin/x86_64/foamy-zendesk-helper
+source efd8131e902084dae90a9c437a226765579c934d35ef72a7888fd009d7105553
+a0111246700d88acbccaa825490c6af7bc19b12481120ee9ee1c7751144587ab  bin/aarch64/foamy-zendesk-helper
+93a2e11392131813f9da064d5658c389d44d8a5dcc321264e0342d08a45ef287  bin/x86_64/foamy-zendesk-helper

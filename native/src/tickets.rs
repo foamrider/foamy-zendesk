@@ -106,6 +106,70 @@ fn priority(raw: Option<&str>) -> &'static str {
     }
 }
 
+/// Zendesk derives `plain_body` from the HTML body and leaves some of the
+/// HTML behind: literal entities (`&nbsp;` mostly), a space after each line
+/// break and blank-paragraph lines. Decode the entities, trim each line and
+/// keep at most one blank line in a row.
+fn tidy(text: &str) -> String {
+    let mut decoded = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find('&') {
+        decoded.push_str(&rest[..at]);
+        rest = &rest[at..];
+        let entity = rest[1..]
+            .find(';')
+            .filter(|&end| end <= 10)
+            .and_then(|end| entity(&rest[1..=end]).map(|c| (c, end + 2)));
+        match entity {
+            Some((c, len)) => {
+                decoded.push(c);
+                rest = &rest[len..];
+            }
+            None => {
+                decoded.push('&');
+                rest = &rest[1..];
+            }
+        }
+    }
+    decoded.push_str(rest);
+
+    let mut out = String::with_capacity(decoded.len());
+    let mut blank = false;
+    for line in decoded.replace('\u{a0}', " ").lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            blank = !out.is_empty();
+            continue;
+        }
+        if !out.is_empty() {
+            out.push_str(if blank { "\n\n" } else { "\n" });
+        }
+        out.push_str(line);
+        blank = false;
+    }
+    out
+}
+
+/// The character an HTML entity name (between `&` and `;`) stands for.
+fn entity(name: &str) -> Option<char> {
+    Some(match name {
+        "nbsp" => ' ',
+        "amp" => '&',
+        "lt" => '<',
+        "gt" => '>',
+        "quot" => '"',
+        "apos" => '\'',
+        _ => {
+            let code = name.strip_prefix('#')?;
+            let code = match code.strip_prefix(['x', 'X']) {
+                Some(hex) => u32::from_str_radix(hex, 16).ok()?,
+                None => code.parse().ok()?,
+            };
+            return char::from_u32(code).filter(|c| *c != '\0');
+        }
+    })
+}
+
 fn clip(text: &str) -> String {
     let text = text.trim();
     if text.chars().count() <= MAX_BODY {
@@ -277,7 +341,7 @@ pub fn fetch(account: &Account, known: &Map<String, Value>) -> Result<Value, Fai
                                     "mine": id_of(&c["author_id"]) == Some(me_id),
                                     "public": c["public"].as_bool().unwrap_or(true),
                                     "created": epoch_ms(c["created_at"].as_str()?)?,
-                                    "body": clip(c["plain_body"].as_str().or(c["body"].as_str()).unwrap_or("")),
+                                    "body": clip(&tidy(c["plain_body"].as_str().or(c["body"].as_str()).unwrap_or(""))),
                                 }))
                             })
                             .collect(),
@@ -319,5 +383,21 @@ mod tests {
             clip(&"x".repeat(MAX_BODY + 5)).chars().count(),
             MAX_BODY + 1
         );
+    }
+
+    #[test]
+    fn html_leftovers_are_tidied() {
+        assert_eq!(
+            tidy(
+                "Hei,\n &nbsp;\n Fikk denne i teams nå.\n Har ikke trykket på noe.\n\n &nbsp;\n\nMvh"
+            ),
+            "Hei,\n\nFikk denne i teams nå.\nHar ikke trykket på noe.\n\nMvh"
+        );
+        assert_eq!(
+            tidy("a &amp; b &lt;c&gt; &#233;&#xE9; &quot;"),
+            "a & b <c> éé \""
+        );
+        assert_eq!(tidy("R&D & co; &bogus; &#0; &"), "R&D & co; &bogus; &#0; &");
+        assert_eq!(tidy("&nbsp;\n\u{a0}\nhi\n&nbsp;"), "hi");
     }
 }
