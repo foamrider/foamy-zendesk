@@ -171,10 +171,10 @@ function arrivals(state, seen, scope) {
 }
 
 // Notification bodies are markup: plain text is escaped, folded to one line
-// and cut short.
+// and cut short. (The shell's JavaScript has no trimEnd.)
 function notificationText(value, limit) {
   var text = String(value || "").replace(/\s+/g, " ").trim();
-  if (text.length > limit) text = text.slice(0, limit - 1).trimEnd() + "…";
+  if (text.length > limit) text = text.slice(0, limit - 1).replace(/ $/, "") + "…";
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 

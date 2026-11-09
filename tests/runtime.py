@@ -33,6 +33,7 @@ import "harness"
 import "plugin" as Plugin
 import "plugin/kit" as Kit
 import "plugin/preview/Fixtures.js" as Fixtures
+import "plugin/Model.js" as Model
 ShellRoot {
   id: shell
   property int step: 0
@@ -396,6 +397,14 @@ ShellRoot {
                    && hint("omarchy-actions")[0].argv[1] === "https://acme.zendesk.com/agent/tickets/4821", "a click opens it in the inbox; a button in Zendesk")) return;
         store.receive(Fixtures.update(2, false));
         if (!check(shell.sent.length === 1, "the same reply is announced once")) return;
+        // In the shell's own JavaScript, not just Node's: long comments are cut short.
+        var long = Fixtures.update(7, false);
+        long[0].comments[0].body = new Array(80).join("word ") + "end";
+        store.receive(long);
+        tail = (shell.sent[1] || []).slice((shell.sent[1] || []).indexOf("--") + 1);
+        if (!check(shell.sent.length === 2 && tail[1].length <= 280 && tail[1].length > 270 && tail[1].slice(-1) === "…",
+                   "a long comment is cut short in the shell (" + shell.sent.length + ": " + tail[1] + ")")) return;
+        shell.sent = shell.sent.slice(0, 1);
         one.prefs.save("notify", "mine");
         store.receive(Fixtures.update(3, true));
         if (!check(shell.sent.length === 1, "assigned to you only: a new unassigned ticket stays quiet")) return;
