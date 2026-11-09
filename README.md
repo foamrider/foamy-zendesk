@@ -33,7 +33,7 @@ unread** button shows while the pointer or the keyboard cursor is on the
 ticket. The header's **Mark all as read** marks every unread ticket; an
 Undo link restores that batch. Viewing a ticket in Zendesk changes nothing.
 
-Settings (the gear, `s`, or right-click the bar icon):
+Settings (in the ⋯ menu, `s`, or right-click the bar icon):
 
 - **Hide read tickets** (off), **Show unread first** (off), and **Group
   waiting tickets** (on): Pending and On-hold tickets you have read move to a
@@ -44,6 +44,14 @@ Settings (the gear, `s`, or right-click the bar icon):
   widget hides (it stays while its popup is open). Opening the popup still
   refreshes the inbox, and **Refresh** works; the footer's refresh icon spins
   while it loads.
+- **Snooze until tomorrow** (in the ⋯ menu): mutes the widget until
+  tomorrow, like being outside the schedule. A snooze lasts until today's
+  scheduled hours end (an overnight range runs on past midnight), or until
+  midnight without a schedule. Snoozed, the entry reads **Stop snoozing**;
+  outside the schedule it reads **Resume now** and turns the widget on until
+  midnight (or until the schedule starts, if sooner). Either goes back to
+  the schedule when pressed again. Snoozing is kept in
+  `$XDG_STATE_HOME/foamy-zendesk/schedule-override.json`, never in `shell.json`.
 - **Zendesk** (at the bottom): the account, and **Check every** (1 to 15
   minutes, default 1). Signed out, it also holds the connection fields below.
 
@@ -120,7 +128,8 @@ Escape closes, and Tab switches shell panels. `r` refreshes, `m` shows every
 comment of the ticket under the cursor in full, `u` undoes Mark all as read
 and `s` opens settings.
 
-IPC: `omarchy-shell foamy.zendesk <open|close|toggle|settings>`.
+IPC: `omarchy-shell foamy.zendesk <open|close|toggle|settings|snooze>` (`snooze`
+is the ⋯ menu's snooze entry).
 
 ## Install
 

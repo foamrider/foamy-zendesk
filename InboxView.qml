@@ -29,6 +29,7 @@ PanelKeyCatcher {
   // Cursor stops in on-screen order: header actions, the empty state's button,
   // three per ticket (body, Mark as read, View in Zendesk), then Refresh.
   readonly property int markAllStop: 0
+  // The ⋯ button (Snooze and Settings are in its menu), or the cog.
   readonly property int settingsStop: 1
   readonly property int firstTicketStop: 2
   readonly property int refreshStop: cursor.count - 1
@@ -37,7 +38,8 @@ PanelKeyCatcher {
   implicitWidth: FoamyStyle.popupWidth
   implicitHeight: editingSettings ? settingsPage.implicitHeight
     : band.implicitHeight + body.implicitHeight + (footer.visible ? footer.implicitHeight : 0)
-  blocked: editingSettings
+  // The ⋯ menu takes the keys while it is open.
+  blocked: editingSettings || band.menuOpen
 
   FoamyMember { scope: "zendesk-reading"; demanding: root.active && root.expandedIds.length > 0 }
   FoamyCursor { id: cursor; count: root.firstTicketStop + TicketStore.count * 3 + (ZendeskAccount.signedIn ? 1 : 0) }
@@ -118,7 +120,11 @@ PanelKeyCatcher {
   function ticketIndex() { return Math.floor((cursor.index - firstTicketStop) / 3); }
   function activateCursor() {
     if (cursor.index === markAllStop) { markAllRead(); return; }
-    if (cursor.index === settingsStop) { editingSettings = true; return; }
+    if (cursor.index === settingsStop) {
+      if (band.settingsInMenu) band.openMenu(true);
+      else editingSettings = true;
+      return;
+    }
     if (cursor.index === refreshStop) { TicketStore.refresh(); return; }
     var index = ticketIndex();
     if (index < 0 || index >= TicketStore.count) return;
@@ -183,10 +189,23 @@ PanelKeyCatcher {
         ? FoamyI18n.tn("%1 unread", TicketStore.unreadCount) + (TicketStore.count > TicketStore.unreadCount ? " · " + FoamyI18n.tn("%1 tickets", TicketStore.count) : "")
         : TicketStore.count ? FoamyI18n.t("All read") : TicketStore.loaded ? FoamyI18n.t("All caught up")
         : TicketStore.error !== "" ? FoamyI18n.t("Not updated") : FoamyI18n.t("Loading…"))
-        + (TicketStore.withinSchedule ? "" : " · " + FoamyI18n.t("outside your schedule"))
+        + (TicketStore.snoozed ? " · " + FoamyI18n.t("snoozed") : TicketStore.withinSchedule ? "" : " · " + FoamyI18n.t("outside your schedule"))
+    // Snooze and Settings live in the ⋯ menu: Mark all as read and ⋯ on the right.
+    maxButtons: 2
     settingsHasCursor: cursor.at(root.settingsStop)
+    menuHasCursor: cursor.at(root.settingsStop)
     onSettingsClicked: root.editingSettings = true
     onSettingsHovered: function(hovered) { if (hovered) cursor.hover(root.settingsStop); }
+    onMenuHovered: function(hovered) { if (hovered) cursor.hover(root.settingsStop); }
+    menuItems: [
+      FoamyMenuItem {
+        objectName: "snoozeItem"
+        text: TicketStore.snoozed ? FoamyI18n.t("Stop snoozing")
+          : TicketStore.withinSchedule ? FoamyI18n.t("Snooze until tomorrow") : FoamyI18n.t("Resume now")
+        iconName: TicketStore.withinSchedule ? "moon" : "sun"
+        onTriggered: TicketStore.toggleSnooze()
+      }
+    ]
     trailing: [
       FoamyAction {
         objectName: "markAllRead"

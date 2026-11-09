@@ -173,5 +173,10 @@
   "Zendesk — %1 unread": {
     "one": "Zendesk – %1 ulest",
     "other": "Zendesk – %1 uleste"
-  }
+  },
+  "Snooze until tomorrow": "Slumre til i morgen",
+  "snoozed": "slumrer",
+  "Zendesk — snoozed": "Zendesk – slumrer",
+  "Stop snoozing": "Slutt å slumre",
+  "Resume now": "Gjenoppta nå"
 }

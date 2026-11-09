@@ -61,6 +61,7 @@ Ui.Panel {
     function close(): void { root.close() }
     function toggle(): void { root.toggle() }
     function settings(): void { root.openSettings() }
+    function snooze(): void { TicketStore.toggleSnooze() }
   }
   readonly property alias barContent: barContent
   Ui.WidgetButton {
@@ -75,7 +76,8 @@ Ui.Panel {
     fixedWidth: root.bar && root.bar.vertical ? -1 : Math.max(Style.bar.iconSlot, barContent.implicitWidth + Style.bar.iconSlot - Style.bar.iconCanvas)
     active: TicketStore.unreadCount > 0 && TicketStore.withinSchedule
     activeColor: Commons.Color.accent
-    tooltipText: !TicketStore.withinSchedule ? FoamyI18n.t("Zendesk — outside your schedule")
+    tooltipText: TicketStore.snoozed ? FoamyI18n.t("Zendesk — snoozed")
+      : !TicketStore.withinSchedule ? FoamyI18n.t("Zendesk — outside your schedule")
       : !ZendeskAccount.signedIn ? FoamyI18n.t("Zendesk — not signed in")
       : TicketStore.unreadCount ? FoamyI18n.tn("Zendesk — %1 unread", TicketStore.unreadCount) : "Zendesk"
     onPressed: function(pressedButton) {

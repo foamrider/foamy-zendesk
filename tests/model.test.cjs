@@ -185,3 +185,33 @@ test('settings schema: defaults keep today\'s behaviour and match the manifest',
   for (const value of ['', '08:00-16:00', '22:00-02:00', '00:00-24:00']) assert.match(value, new RegExp(Schema.schedulePattern));
   for (const value of ['8:00-16:00', '24:00-01:00', '08:00']) assert.doesNotMatch(value, new RegExp(Schema.schedulePattern));
 });
+
+test('schedule: snoozing and resuming override the schedule until the next day', () => {
+  const at = (day, hour, minute) => new Date(2026, 10, day, hour, minute || 0);
+  const week = ['08:00-16:00', '22:00-06:00', '', '', '', '', '']; // Monday, Tuesday night
+  // Within the hours: a snooze lasts until they end, then the schedule rules again.
+  const snooze = Schedule.toggled(at(2, 10), true, week, null);
+  assert.deepEqual(snooze, { on: false, until: at(2, 16).getTime() });
+  assert.equal(Schedule.effective(at(2, 15, 59), true, week, snooze), false);
+  assert.equal(Schedule.effective(at(3, 8), true, week, snooze), false);
+  // Pressing again goes back to the schedule: no override.
+  assert.equal(Schedule.toggled(at(2, 11), true, week, snooze), null);
+  // Outside the hours: resuming lasts until midnight...
+  const evening = Schedule.toggled(at(2, 19), true, week, null);
+  assert.deepEqual(evening, { on: true, until: at(3, 0).getTime() });
+  assert.equal(Schedule.effective(at(2, 23, 59), true, week, evening), true);
+  assert.equal(Schedule.effective(at(3, 0), true, week, evening), false);
+  // ...or until the schedule starts, if that is sooner.
+  assert.deepEqual(Schedule.toggled(at(2, 6), true, week, null), { on: true, until: at(2, 8).getTime() });
+  // An overnight range: the snooze runs on past midnight to its end.
+  assert.deepEqual(Schedule.toggled(at(3, 23), true, week, null), { on: false, until: at(4, 6).getTime() });
+  // No schedule: snoozed until midnight.
+  assert.deepEqual(Schedule.toggled(at(4, 12), false, [], null), { on: false, until: at(5, 0).getTime() });
+  // The state file: expired or malformed overrides are dropped.
+  const text = Schedule.serializeOverride(snooze);
+  assert.deepEqual(Schedule.parseOverride(text, at(2, 12).getTime()), snooze);
+  assert.equal(Schedule.parseOverride(text, at(2, 16).getTime()), null);
+  assert.equal(Schedule.parseOverride('{"version":1,"override":{"on":"no","until":1}}', 0), null);
+  assert.equal(Schedule.parseOverride('not json', 0), null);
+  assert.equal(Schedule.serializeOverride(null), '{"version":1,"override":null}\n');
+});
