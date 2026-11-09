@@ -166,6 +166,48 @@ test('ticket links use the configured account only', () => {
   assert.equal(Model.ticketUrl('', '1'), '');
 });
 
+test('notifications: only comments from others that are new since the last fetch', () => {
+  const state = seeded();
+  const seen = {};
+  // The first fetch sets what has been seen (the store doesn't announce it).
+  assert.deepEqual(Model.arrivals(state, seen, 'all').map(t => t.id), ['4821', '4818', '4824']);
+  assert.deepEqual(Model.arrivals(state, seen, 'all'), [], 'nothing new, nothing announced');
+  // A reply from someone else, then a new unassigned ticket.
+  Model.applySnapshot(state, Fixtures.update(1, false));
+  assert.deepEqual(Model.arrivals(state, seen, 'all').map(t => t.id), ['4821']);
+  Model.applySnapshot(state, Fixtures.update(2, true));
+  assert.deepEqual(Model.arrivals(state, seen, 'mine'), [], 'unassigned tickets only with "all"');
+  Model.applySnapshot(state, Fixtures.update(3, true));
+  assert.deepEqual(Model.arrivals(state, seen, 'all').map(t => t.id), ['4903']);
+});
+
+test('notifications: own replies, read tickets and returning tickets stay quiet', () => {
+  const state = seeded();
+  const seen = {};
+  Model.arrivals(state, seen, 'all');
+  const mine = Fixtures.tickets();
+  mine[0].updated_at = '2026-11-06T10:41:00Z';
+  mine[0].comments.unshift({ id: 48219, author: 'Alex', mine: true, public: true, created: Fixtures.BASE + 60000, body: 'Done.' });
+  Model.applySnapshot(state, mine);
+  assert.deepEqual(Model.arrivals(state, seen, 'all'), []);
+  // Read on this computer before the fetch saw it: nothing to announce.
+  const reply = Fixtures.update(1, false);
+  Model.applySnapshot(state, reply);
+  Model.markRead(state, '4821');
+  assert.deepEqual(Model.arrivals(state, seen, 'all'), []);
+  // A ticket that drops out of the search and comes back isn't new.
+  Model.applySnapshot(state, Fixtures.tickets().slice(1));
+  Model.applySnapshot(state, Fixtures.tickets());
+  Model.markUnread(state, '4821');
+  assert.deepEqual(Model.arrivals(state, seen, 'all'), []);
+});
+
+test('notification text is escaped markup on one line', () => {
+  assert.equal(Model.notificationText('Tom & <b>Jerry</b>\n\nhi', 100), 'Tom &amp; &lt;b&gt;Jerry&lt;/b&gt; hi');
+  assert.equal(Model.notificationText('abcdefghij', 6), 'abcde…');
+  assert.equal(Model.notificationText(null, 6), '');
+});
+
 test('schedule: overnight ranges carry into the next day; off means always within', () => {
   const week = ['', '', '', '', '', '', ''];
   week[0] = '22:00-02:00'; // Monday night into Tuesday

@@ -42,6 +42,7 @@ ShellRoot {
   property int waited: 0
   property int fetchProbe: 0
   property var opened: []
+  property var sent: []
   // The shell reflects saved settings back to every instance, like the host.
   property var entry: ({})
   TestEvent { id: ev }
@@ -368,6 +369,49 @@ ShellRoot {
         if (!check(signIn.actionEnabled && one.prefs.value("oauthClientId") === "foamy-test", "Sign in enables from typed values")) return;
         // Sign in saves the fields first (the test stops short of opening a browser).
         if (!check(view.settingsPage.saveConnection() && one.prefs.value("oauthClientId") === "other-client" && account.port === 48000, "typed connection fields save")) return;
+        // Desktop notifications: off by default, then quiet while the inbox is open.
+        var notifyMenu = shell.find(view.settingsPage, "notify");
+        if (!check(notifyMenu && notifyMenu.value === "off" && store.notify === "off", "notifications are off by default")) return;
+        shell.sent = [];
+        store.sendNotification = function(argv) { shell.sent = shell.sent.concat([argv]); };
+        store.loadFixtures(Fixtures.tickets());
+        one.prefs.save("notify", "all");
+        if (!check(store.notify === "all" && bar.saved[bar.saved.length - 1].settings.notify === "all", "the notification setting is saved")) return;
+        store.receive(Fixtures.update(1, false));
+        if (!check(store.watching && shell.sent.length === 0, "nothing is announced while the inbox is open")) return;
+        one.close();
+        break;
+      case 14:
+        if (!check(!store.watching, "a closed popup no longer holds notifications back")) return;
+        store.receive(Fixtures.update(2, false));
+        var argv = shell.sent[0] || [];
+        var hint = function(name) {
+          var found = argv.find(function(arg) { return arg.indexOf("--hint=string:" + name + ":") === 0; });
+          return found ? JSON.parse(found.slice(("--hint=string:" + name + ":").length)) : null;
+        };
+        var tail = argv.slice(argv.indexOf("--") + 1);
+        if (!check(shell.sent.length === 1 && argv[0] === "notify-send" && tail[0] === "VPN disconnects after sign-in"
+                   && tail[1].indexOf("Anna: Follow-up 2: the VPN") === 0, "a new reply is announced with its subject and comment")) return;
+        if (!check(JSON.stringify(hint("omarchy-exec-argv")) === JSON.stringify(["omarchy-shell", "-q", "foamy.zendesk", "show", "4821"])
+                   && hint("omarchy-actions")[0].argv[1] === "https://acme.zendesk.com/agent/tickets/4821", "a click opens it in the inbox; a button in Zendesk")) return;
+        store.receive(Fixtures.update(2, false));
+        if (!check(shell.sent.length === 1, "the same reply is announced once")) return;
+        one.prefs.save("notify", "mine");
+        store.receive(Fixtures.update(3, true));
+        if (!check(shell.sent.length === 1, "assigned to you only: a new unassigned ticket stays quiet")) return;
+        one.prefs.save("notify", "all");
+        store.receive(Fixtures.update(4, true).concat([Fixtures.update(5, true)[0]]));
+        argv = shell.sent[1] || [];
+        tail = argv.slice(argv.indexOf("--") + 1);
+        if (!check(shell.sent.length === 2 && tail[0] === "2 updated Zendesk tickets" && hint("omarchy-actions") === null
+                   && hint("omarchy-exec-argv")[3] === "open", "several at once are one notification that opens the inbox")) return;
+        one.prefs.save("notify", "off");
+        store.receive(Fixtures.update(6, false));
+        if (!check(shell.sent.length === 2, "off: nothing is announced")) return;
+        // The notification's click (the show IPC): the inbox with that ticket open and read.
+        one.showTicket("4824");
+        if (!check(one.opened && view.expandedIds.length === 1 && view.expandedIds[0] === "4824" && !view.editingSettings
+                   && store.ticketById("4824").ticket.read, "show opens the inbox on the ticket and marks it read")) return;
         console.log("FOAMY DONE runtime interactions passed"); Qt.quit();
       }
     }

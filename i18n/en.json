@@ -179,5 +179,18 @@
   "snoozed": "snoozed",
   "Zendesk — snoozed": "Zendesk — snoozed",
   "Stop snoozing": "Stop snoozing",
-  "Resume now": "Resume now"
+  "Resume now": "Resume now",
+  "Notifications": "Notifications",
+  "Desktop notifications": "Desktop notifications",
+  "Off": "Off",
+  "All tickets": "All tickets",
+  "A desktop notification for a new ticket or a new reply from someone else. None while this inbox is open, outside your schedule or while snoozed.": "A desktop notification for a new ticket or a new reply from someone else. None while this inbox is open, outside your schedule or while snoozed.",
+  "%1 updated Zendesk tickets": {
+    "one": "%1 updated Zendesk ticket",
+    "other": "%1 updated Zendesk tickets"
+  },
+  "and %1 more": {
+    "one": "and %1 more",
+    "other": "and %1 more"
+  }
 }

@@ -38,6 +38,8 @@ QtObject {
   property bool unreadFirst: false
   property bool groupWaiting: true
   property int refreshSeconds: 60
+  // Desktop notifications: "off", "mine" (assigned to you) or "all".
+  property string notify: "off"
   onHideReadChanged: sync()
   onUnreadFirstChanged: sync()
   onGroupWaitingChanged: sync()
@@ -126,7 +128,8 @@ QtObject {
       loaded = true;
       sync();
       saveRead();
-    } catch (failure) { error = FoamyI18n.t("Zendesk sent an unexpected reply."); }
+    } catch (failure) { error = FoamyI18n.t("Zendesk sent an unexpected reply."); return; }
+    announce();
   }
   function flush() { if (!reading && pending) receive(pending); }
   onReadingChanged: if (!reading) Qt.callLater(flush)
@@ -162,6 +165,49 @@ QtObject {
   function openTicket(id) {
     var url = Model.ticketUrl(ZendeskAccount.address, id);
     if (url) openUrl(url);
+  }
+
+  // ---- desktop notifications ------------------------------------------------
+  // The newest comment from someone else seen on each ticket (Model.arrivals),
+  // kept whether or not notifications are on, so turning them on announces
+  // nothing old. null until this account's first inbox, which sets it quietly:
+  // a shell start or a sign-in never announces the whole inbox.
+  property var seen: null
+  // A popup is open on some monitor: its inbox shows what came in.
+  readonly property bool watching: FoamyShared.demandCount("zendesk") > 0
+  // Sends a notification (an argv); tests replace it.
+  property var sendNotification: function(argv) { Quickshell.execDetached(argv); }
+  function announce() {
+    var first = seen === null;
+    if (first) seen = {};
+    var fresh = Model.arrivals(state, seen, notify === "all" ? "all" : "mine");
+    if (first || notify === "off" || watching || !withinSchedule || !fresh.length) return;
+    sendNotification(notificationCommand(fresh));
+  }
+  // One ticket: its subject and the newest comment from someone else; a click
+  // opens it in the inbox. Several: one notification listing them; a click
+  // opens the inbox. The click and the button use Omarchy's notification hints.
+  function notificationCommand(list) {
+    var summary, body, click, actions = [];
+    if (list.length === 1) {
+      var ticket = list[0];
+      var latest = ticket.history.find(function(item) { return !item.mine; });
+      summary = ticket.subject;
+      body = Model.notificationText(latest.sender + ": " + latest.body, 280);
+      click = ["omarchy-shell", "-q", "foamy.zendesk", "show", ticket.id];
+      var url = Model.ticketUrl(ZendeskAccount.address, ticket.id);
+      if (url) actions.push({ label: FoamyI18n.t("View in Zendesk"), argv: ["xdg-open", url] });
+    } else {
+      var shown = list.slice(0, 4);
+      summary = FoamyI18n.tn("%1 updated Zendesk tickets", list.length);
+      body = shown.map(function(item) { return Model.notificationText(item.subject, 80); })
+        .concat(list.length > shown.length ? [FoamyI18n.tn("and %1 more", list.length - shown.length)] : []).join("\n");
+      click = ["omarchy-shell", "-q", "foamy.zendesk", "open"];
+    }
+    var argv = ["notify-send", "--app-name=Zendesk", "--urgency=normal",
+      "--hint=string:omarchy-glyph:\u{f0516}", "--hint=string:omarchy-exec-argv:" + JSON.stringify(click)];
+    if (actions.length) argv.push("--hint=string:omarchy-actions:" + JSON.stringify(actions));
+    return argv.concat(["--", summary, body]);
   }
 
   // ---- fetching -------------------------------------------------------------
@@ -266,7 +312,7 @@ QtObject {
     if (saveTimer.running) { saveTimer.stop(); readFile.setText(Model.serializeReadState(state)); }
     fetchProcess.running = false;
     state = Model.empty();
-    pending = null; pendingChanges = 0; lastBatch = []; waitingSnapshot = null;
+    pending = null; pendingChanges = 0; lastBatch = []; waitingSnapshot = null; seen = null;
     error = ""; notice = ""; loaded = false; lastUpdated = 0; failures = 0; retryAt = 0;
     readPath = ""; readReady = false;
     sync();
@@ -282,6 +328,8 @@ QtObject {
     readReady = true;
     if (list) { Model.applySnapshot(state, list); loaded = true; lastUpdated = Date.now(); }
     else loaded = false;
+    seen = null;
+    if (list) announce();
     sync();
   }
 }

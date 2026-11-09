@@ -145,6 +145,39 @@ function visible(state, options) {
   return list;
 }
 
+// Desktop notifications: the newest comment from someone else that has been
+// seen on each ticket (0: none yet). `seen` grows across fetches, so a ticket
+// that drops out of the search and comes back isn't announced again.
+function newestFromOthers(ticket) {
+  var item = ticket.history.find(function(entry) { return !entry.mine; });
+  return item ? item.revision : 0;
+}
+
+// What a fetch brings that is worth a notification: unread tickets with a
+// comment from someone else newer than any seen before (a ticket new to the
+// inbox counts from 0), newest first. `scope` "mine" keeps only tickets
+// assigned to the agent. Updates `seen`.
+function arrivals(state, seen, scope) {
+  var out = [];
+  for (var id of Object.keys(state.tickets)) {
+    var ticket = state.tickets[id];
+    var newest = newestFromOthers(ticket);
+    var before = seen[id] || 0;
+    if (newest > before) seen[id] = newest;
+    if (newest <= before || unread(state, ticket) === 0 || (scope === "mine" && !ticket.mine)) continue;
+    out.push(ticket);
+  }
+  return out.sort(function(a, b) { return b.received - a.received || a.id.localeCompare(b.id); });
+}
+
+// Notification bodies are markup: plain text is escaped, folded to one line
+// and cut short.
+function notificationText(value, limit) {
+  var text = String(value || "").replace(/\s+/g, " ").trim();
+  if (text.length > limit) text = text.slice(0, limit - 1).trimEnd() + "…";
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 // Whole calendar days from `ms` to `now` in local time: 0 today, 1 yesterday,
 // negative for a time ahead of the clock.
 function daysAgo(ms, now) {
@@ -219,5 +252,6 @@ function ticketUrl(address, id) {
 
 if (typeof module !== "undefined") module.exports = {
   empty, ticketFrom, applySnapshot, known, unread, waiting, section, visible, daysAgo, markRead, markUnread,
-  markAllRead, restore, parseReadState, serializeReadState, host, ticketUrl
+  markAllRead, restore, parseReadState, serializeReadState, host, ticketUrl, newestFromOthers, arrivals,
+  notificationText
 };

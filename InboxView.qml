@@ -92,6 +92,14 @@ PanelKeyCatcher {
     if (onTicket) cursor.index = firstTicketStop + now.index * 3 + part;
     revealTicket(now.index);
   }
+  // Opens the ticket (from a notification), or just shows the inbox when it
+  // has left it.
+  function showTicket(id) {
+    editingSettings = false;
+    if (expandedIds.indexOf(id) < 0) { toggleTicket(id); return; }
+    var found = TicketStore.ticketById(id);
+    if (found) revealTicket(found.index);
+  }
   onExpandedIdsChanged: if (expandedIds.length === 0) TicketStore.hold(holdKey, "")
   Component.onDestruction: TicketStore.hold(holdKey, "")
   // Scrolls so the ticket's top is in view, after the list lays out.
@@ -451,6 +459,23 @@ PanelKeyCatcher {
         checked: root.pref("groupWaiting")
         enabled: !root.pref("hideRead")
         onClicked: root.saveRequested("groupWaiting", !checked)
+      }
+    }
+
+    FoamySettingsSection {
+      width: parent.width
+      title: FoamyI18n.t("Notifications")
+      description: FoamyI18n.t("A desktop notification for a new ticket or a new reply from someone else. None while this inbox is open, outside your schedule or while snoozed.")
+      FoamyDropdown {
+        objectName: "notify"
+        width: parent.width
+        compact: true
+        label: FoamyI18n.t("Desktop notifications")
+        value: root.pref("notify")
+        enabled: !root.saving
+        options: [{ value: "off", label: FoamyI18n.t("Off") }, { value: "mine", label: FoamyI18n.t("Assigned to you") },
+                  { value: "all", label: FoamyI18n.t("All tickets") }]
+        onChanged: function(value) { root.saveRequested("notify", value); }
       }
     }
 
