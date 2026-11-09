@@ -44,9 +44,12 @@ Settings (in the ⋯ menu, `s`, or right-click the bar icon):
 - **Desktop notifications** (Off, **Assigned to you** or **All tickets**,
   which adds the unassigned ones in your groups): a notification when a
   fetch finds a ticket new to the inbox or a new comment from someone else
-  on one that is still unread. Several at once make one notification. Click
-  it to open the inbox with that ticket open (which marks it read); **View
-  in Zendesk** opens it in the browser. Nothing is announced while an inbox
+  on one that is still unread, with the Zendesk icon. Click it to open the
+  inbox with that ticket open (which marks it read); its buttons are **View
+  in Zendesk** (opens it in the browser and marks it read) and **Mark as
+  read**. Several at once make one notification listing them, with **Mark
+  all as read**. The buttons read only up to the comments announced, so a
+  reply that came in since stays unread. Nothing is announced while an inbox
   popup is open, outside the schedule or while snoozed, and the first inbox
   after the shell starts or you sign in only sets what counts as new.
   Zendesk can't push to the desktop (its webhooks need a public server and
@@ -146,8 +149,9 @@ clipped comment in full, then the earlier comments), `u` undoes Mark all as read
 and `s` opens settings.
 
 IPC: `omarchy-shell foamy.zendesk <open|close|toggle|settings|snooze>` (`snooze`
-is the ⋯ menu's snooze entry), and `show <ticket id>`, which opens the inbox
-with that ticket open (a notification's click).
+is the ⋯ menu's snooze entry). A notification uses `show <ticket id>` (the
+inbox with that ticket open), `viewInZendesk <id>:<comment id>` and
+`markRead <id>:<comment id>[,…]` (read up to that comment).
 
 ## Install
 
@@ -204,7 +208,8 @@ marketplace lists, run `git checkout <commit>` right after `cd`.
 
 Licensed under [MIT](LICENSE). Omarchy and Lucide notices are in
 [kit/LICENSE-OMARCHY](kit/LICENSE-OMARCHY) and [kit/LICENSE-LUCIDE](kit/LICENSE-LUCIDE).
-The Zendesk mark comes from [Simple Icons](https://github.com/simple-icons/simple-icons)
+The Zendesk mark (also in `icons/zendesk.svg`, rendered to the notification
+icon `icons/zendesk.png`) comes from [Simple Icons](https://github.com/simple-icons/simple-icons)
 (CC0). Zendesk is a trademark of Zendesk, Inc.; this plugin is not affiliated
 with or endorsed by Zendesk.
 

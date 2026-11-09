@@ -193,6 +193,14 @@ function markRead(state, id, now) {
   return true;
 }
 
+// A notification's button: read up to the comment it showed, so a reply that
+// came in since stays unread. Works for a ticket that has left the inbox too.
+function markReadUpTo(state, id, revision, now) {
+  if (!/^[0-9]{1,15}$/.test(String(id)) || !Number.isSafeInteger(revision) || revision <= marker(state, id)) return false;
+  state.read[id] = { revision: revision, at: now || Date.now() };
+  return true;
+}
+
 // Makes the newest comment from someone else unread again.
 function markUnread(state, id, now) {
   var ticket = state.tickets[id];
@@ -252,6 +260,6 @@ function ticketUrl(address, id) {
 
 if (typeof module !== "undefined") module.exports = {
   empty, ticketFrom, applySnapshot, known, unread, waiting, section, visible, daysAgo, markRead, markUnread,
-  markAllRead, restore, parseReadState, serializeReadState, host, ticketUrl, newestFromOthers, arrivals,
+  markReadUpTo, markAllRead, restore, parseReadState, serializeReadState, host, ticketUrl, newestFromOthers, arrivals,
   notificationText
 };

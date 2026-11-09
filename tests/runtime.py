@@ -393,8 +393,24 @@ ShellRoot {
         var tail = argv.slice(argv.indexOf("--") + 1);
         if (!check(shell.sent.length === 1 && argv[0] === "notify-send" && tail[0] === "VPN disconnects after sign-in"
                    && tail[1].indexOf("Anna: Follow-up 2: the VPN") === 0, "a new reply is announced with its subject and comment")) return;
+        var buttons = hint("omarchy-actions") || [];
         if (!check(JSON.stringify(hint("omarchy-exec-argv")) === JSON.stringify(["omarchy-shell", "-q", "foamy.zendesk", "show", "4821"])
-                   && hint("omarchy-actions")[0].argv[1] === "https://acme.zendesk.com/agent/tickets/4821", "a click opens it in the inbox; a button in Zendesk")) return;
+                   && buttons.length === 2 && buttons[0].label === "View in Zendesk" && buttons[1].label === "Mark as read"
+                   && JSON.stringify(buttons[0].argv.slice(3)) === JSON.stringify(["viewInZendesk", "4821:48215"])
+                   && JSON.stringify(buttons[1].argv.slice(3)) === JSON.stringify(["markRead", "4821:48215"]),
+                   "a click opens it in the inbox; buttons view it in Zendesk or mark it read up to the reply shown")) return;
+        var icon = argv.find(function(arg) { return arg.indexOf("--icon=") === 0; }) || "";
+        if (!check(/\/icons\/zendesk\.png$/.test(icon) && icon.slice(7).charAt(0) === "/", "the Zendesk icon is a local PNG path")) return;
+        // The buttons' IPC: a newer reply (here: after the one announced) stays unread.
+        store.receive(Fixtures.update(3, false));
+        shell.sent = shell.sent.slice(0, 1);
+        shell.opened = [];
+        store.viewInZendesk("4821:48215");
+        if (!check(shell.opened[0] === "https://acme.zendesk.com/agent/tickets/4821" && store.ticketById("4821").ticket.updates === 1,
+                   "View in Zendesk opens it and reads up to the reply shown")) return;
+        store.markReadUpTo("4821:48216,4824:48241,junk");
+        if (!check(store.ticketById("4821").ticket.read && store.ticketById("4824").ticket.read, "Mark as read takes several tickets")) return;
+        store.markUnread("4824");
         store.receive(Fixtures.update(2, false));
         if (!check(shell.sent.length === 1, "the same reply is announced once")) return;
         // In the shell's own JavaScript, not just Node's: long comments are cut short.
@@ -412,7 +428,8 @@ ShellRoot {
         store.receive(Fixtures.update(4, true).concat([Fixtures.update(5, true)[0]]));
         argv = shell.sent[1] || [];
         tail = argv.slice(argv.indexOf("--") + 1);
-        if (!check(shell.sent.length === 2 && tail[0] === "2 updated Zendesk tickets" && hint("omarchy-actions") === null
+        if (!check(shell.sent.length === 2 && tail[0] === "2 updated Zendesk tickets" && hint("omarchy-actions").length === 1
+                   && hint("omarchy-actions")[0].label === "Mark all as read" && hint("omarchy-actions")[0].argv[4] === "4905:49005,4904:49004"
                    && hint("omarchy-exec-argv")[3] === "open", "several at once are one notification that opens the inbox")) return;
         one.prefs.save("notify", "off");
         store.receive(Fixtures.update(6, false));

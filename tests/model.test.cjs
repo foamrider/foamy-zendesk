@@ -202,6 +202,17 @@ test('notifications: own replies, read tickets and returning tickets stay quiet'
   assert.deepEqual(Model.arrivals(state, seen, 'all'), []);
 });
 
+test('a notification button reads up to the comment it showed, never back', () => {
+  const state = seeded();
+  Model.applySnapshot(state, Fixtures.update(2, false));
+  assert.equal(Model.markReadUpTo(state, '4821', 48214), true);
+  assert.equal(Model.visible(state)[0].updates, 1, 'the newer reply stays unread');
+  assert.equal(Model.markReadUpTo(state, '4821', 48213), false, 'a marker never moves back');
+  assert.equal(Model.markReadUpTo(state, '9999', 5), true, 'a ticket that left the inbox keeps the marker');
+  assert.equal(Model.markReadUpTo(state, 'x', 5), false);
+  assert.equal(Model.markReadUpTo(state, '4818', 1.5), false);
+});
+
 test('notification text is escaped markup on one line', () => {
   assert.equal(Model.notificationText('Tom & <b>Jerry</b>\n\nhi', 100), 'Tom &amp; &lt;b&gt;Jerry&lt;/b&gt; hi');
   assert.equal(Model.notificationText('abcdefghij', 6), 'abcde…');

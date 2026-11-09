@@ -70,6 +70,9 @@ Ui.Panel {
     function toggle(): void { root.toggle() }
     function settings(): void { root.openSettings() }
     function show(id: string): void { root.showTicket(id) }
+    // A notification's buttons: "id:revision" (comma-separated for markRead).
+    function markRead(tickets: string): void { TicketStore.markReadUpTo(tickets) }
+    function viewInZendesk(ticket: string): void { TicketStore.viewInZendesk(ticket) }
     function snooze(): void { TicketStore.toggleSnooze() }
   }
   readonly property alias barContent: barContent
