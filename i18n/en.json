@@ -173,5 +173,10 @@
   "Zendesk — %1 unread": {
     "one": "Zendesk — %1 unread",
     "other": "Zendesk — %1 unread"
-  }
+  },
+  "Snooze until tomorrow": "Snooze until tomorrow",
+  "snoozed": "snoozed",
+  "Zendesk — snoozed": "Zendesk — snoozed",
+  "Stop snoozing": "Stop snoozing",
+  "Resume now": "Resume now"
 }

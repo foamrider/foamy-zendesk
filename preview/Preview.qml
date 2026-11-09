@@ -9,7 +9,7 @@ Item {
   required property Item anchorItem
   property var previewStates: ["tickets", "expanded", "pending", "all-read", "hide-read", "grouped", "grouped-expanded",
     "signed-out", "loading", "failed", "offline", "empty", "settings", "connection", "schedule", "outside-schedule",
-    "narrow", "narrow-expanded", "focused", "scrolling"]
+    "narrow", "narrow-expanded", "focused", "scrolling", "menu"]
   property string previewState: "tickets"
   readonly property Item popup: popup
 
@@ -26,6 +26,8 @@ Item {
     var account = Plugin.ZendeskAccount;
     view.closeReading();
     view.editingSettings = false;
+    // The ⋯ menu: Snooze, then Settings.
+    if (previewState === "menu") Qt.callLater(function() { view.band.openMenu(false); });
     // Rows are dated against the fixtures' time, not the render's.
     view.fixedNow = Fixtures.NOW;
     store.openUrl = function(url) { console.log("preview: would open " + url); };

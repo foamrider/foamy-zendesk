@@ -44,10 +44,30 @@ QtObject {
 
   // Weekly schedule: outside it the bar widget dims or hides and nothing is
   // fetched in the background; opening the popup still refreshes on demand.
+  // The popup's snooze/resume overrides it while it lasts (Schedule.toggled).
   property bool scheduleEnabled: false
   property var week: []
-  property FoamyWallClock clock: FoamyWallClock { enabled: store.scheduleEnabled }
-  readonly property bool withinSchedule: Schedule.withinWeek(clock.date, scheduleEnabled, week)
+  property var scheduleOverride: null
+  readonly property bool overriding: !!scheduleOverride && clock.date.getTime() < scheduleOverride.until
+  property FoamyWallClock clock: FoamyWallClock { enabled: store.scheduleEnabled || store.overriding }
+  readonly property bool withinSchedule: Schedule.effective(clock.date, scheduleEnabled, week, scheduleOverride)
+  // Snoozed from the popup (not just outside the scheduled hours).
+  readonly property bool snoozed: overriding && !scheduleOverride.on
+
+  // Snoozing is kept beside the read markers, never in shell.json: it is not a setting.
+  readonly property string stateHome: Quickshell.env("XDG_STATE_HOME") || Quickshell.env("HOME") + "/.local/state"
+  property string overridePath: stateHome + "/foamy-zendesk/schedule-override.json"
+  property FileView overrideFile: FileView {
+    path: store.overridePath
+    atomicWrites: true
+    printErrors: false
+    onLoaded: store.scheduleOverride = Schedule.parseOverride(text(), Date.now())
+  }
+  function toggleSnooze() {
+    scheduleOverride = Schedule.toggled(new Date(), scheduleEnabled, week, scheduleOverride);
+    clock.refresh();
+    overrideFile.setText(Schedule.serializeOverride(scheduleOverride));
+  }
 
   // Preview and tests: sample tickets, no helper, no file.
   property bool fixtures: false

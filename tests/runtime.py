@@ -118,8 +118,10 @@ ShellRoot {
         view.fixedNow = 0;
         if (!check(Math.abs(dated.now - Date.now()) < 120000, "back on the wall clock")) return;
         if (!check(shell.find(view, "emptyState").visible === false && view.band.meta.indexOf("3 unread") === 0, "header counts unread")) return;
+        if (!check(view.band.settingsInMenu && view.band.menuItems[0].iconName === "moon" && view.band.menuItems[0].text === "Snooze until tomorrow",
+                   "Snooze and Settings are in the ⋯ menu")) return;
         for (var m = 0; m < 3; m++) view.moveRequested(0, 1);
-        if (!check(view.cursor.index === view.firstTicketStop, "keyboard walks Mark all and settings before tickets")) return;
+        if (!check(view.cursor.index === view.firstTicketStop, "keyboard walks Mark all and ⋯ before tickets")) return;
         view.repeater.itemAt(0).bodyItem.clicked();
         break;
       case 3:
@@ -200,6 +202,10 @@ ShellRoot {
         if (!check(store.count === 3, "showing read tickets again")) return;
         view.cursor.index = view.settingsStop;
         view.activateRequested();
+        if (!check(view.band.menuOpen && view.blocked && !view.editingSettings, "Enter on ⋯ opens the menu, which takes the keys")) return;
+        view.band.closeMenu();
+        // The menu's Settings entry (last) goes through the band's settingsClicked.
+        view.band.settingsClicked();
         if (!check(view.editingSettings && view.settingsPage.visible && !view.list.visible, "settings replace the inbox")) return;
         var toggle = shell.find(view.settingsPage, "hideReadToggle");
         if (!check(toggle && !toggle.checked, "Hide read tickets is off by default")) return;
@@ -306,6 +312,16 @@ ShellRoot {
         if (!check(store.withinSchedule && one.visible && two.visible && !button.dimmed && one.barContent.countLabel.visible, "within the schedule the widget and count return")) return;
         var saved = bar.saved[bar.saved.length - 1].settings;
         if (!check(saved.scheduleEnabled === true && saved.scheduleOutsideMode === "hide" && saved[today] === "00:00-24:00", "schedule settings are saved together")) return;
+        // Snooze: muted (here hidden) until tomorrow, without touching the settings.
+        var savedCount = bar.saved.length;
+        store.toggleSnooze();
+        var midnight = new Date(); midnight.setHours(24, 0, 0, 0);
+        if (!check(store.snoozed && !store.withinSchedule && !store.active && !one.visible && !two.visible, "snoozing mutes the widget and stops background checks")) return;
+        if (!check(store.scheduleOverride.until === midnight.getTime(), "an all-day schedule snoozes until midnight")) return;
+        if (!check(button.tooltipText === "Zendesk — snoozed", "the bar tooltip says snoozed")) return;
+        store.toggleSnooze();
+        if (!check(!store.snoozed && store.withinSchedule && store.scheduleOverride === null, "pressing again resumes the schedule")) return;
+        if (!check(bar.saved.length === savedCount, "snoozing never saves settings")) return;
         one.prefs.save("scheduleEnabled", false);
         // Signed out: the inbox asks for a sign-in.
         account.state = "signed_out";
