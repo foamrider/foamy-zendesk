@@ -8,16 +8,18 @@ reads only; nothing in Zendesk changes. No desktop notifications are used.
 
 The bar shows the Zendesk icon followed by a red count of unread tickets,
 like Teams. Click it to open the inbox: your tickets under **Assigned to
-you**, then **Unassigned in your groups**. Unread tickets have an accent
-rail, their status and priority (only when not Open or Normal), who wrote
-last ("You" for your own replies) and the latest comment, with a footer
-line: when (10:40 today, then Yesterday, a weekday or a date), the assignee
-and the group. Read tickets take one line.
+you**, then **Unassigned in your groups**. Unread tickets have a bold
+subject with an accent-coloured dot by the time (10:40 today, then Yesterday, a weekday
+or a date), their status and priority (only when not Open or Normal), who
+wrote last ("You" for your own replies), the latest comment, and a footer
+line with the assignee and the group. Read tickets take one line.
 
-Click a ticket to open it; one ticket is open at a time. Its comments show
-newest first: those that were unread and the one before them, long comments
-clipped at six lines, and **Show earlier comments** for the rest (internal
-notes labelled). Icon buttons in each title row offer **Mark as read** and
+Click a ticket to open it; one ticket is open at a time. An open ticket gets
+a frame and a tinted header band: click the band to close it (clicks on the
+comments never do). Its comments show newest first: those that were unread
+and the one before them, and **Show earlier comments** for the rest
+(internal notes labelled). Long comments are clipped at six lines and fade
+out, each with its own **Show more** and **Show less**. Icon buttons in each title row offer **Mark as read** and
 **View in Zendesk** (opens the ticket in the browser). Notices (Undo,
 waiting updates) float in a bar above the footer, so they never move the
 ticket being read. The footer shows the account, when the inbox was last
@@ -126,8 +128,9 @@ comment at the top of `native/src/main.rs`.
 
 Arrows or hjkl move a single cursor over the header actions, tickets and
 their actions in on-screen order, then Refresh. Enter or Space activates,
-Escape closes, and Tab switches shell panels. `r` refreshes, `m` shows every
-comment of the ticket under the cursor in full, `u` undoes Mark all as read
+Escape closes, and Tab switches shell panels. `r` refreshes, `m` opens the
+ticket under the cursor, then shows one more thing per press (the newest
+clipped comment in full, then the earlier comments), `u` undoes Mark all as read
 and `s` opens settings.
 
 IPC: `omarchy-shell foamy.zendesk <open|close|toggle|settings|snooze>` (`snooze`
