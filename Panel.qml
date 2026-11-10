@@ -27,13 +27,15 @@ Ui.Panel {
     fields: Schema.fields
     settings: root.settings
   }
-  FoamyMember { id: member; scope: "zendesk" }
+  // Demand: this popup is open, so the store holds back notifications.
+  FoamyMember { id: member; scope: "zendesk"; demanding: root.opened }
   // Whichever instance saves pushes at once, before the host reflects the value
   // back; every instance then pushes the same reflected settings.
   function pushSettings() {
     TicketStore.hideRead = prefs.value("hideRead");
     TicketStore.unreadFirst = prefs.value("unreadFirst");
     TicketStore.groupWaiting = prefs.value("groupWaiting");
+    TicketStore.notify = prefs.value("notify");
     TicketStore.scheduleEnabled = prefs.value("scheduleEnabled");
     TicketStore.week = Schedule.week(prefs.effectiveSettings || ({}));
     TicketStore.refreshSeconds = prefs.value("refreshSeconds");
@@ -54,6 +56,12 @@ Ui.Panel {
     var view = popup.ensureBody();
     if (view) view.editingSettings = true;
   }
+  // A notification's click: the inbox with that ticket open (and read).
+  function showTicket(id) {
+    root.open();
+    var view = popup.ensureBody();
+    if (view) view.showTicket(String(id));
+  }
   FoamyIpc {
     enabled: member.isLeader
     target: "foamy.zendesk"
@@ -61,6 +69,10 @@ Ui.Panel {
     function close(): void { root.close() }
     function toggle(): void { root.toggle() }
     function settings(): void { root.openSettings() }
+    function show(id: string): void { root.showTicket(id) }
+    // A notification's buttons: "id:revision" (comma-separated for markRead).
+    function markRead(tickets: string): void { TicketStore.markReadUpTo(tickets) }
+    function viewInZendesk(ticket: string): void { TicketStore.viewInZendesk(ticket) }
     function snooze(): void { TicketStore.toggleSnooze() }
   }
   readonly property alias barContent: barContent

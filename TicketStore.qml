@@ -38,6 +38,8 @@ QtObject {
   property bool unreadFirst: false
   property bool groupWaiting: true
   property int refreshSeconds: 60
+  // Desktop notifications: "off", "mine" (assigned to you) or "all".
+  property string notify: "off"
   onHideReadChanged: sync()
   onUnreadFirstChanged: sync()
   onGroupWaitingChanged: sync()
@@ -126,7 +128,8 @@ QtObject {
       loaded = true;
       sync();
       saveRead();
-    } catch (failure) { error = FoamyI18n.t("Zendesk sent an unexpected reply."); }
+    } catch (failure) { error = FoamyI18n.t("Zendesk sent an unexpected reply."); return; }
+    announce();
   }
   function flush() { if (!reading && pending) receive(pending); }
   onReadingChanged: if (!reading) Qt.callLater(flush)
@@ -149,6 +152,21 @@ QtObject {
     return null;
   }
   function markUnread(id) { if (Model.markUnread(state, id)) changed(); }
+  // A notification's buttons: "id:revision,…", each read up to that comment.
+  function markReadUpTo(tickets) {
+    var any = false;
+    for (var part of String(tickets).split(",").slice(0, 100)) {
+      var match = /^([0-9]{1,15}):([0-9]{1,16})$/.exec(part.trim());
+      if (match && Model.markReadUpTo(state, match[1], Number(match[2]))) any = true;
+    }
+    if (any) changed();
+  }
+  function viewInZendesk(ticket) {
+    var match = /^([0-9]{1,15}):/.exec(String(ticket));
+    if (!match) return;
+    markReadUpTo(ticket);
+    openTicket(match[1]);
+  }
   function toggleRead(id) { if (!Model.markRead(state, id)) Model.markUnread(state, id); changed(); }
   function markAllRead() {
     var batch = Model.markAllRead(state);
@@ -162,6 +180,55 @@ QtObject {
   function openTicket(id) {
     var url = Model.ticketUrl(ZendeskAccount.address, id);
     if (url) openUrl(url);
+  }
+
+  // ---- desktop notifications ------------------------------------------------
+  // The newest comment from someone else seen on each ticket (Model.arrivals),
+  // kept whether or not notifications are on, so turning them on announces
+  // nothing old. null until this account's first inbox, which sets it quietly:
+  // a shell start or a sign-in never announces the whole inbox.
+  property var seen: null
+  // A popup is open on some monitor: its inbox shows what came in.
+  readonly property bool watching: FoamyShared.demandCount("zendesk") > 0
+  // Sends a notification (an argv); tests replace it.
+  property var sendNotification: function(argv) { Quickshell.execDetached(argv); }
+  function announce() {
+    var first = seen === null;
+    if (first) seen = {};
+    var fresh = Model.arrivals(state, seen, notify === "all" ? "all" : "mine");
+    if (first || notify === "off" || watching || !withinSchedule || !fresh.length) return;
+    sendNotification(notificationCommand(fresh));
+  }
+  // One ticket: its subject and the newest comment from someone else; a click
+  // opens it in the inbox, and the buttons view it in Zendesk or mark it read.
+  // Several: one notification listing them; a click opens the inbox, the
+  // button marks them all read. Buttons read only up to the comments
+  // announced (`id:revision`). The click and the buttons use Omarchy's
+  // notification hints; the icon is a PNG path (the glyph is for hosts that
+  // drop it).
+  function notificationCommand(list) {
+    var ipc = ["omarchy-shell", "-q", "foamy.zendesk"];
+    var through = function(item) { return item.id + ":" + Model.newestFromOthers(item); };
+    var summary, body, click, actions;
+    if (list.length === 1) {
+      var ticket = list[0];
+      var latest = ticket.history.find(function(item) { return !item.mine; });
+      summary = ticket.subject;
+      body = Model.notificationText(latest.sender + ": " + latest.body, 280);
+      click = ipc.concat(["show", ticket.id]);
+      actions = [{ label: FoamyI18n.t("View in Zendesk"), argv: ipc.concat(["viewInZendesk", through(ticket)]) },
+                 { label: FoamyI18n.t("Mark as read"), argv: ipc.concat(["markRead", through(ticket)]) }];
+    } else {
+      var shown = list.slice(0, 4);
+      summary = FoamyI18n.tn("%1 updated Zendesk tickets", list.length);
+      body = shown.map(function(item) { return Model.notificationText(item.subject, 80); })
+        .concat(list.length > shown.length ? [FoamyI18n.tn("and %1 more", list.length - shown.length)] : []).join("\n");
+      click = ipc.concat(["open"]);
+      actions = [{ label: FoamyI18n.t("Mark all as read"), argv: ipc.concat(["markRead", list.slice(0, 100).map(through).join(",")]) }];
+    }
+    return ["notify-send", "--app-name=Zendesk", "--urgency=normal", "--icon=" + pluginDir + "/icons/zendesk.png",
+      "--hint=string:omarchy-glyph:\u{f0516}", "--hint=string:omarchy-exec-argv:" + JSON.stringify(click),
+      "--hint=string:omarchy-actions:" + JSON.stringify(actions), "--", summary, body];
   }
 
   // ---- fetching -------------------------------------------------------------
@@ -266,7 +333,7 @@ QtObject {
     if (saveTimer.running) { saveTimer.stop(); readFile.setText(Model.serializeReadState(state)); }
     fetchProcess.running = false;
     state = Model.empty();
-    pending = null; pendingChanges = 0; lastBatch = []; waitingSnapshot = null;
+    pending = null; pendingChanges = 0; lastBatch = []; waitingSnapshot = null; seen = null;
     error = ""; notice = ""; loaded = false; lastUpdated = 0; failures = 0; retryAt = 0;
     readPath = ""; readReady = false;
     sync();
@@ -282,6 +349,8 @@ QtObject {
     readReady = true;
     if (list) { Model.applySnapshot(state, list); loaded = true; lastUpdated = Date.now(); }
     else loaded = false;
+    seen = null;
+    if (list) announce();
     sync();
   }
 }

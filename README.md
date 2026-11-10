@@ -2,7 +2,8 @@
 
 An Omarchy bar plugin for your Zendesk tickets: the unsolved tickets assigned
 to you, and the unassigned ones in your groups. It signs in with OAuth and
-reads only; nothing in Zendesk changes. No desktop notifications are used.
+reads only; nothing in Zendesk changes. Desktop notifications are optional
+(off by default).
 
 ![Foamy Zendesk inbox with sample tickets assigned to you, unassigned in your groups and waiting on others](preview.png)
 
@@ -40,6 +41,20 @@ Settings (in the ⋯ menu, `s`, or right-click the bar icon):
 - **Hide read tickets** (off), **Show unread first** (off), and **Group
   waiting tickets** (on): Pending and On-hold tickets you have read move to a
   "Waiting on others" section at the end; a new reply brings them back up.
+- **Desktop notifications** (Off, **Assigned to you** or **All tickets**,
+  which adds the unassigned ones in your groups): a notification when a
+  fetch finds a ticket new to the inbox or a new comment from someone else
+  on one that is still unread, with the Zendesk icon. Click it to open the
+  inbox with that ticket open (which marks it read); its buttons are **View
+  in Zendesk** (opens it in the browser and marks it read) and **Mark as
+  read**. Several at once make one notification listing them, with **Mark
+  all as read**. The buttons read only up to the comments announced, so a
+  reply that came in since stays unread. Nothing is announced while an inbox
+  popup is open, outside the schedule or while snoozed, and the first inbox
+  after the shell starts or you sign in only sets what counts as new.
+  Zendesk can't push to the desktop (its webhooks need a public server and
+  an admin), so a notification comes with the next check: up to **Check
+  every** late, plus however far Zendesk's search lags.
 - **Use a weekly schedule**: per-day working hours (local time; overnight
   ranges carry into the next day), as in Foamy Train. Outside them nothing is
   fetched in the background and the bar icon dims without its count, or the
@@ -145,7 +160,9 @@ clipped comment in full, then the earlier comments), `u` undoes Mark all as read
 and `s` opens settings.
 
 IPC: `omarchy-shell foamy.zendesk <open|close|toggle|settings|snooze>` (`snooze`
-is the ⋯ menu's snooze entry).
+is the ⋯ menu's snooze entry). A notification uses `show <ticket id>` (the
+inbox with that ticket open), `viewInZendesk <id>:<comment id>` and
+`markRead <id>:<comment id>[,…]` (read up to that comment).
 
 ## Install
 
@@ -215,7 +232,8 @@ binaries match the release, and `omarchy plugin update` still applies.
 
 Licensed under [MIT](LICENSE). Omarchy and Lucide notices are in
 [kit/LICENSE-OMARCHY](kit/LICENSE-OMARCHY) and [kit/LICENSE-LUCIDE](kit/LICENSE-LUCIDE).
-The Zendesk mark comes from [Simple Icons](https://github.com/simple-icons/simple-icons)
+The Zendesk mark (also in `icons/zendesk.svg`, rendered to the notification
+icon `icons/zendesk.png`) comes from [Simple Icons](https://github.com/simple-icons/simple-icons)
 (CC0). Zendesk is a trademark of Zendesk, Inc.; this plugin is not affiliated
 with or endorsed by Zendesk.
 

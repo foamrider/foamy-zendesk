@@ -21,6 +21,7 @@
       "hideRead": false,
       "unreadFirst": false,
       "groupWaiting": true,
+      "notify": "off",
       "scheduleEnabled": false,
       "scheduleOutsideMode": "mute",
       "scheduleMonday": "",
@@ -53,6 +54,17 @@
         "type": "boolean",
         "label": "Group waiting tickets",
         "defaultValue": true
+      },
+      {
+        "key": "notify",
+        "type": "enum",
+        "label": "Desktop notifications",
+        "defaultValue": "off",
+        "options": [
+          "off",
+          "mine",
+          "all"
+        ]
       },
       {
         "key": "scheduleEnabled",

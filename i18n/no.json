@@ -183,5 +183,18 @@
   "snoozed": "slumrer",
   "Zendesk — snoozed": "Zendesk – slumrer",
   "Stop snoozing": "Slutt å slumre",
-  "Resume now": "Gjenoppta nå"
+  "Resume now": "Gjenoppta nå",
+  "Notifications": "Varsler",
+  "Desktop notifications": "Skrivebordsvarsler",
+  "Off": "Av",
+  "All tickets": "Alle saker",
+  "A desktop notification for a new ticket or a new reply from someone else. None while this inbox is open, outside your schedule or while snoozed.": "Et skrivebordsvarsel for en ny sak eller et nytt svar fra noen andre. Ingen mens denne innboksen er åpen, utenfor tidsplanen eller mens den slumrer.",
+  "%1 updated Zendesk tickets": {
+    "one": "%1 oppdatert Zendesk-sak",
+    "other": "%1 oppdaterte Zendesk-saker"
+  },
+  "and %1 more": {
+    "one": "og %1 til",
+    "other": "og %1 til"
+  }
 }
