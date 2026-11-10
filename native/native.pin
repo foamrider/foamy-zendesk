@@ -1,11 +1,11 @@
-# native.pin: written by foamy-kit tools/build-native.sh; do not edit.
+# native.pin: written by kit/native/build-native.sh; do not edit.
 # check.sh and tests/kit-check.sh verify bin/<arch>/<binary> against it and
 # report the binaries stale when `source` no longer matches the crate, kit/rust,
-# Cargo.toml, Cargo.lock and rust-toolchain.toml. Rebuild: foamy-kit tools/build-native.sh <plugin>.
+# Cargo.toml, Cargo.lock and rust-toolchain.toml. Rebuild: kit/native/build-native.sh .
 crate native
 binary foamy-zendesk-helper
 toolchain 1.99.1
-kit 0.5.2
-source efd8131e902084dae90a9c437a226765579c934d35ef72a7888fd009d7105553
-a0111246700d88acbccaa825490c6af7bc19b12481120ee9ee1c7751144587ab  bin/aarch64/foamy-zendesk-helper
-93a2e11392131813f9da064d5658c389d44d8a5dcc321264e0342d08a45ef287  bin/x86_64/foamy-zendesk-helper
+kit 0.7.0
+source 166c069a0a683c22a47e240c0455b2184cc7248176ce85e3a38983ae03ff13d1
+f3d8422b3ca1803a719728a14d1388c46e867a7b08cfcb6ffbb2b13de9b7ff3e  bin/aarch64/foamy-zendesk-helper
+6487475d1e5a84269f6058d51f2ea9047326d6e2589e5fc36a27fbd2e003fca4  bin/x86_64/foamy-zendesk-helper
