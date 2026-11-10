@@ -166,6 +166,142 @@ test('ticket links use the configured account only', () => {
   assert.equal(Model.ticketUrl('', '1'), '');
 });
 
+test('notifications: only comments from others that are new since the last fetch', () => {
+  const state = seeded();
+  const seen = Model.notices();
+  // The first fetch only sets what has been seen.
+  assert.deepEqual(Model.arrivals(state, seen, 'all'), [], 'the first inbox is never announced');
+  assert.deepEqual(seen.revisions, { 4821: 48213, 4818: 48181, 4824: 48241 });
+  assert.deepEqual(Model.arrivals(state, seen, 'all'), [], 'nothing new, nothing announced');
+  // A reply from someone else, then a new unassigned ticket.
+  Model.applySnapshot(state, Fixtures.update(1, false));
+  assert.deepEqual(Model.arrivals(state, seen, 'all').map(t => t.id), ['4821']);
+  Model.applySnapshot(state, Fixtures.update(2, true));
+  assert.deepEqual(Model.arrivals(state, seen, 'mine'), [], 'unassigned tickets only with "all"');
+  Model.applySnapshot(state, Fixtures.update(3, true));
+  assert.deepEqual(Model.arrivals(state, seen, 'all').map(t => t.id), ['4903']);
+});
+
+test('notifications: own replies, read tickets and returning tickets stay quiet', () => {
+  const state = seeded();
+  const seen = Model.notices();
+  Model.arrivals(state, seen, 'all');
+  const mine = Fixtures.tickets();
+  mine[0].updated_at = '2026-11-06T10:41:00Z';
+  mine[0].comments.unshift({ id: 48219, author: 'Alex', mine: true, public: true, created: Fixtures.BASE + 60000, body: 'Done.' });
+  Model.applySnapshot(state, mine);
+  assert.deepEqual(Model.arrivals(state, seen, 'all'), []);
+  // Read on this computer before the fetch saw it: nothing to announce.
+  const reply = Fixtures.update(1, false);
+  Model.applySnapshot(state, reply);
+  Model.markRead(state, '4821');
+  assert.deepEqual(Model.arrivals(state, seen, 'all'), []);
+  // A ticket that drops out of the search and comes back isn't new.
+  Model.applySnapshot(state, Fixtures.tickets().slice(1));
+  Model.applySnapshot(state, Fixtures.tickets());
+  Model.markUnread(state, '4821');
+  assert.deepEqual(Model.arrivals(state, seen, 'all'), []);
+});
+
+// The helper fetches comments for at most 25 changed tickets per run; the rest
+// come "deferred" (no comments) and follow on later runs.
+function deferredInbox(count, withComments, created) {
+  const list = [];
+  for (let i = 0; i < count; i++) {
+    const id = String(5000 + i);
+    const raw = { id, subject: 'Ticket ' + id, status: 'Open', priority: 'Normal', assignee: i % 2 ? 'Unassigned' : 'Alex',
+                  mine: i % 2 === 0, group: 'IT support', requester: 'Jonas', updated_at: '2026-11-06T10:00:00Z' };
+    if (withComments(i)) raw.comments = [{ id: 50000 + i * 10, author: 'Jonas', mine: false, public: true, created: created, body: 'Old.' }];
+    else raw.deferred = true;
+    list.push(raw);
+  }
+  return list;
+}
+
+test('notifications: tickets whose comments come after the first inbox are taken in quietly', () => {
+  const started = Fixtures.BASE + 3600000;
+  const state = Model.empty();
+  const seen = Model.notices();
+  Model.applySnapshot(state, deferredInbox(60, i => i < 25, Fixtures.BASE));
+  assert.deepEqual(Model.arrivals(state, seen, 'all', started), []);
+  assert.equal(Object.keys(seen.pending).length, 35, 'the deferred tickets wait for their comments');
+  // The next two runs bring the rest: old comments, nothing to announce, in either scope.
+  Model.applySnapshot(state, deferredInbox(60, i => i < 50, Fixtures.BASE));
+  assert.deepEqual(Model.arrivals(state, seen, 'mine', started + 60000), []);
+  Model.applySnapshot(state, deferredInbox(60, () => true, Fixtures.BASE));
+  assert.deepEqual(Model.arrivals(state, seen, 'all', started + 120000), []);
+  assert.deepEqual(seen.pending, {});
+  assert.equal(Model.visible(state).filter(t => !t.read).length, 60, 'still unread in the inbox, just not announced');
+  // A real reply on one of them later is announced.
+  const reply = deferredInbox(60, () => true, Fixtures.BASE);
+  reply[40].comments.unshift({ id: 50401, author: 'Jonas', mine: false, public: true, created: started + 150000, body: 'New.' });
+  Model.applySnapshot(state, reply);
+  assert.deepEqual(Model.arrivals(state, seen, 'all', started + 180000).map(t => t.id), ['5040']);
+});
+
+test('notifications: a deferred ticket announces only comments newer than the first inbox', () => {
+  const started = Fixtures.BASE + 3600000;
+  const state = Model.empty();
+  const seen = Model.notices();
+  Model.applySnapshot(state, deferredInbox(30, i => i < 25, Fixtures.BASE));
+  Model.arrivals(state, seen, 'all', started);
+  // #5027 leaves the inbox before its comments came, and returns with a reply
+  // written after the first inbox; #5028 brings only old comments.
+  Model.applySnapshot(state, deferredInbox(30, i => i < 25, Fixtures.BASE).filter(t => t.id !== '5027'));
+  assert.deepEqual(Model.arrivals(state, seen, 'all', started + 60000), []);
+  assert.ok('5027' in seen.pending, 'a ticket out of the inbox keeps waiting');
+  const back = deferredInbox(30, () => true, Fixtures.BASE);
+  back[27].comments.unshift({ id: 50271, author: 'Jonas', mine: false, public: true, created: started + 90000, body: 'Still broken.' });
+  Model.applySnapshot(state, back);
+  assert.deepEqual(Model.arrivals(state, seen, 'all', started + 120000).map(t => t.id), ['5027']);
+  assert.equal(seen.revisions['5028'], 50280);
+});
+
+test('notifications: a ticket new after the first inbox counts from 0, even when its comments come later', () => {
+  const started = Fixtures.BASE + 3600000;
+  const state = Model.empty();
+  const seen = Model.notices();
+  Model.applySnapshot(state, deferredInbox(25, () => true, Fixtures.BASE));
+  Model.arrivals(state, seen, 'all', started);
+  // A new ticket the run had no budget left for.
+  const later = deferredInbox(26, i => i < 25, Fixtures.BASE);
+  Model.applySnapshot(state, later);
+  assert.deepEqual(Model.arrivals(state, seen, 'all', started + 60000), []);
+  assert.deepEqual(seen.pending, {}, 'only the first inbox waits quietly');
+  Model.applySnapshot(state, deferredInbox(26, () => true, Fixtures.BASE));
+  assert.deepEqual(Model.arrivals(state, seen, 'all', started + 120000).map(t => t.id), ['5025']);
+});
+
+test('notification actions name their account; another account\'s do nothing', () => {
+  const host = 'acme.zendesk.com';
+  assert.deepEqual(Model.parseAction('acme.zendesk.com/4821:48215,4824:48241,junk', host, true),
+                   [{ id: '4821', revision: 48215 }, { id: '4824', revision: 48241 }]);
+  assert.deepEqual(Model.parseAction('acme.zendesk.com/4821', host, false), [{ id: '4821', revision: 0 }]);
+  assert.equal(Model.parseAction('other.zendesk.com/4821:48215', host, true), null, 'another account');
+  assert.equal(Model.parseAction('4821:48215', host, true), null, 'no account (an older notification)');
+  assert.equal(Model.parseAction('4821', host, false), null);
+  assert.equal(Model.parseAction('acme.zendesk.com/4821:48215', '', true), null, 'signed out');
+  assert.equal(Model.parseAction('acme.zendesk.com.evil/4821:1', host, true), null);
+  assert.deepEqual(Model.parseAction('acme.zendesk.com/', host, true), []);
+});
+
+test('a notification button reads up to the comment it showed, never back', () => {
+  const state = seeded();
+  Model.applySnapshot(state, Fixtures.update(2, false));
+  assert.equal(Model.markReadUpTo(state, '4821', 48214), true);
+  assert.equal(Model.visible(state)[0].updates, 1, 'the newer reply stays unread');
+  assert.equal(Model.markReadUpTo(state, '4821', 48213), false, 'a marker never moves back');
+  assert.equal(Model.markReadUpTo(state, '9999', 5), true, 'a ticket that left the inbox keeps the marker');
+  assert.equal(Model.markReadUpTo(state, 'x', 5), false);
+  assert.equal(Model.markReadUpTo(state, '4818', 1.5), false);
+});
+
+test('notification text is escaped markup on one line', () => {
+  assert.equal(Model.notificationText('Tom & <b>Jerry</b>\n\nhi', 100), 'Tom &amp; &lt;b&gt;Jerry&lt;/b&gt; hi');
+  assert.equal(Model.notificationText('abcdefghij', 6), 'abcde…');
+  assert.equal(Model.notificationText(null, 6), '');
+});
+
 test('schedule: overnight ranges carry into the next day; off means always within', () => {
   const week = ['', '', '', '', '', '', ''];
   week[0] = '22:00-02:00'; // Monday night into Tuesday

@@ -2,11 +2,14 @@
 //! a public OAuth client (no client secret), tokens in the keyring, and
 //! refresh-token rotation that saves the new pair before using it.
 //!
-//! Every write of an existing sign-in (a refreshed pair, the user's name)
-//! happens under the token lock and only while the keyring still holds the
-//! pair it started from, and sign-out clears the keyring under the same
-//! lock, so a refresh or check that was in flight can't store the sign-in
-//! again after sign-out.
+//! Every write of a sign-in (a refreshed pair, the user's name, a new
+//! sign-in) happens under the token lock, an existing one only while the
+//! keyring still holds the pair it started from, and sign-out clears the
+//! keyring under the same lock, so a refresh or check that was in flight
+//! can't store the sign-in again after sign-out. Without the lock nothing
+//! is written: a refresh fails (`LOCK_UNAVAILABLE`, `BUSY`) before it asks
+//! Zendesk, and sign-out still clears and revokes but doesn't answer
+//! `signed_out`.
 
 use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -37,9 +40,10 @@ pub struct Account<'a> {
     pub client_id: String,
     pub client: Client,
     pub vault: &'a dyn Vault,
-    /// Where the login and token locks live (`$XDG_RUNTIME_DIR/foamy-zendesk`);
-    /// None runs without locks.
-    pub locks: Option<PathBuf>,
+    /// Where the login and token locks live (`$XDG_RUNTIME_DIR/foamy-zendesk`),
+    /// or why there is no such directory: then nothing that needs the token
+    /// lock runs.
+    pub locks: Result<PathBuf, String>,
 }
 
 fn now() -> u64 {
@@ -61,8 +65,30 @@ fn not_signed_in() -> Failure {
     Failure::coded("SIGNED_OUT", "Sign in to Zendesk in the settings.")
 }
 
-/// Another helper holds the token lock (it is refreshing the sign-in).
-struct Busy;
+/// Why the token lock wasn't taken.
+enum NoLock {
+    /// Another helper holds it (it is refreshing the sign-in).
+    Busy,
+    /// It can't be taken at all: no runtime directory, or the lock file
+    /// can't be created or opened (the detail says why).
+    Unavailable(String),
+}
+
+const RENEWING: &str = "Another Zendesk request is renewing the sign-in.";
+
+/// Why a sign-in can't be stored now.
+fn no_login_lock(no: NoLock) -> Failure {
+    match no {
+        NoLock::Busy => Failure::coded("BUSY", RENEWING),
+        NoLock::Unavailable(detail) => Failure::coded(
+            "LOCK_UNAVAILABLE",
+            crate::text::message(
+                "Can't sign in to Zendesk: the sign-in's lock file can't be used (%1).",
+                &[&detail],
+            ),
+        ),
+    }
+}
 
 /// Whether two records hold the same token pair.
 fn same_pair(a: &Value, b: &Value) -> bool {
@@ -152,11 +178,19 @@ impl Account<'_> {
     /// returning it: Zendesk invalidates the old pair, so losing the new one
     /// would sign the user out. One refresh at a time across processes, and
     /// only while the keyring still holds `old`: `SIGNED_OUT` once sign-out
-    /// has cleared it.
+    /// has cleared it. Never without the token lock (`BUSY`,
+    /// `LOCK_UNAVAILABLE`): Zendesk isn't asked, so the stored pair stays valid.
     fn refresh(&self, old: &Value) -> Result<Value, Failure> {
         let refresh = text(old, "refresh_token").ok_or_else(expired)?;
-        let _lock = self.token_lock(REFRESH_WAIT).map_err(|Busy| {
-            Failure::coded("BUSY", "Another Zendesk request is renewing the sign-in.")
+        let _lock = self.token_lock(REFRESH_WAIT).map_err(|no| match no {
+            NoLock::Busy => Failure::coded("BUSY", RENEWING),
+            NoLock::Unavailable(detail) => Failure::coded(
+                "LOCK_UNAVAILABLE",
+                crate::text::message(
+                    "Can't renew the Zendesk sign-in: its lock file can't be used (%1).",
+                    &[&detail],
+                ),
+            ),
         })?;
         match self.stored()? {
             // Signed out since `old` was read: don't sign in again.
@@ -272,7 +306,7 @@ impl Account<'_> {
 
     /// Stores `record` (the same pair with the user's current name) only
     /// while the keyring still holds its pair. False when signed out
-    /// meanwhile; a busy lock or a newer pair just skips the save.
+    /// meanwhile; a busy or unusable lock or a newer pair just skips the save.
     fn save_user(&self, record: &Value) -> Result<bool, Failure> {
         let Ok(_lock) = self.token_lock(REFRESH_WAIT) else {
             return Ok(true);
@@ -295,53 +329,68 @@ impl Account<'_> {
     }
 
     /// [`Account::logout`], waiting at most `wait` for a refresh in flight.
-    /// When it is still running by then, the keyring is cleared anyway (and
-    /// that refresh, comparing before it stores, revokes its pair instead),
-    /// but sign-out answers `BUSY`: it can't promise nothing survives.
+    /// When it is still running by then, or the lock can't be taken at all,
+    /// the keyring is cleared anyway (and a refresh, comparing before it
+    /// stores, revokes its pair instead), but sign-out answers `BUSY` or
+    /// `LOCK_UNAVAILABLE`, never `signed_out`: it can't promise nothing survives.
     fn logout_within(&self, wait: Duration) -> Result<Value, Failure> {
         let lock = self.token_lock(wait);
         // Read under the lock: what a refresh just stored is what goes.
         let record = self.stored()?;
         let cleared = self.vault.delete();
-        let waited = lock.is_ok();
-        drop(lock);
+        let held = lock.map(drop);
         if let Some(record) = &record {
             self.revoke(record);
         }
         cleared?;
-        if waited {
-            Ok(signed_out())
-        } else {
-            Err(Failure::coded(
+        match held {
+            Ok(()) => Ok(signed_out()),
+            Err(NoLock::Busy) => Err(Failure::coded(
                 "BUSY",
                 "Sign-out didn't finish: another Zendesk request is still renewing the sign-in. Try again.",
-            ))
+            )),
+            Err(NoLock::Unavailable(detail)) => Err(Failure::coded(
+                "LOCK_UNAVAILABLE",
+                crate::text::message(
+                    "Sign-out didn't finish: the Zendesk sign-in's lock file can't be used (%1). Try again.",
+                    &[&detail],
+                ),
+            )),
         }
     }
 
     /// The browser flow. `authorize` receives the URL to open; the helper
     /// then waits (until `wait` passes) for the redirect to the loopback port.
+    /// The code is exchanged and the new pair stored under the token lock,
+    /// so a refresh of an older pair can't overwrite it; without a usable
+    /// lock the browser isn't opened (`LOCK_UNAVAILABLE`).
     pub fn login(
         &self,
         port: u16,
         wait: Duration,
         authorize: impl FnOnce(&str),
     ) -> Result<Value, Failure> {
+        // Fail before the browser rather than after it. Held is fine: a
+        // refresh in flight; it is waited for before storing.
+        if let Err(no @ NoLock::Unavailable(_)) = self.token_lock(Duration::ZERO) {
+            return Err(no_login_lock(no));
+        }
+        // Held by another helper: one browser sign-in at a time. Can't be
+        // used (rare, the token lock just worked): go on without it, two
+        // listeners still can't share the port.
         let lock = self
             .locks
             .as_ref()
             .map(|dir| FileLock::try_exclusive(&dir.join("login.lock")));
-        // Held by another helper: one browser sign-in at a time. No lock
-        // directory, or it can't be used: go on without one.
         let _lock = match lock {
-            Some(Ok(None)) => {
+            Ok(Ok(None)) => {
                 return Err(Failure::coded(
                     "BUSY",
                     "A Zendesk sign-in is already waiting in the browser.",
                 ));
             }
-            Some(Ok(Some(lock))) => Some(lock),
-            Some(Err(_)) | None => None,
+            Ok(Ok(Some(lock))) => Some(lock),
+            Ok(Err(_)) | Err(_) => None,
         };
         let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|error| {
             if error.kind() == ErrorKind::AddrInUse {
@@ -368,6 +417,8 @@ impl Account<'_> {
         );
         let code = wait_for_code(&listener, &state, Instant::now() + wait)?;
         drop(listener);
+        // Not exchanged without the lock, so no tokens are left unstored.
+        let _token_lock = self.token_lock(REFRESH_WAIT).map_err(no_login_lock)?;
         // Codes live for 120 seconds: exchange at once.
         let reply = self.client.request(
             "POST",
@@ -394,17 +445,18 @@ impl Account<'_> {
 }
 
 impl Account<'_> {
-    /// The token lock, waiting at most `wait`: `Err(Busy)` while another
-    /// helper still holds it. No lock directory, or it can't be used: go on
-    /// without one (`Ok(None)`).
-    fn token_lock(&self, wait: Duration) -> Result<Option<FileLock>, Busy> {
-        let Some(dir) = &self.locks else {
-            return Ok(None);
-        };
+    /// The token lock, waiting at most `wait`: `Busy` while another helper
+    /// still holds it, `Unavailable` when there is no lock directory or the
+    /// lock file can't be used. Never "go on without it".
+    fn token_lock(&self, wait: Duration) -> Result<FileLock, NoLock> {
+        let dir = self
+            .locks
+            .as_ref()
+            .map_err(|detail| NoLock::Unavailable(detail.clone()))?;
         match FileLock::exclusive_within(&dir.join("token.lock"), wait) {
-            Ok(Some(lock)) => Ok(Some(lock)),
-            Ok(None) => Err(Busy),
-            Err(_) => Ok(None),
+            Ok(Some(lock)) => Ok(lock),
+            Ok(None) => Err(NoLock::Busy),
+            Err(error) => Err(NoLock::Unavailable(error.to_string())),
         }
     }
 }
@@ -578,12 +630,24 @@ mod tests {
         (base, seen)
     }
 
+    /// Like one helper process: its own account, with a lock directory of
+    /// its own, so tests running in parallel don't wait for each other
+    /// (tests that race helpers share one, see `locked`).
     fn account<'a>(base: &str, vault: &'a Memory) -> Account<'a> {
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let locks = std::env::temp_dir()
+            .join(format!(
+                "foamy-zendesk-test-{}-accounts",
+                std::process::id()
+            ))
+            .join(n.to_string());
+        std::fs::create_dir_all(&locks).unwrap();
         Account {
             client_id: "foamy".into(),
             client: Client::new(base.into(), Duration::from_secs(5)),
             vault,
-            locks: None,
+            locks: Ok(locks),
         }
     }
 
@@ -704,7 +768,7 @@ mod tests {
         assert!(held.is_some());
         let vault = Memory::default();
         let mut second = account("http://127.0.0.1:1", &vault);
-        second.locks = Some(dir.clone());
+        second.locks = Ok(dir.clone());
         let failure = second
             .login(free_port(), Duration::from_secs(1), |_| {})
             .unwrap_err();
@@ -956,7 +1020,7 @@ mod tests {
     /// Another helper process: its own account, the same keyring and locks.
     fn locked<'a>(base: &str, vault: &'a Memory, dir: &Path) -> Account<'a> {
         let mut account = account(base, vault);
-        account.locks = Some(dir.to_owned());
+        account.locks = Ok(dir.to_owned());
         account
     }
 
@@ -1158,5 +1222,279 @@ mod tests {
         assert!(vault.get().unwrap().is_none());
         assert_eq!(revoked(&seen), ["Bearer A2"]);
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// `Account::locks`.
+    type Locks = Result<PathBuf, String>;
+
+    /// Lock directories where `token.lock` can't be created or opened, like
+    /// a runtime directory on a full or read-only filesystem, or none at all.
+    /// Each case is (what, locks); `cleanup(root)` removes them.
+    fn unusable_locks(name: &str) -> (PathBuf, Vec<(&'static str, Locks)>) {
+        use std::os::unix::fs::PermissionsExt;
+        let root = lock_dir(name);
+        let file = root.join("a-file");
+        std::fs::write(&file, b"").unwrap();
+        let read_only = root.join("read-only");
+        std::fs::create_dir(&read_only).unwrap();
+        std::fs::set_permissions(&read_only, std::fs::Permissions::from_mode(0o500)).unwrap();
+        let mut cases = vec![
+            (
+                "no runtime directory",
+                Err("XDG_RUNTIME_DIR is not set".to_string()),
+            ),
+            ("not a directory", Ok(file)),
+            ("removed", Ok(root.join("gone"))),
+        ];
+        // Root writes there anyway.
+        if std::fs::File::create(read_only.join("probe")).is_err() {
+            cases.push(("read-only", Ok(read_only)));
+        }
+        (root, cases)
+    }
+
+    fn cleanup(root: PathBuf) {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(
+            root.join("read-only"),
+            std::fs::Permissions::from_mode(0o700),
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    fn without_locks<'a>(base: &str, vault: &'a Memory, locks: &Locks) -> Account<'a> {
+        let mut account = account(base, vault);
+        account.locks = locks.clone();
+        account
+    }
+
+    #[test]
+    fn without_its_lock_a_renewal_asks_nothing_and_keeps_the_pair() {
+        let (base, seen) = fake(Box::new(|_, _, _| {
+            (
+                200,
+                json!({"access_token": "A2", "refresh_token": "R2", "expires_in": 1800}),
+            )
+        }));
+        let (root, cases) = unusable_locks("renewal-unlocked");
+        for (what, locks) in &cases {
+            let vault = Memory::default();
+            let pair = expiring("A1", "R1");
+            vault.put(&pair).unwrap();
+            let failure = without_locks(&base, &vault, locks)
+                .access_token()
+                .unwrap_err();
+            assert_eq!(failure.code, "LOCK_UNAVAILABLE", "{what}");
+            assert!(
+                failure.message.starts_with(
+                    "Can't renew the Zendesk sign-in: its lock file can't be used (%1).\u{1f}"
+                ),
+                "{what}: {}",
+                failure.message
+            );
+            assert_eq!(
+                vault.get().unwrap().as_deref(),
+                Some(pair.as_str()),
+                "{what}"
+            );
+            // `fetch` goes through the same renewal.
+            let failure = crate::tickets::fetch(
+                &without_locks(&base, &vault, locks),
+                &serde_json::Map::new(),
+            )
+            .unwrap_err();
+            assert_eq!(failure.code, "LOCK_UNAVAILABLE", "{what}");
+        }
+        assert!(seen.lock().unwrap().is_empty(), "Zendesk was never asked");
+        cleanup(root);
+    }
+
+    /// The reviewed interleaving with a lock nobody can take: a fetch's
+    /// renewal and sign-out at once. The renewal never spends the pair,
+    /// sign-out clears and revokes it but doesn't say `signed_out`, and
+    /// nothing is stored afterwards.
+    #[test]
+    fn sign_out_without_the_lock_clears_and_revokes_but_does_not_report_success() {
+        let (base, seen) = fake(Box::new(|method, path, _| match (method, path) {
+            ("POST", "/oauth/tokens") => {
+                std::thread::sleep(Duration::from_millis(300));
+                (
+                    200,
+                    json!({"access_token": "A2", "refresh_token": "R2", "expires_in": 1800}),
+                )
+            }
+            ("DELETE", "/api/v2/oauth/tokens/current.json") => (204, Value::Null),
+            _ => (404, json!({})),
+        }));
+        let (root, cases) = unusable_locks("signout-unlocked");
+        for (what, locks) in &cases {
+            let vault = Memory::default();
+            vault.put(&expiring("A1", "R1")).unwrap();
+            let (fetched, logout) = std::thread::scope(|scope| {
+                let fetch = scope.spawn(|| without_locks(&base, &vault, locks).access_token());
+                let logout = scope.spawn(|| without_locks(&base, &vault, locks).logout());
+                (fetch.join().unwrap(), logout.join().unwrap())
+            });
+            let logout = logout.unwrap_err();
+            assert_eq!(logout.code, "LOCK_UNAVAILABLE", "{what}");
+            assert!(
+                logout.message.starts_with("Sign-out didn't finish: "),
+                "{what}"
+            );
+            // Either it found nothing left, or it refused for want of the lock.
+            let fetched = fetched.unwrap_err().code;
+            assert!(
+                fetched == "LOCK_UNAVAILABLE" || fetched == "SIGNED_OUT",
+                "{what}: {fetched}"
+            );
+            std::thread::sleep(Duration::from_millis(400));
+            assert!(
+                vault.get().unwrap().is_none(),
+                "{what}: no sign-in survives"
+            );
+            assert_eq!(
+                without_locks(&base, &vault, locks)
+                    .access_token()
+                    .unwrap_err()
+                    .code,
+                "SIGNED_OUT",
+                "{what}"
+            );
+            assert_eq!(
+                without_locks(&base, &vault, locks).status().unwrap()["state"],
+                "signed_out"
+            );
+        }
+        let seen = seen.lock().unwrap();
+        assert!(
+            !seen.iter().any(|request| request.0 == "POST"),
+            "no pair was ever spent"
+        );
+        assert_eq!(
+            seen.iter().filter(|request| request.0 == "DELETE").count(),
+            cases.len(),
+            "each sign-out revoked what it read"
+        );
+        drop(seen);
+        cleanup(root);
+    }
+
+    /// A renewal that holds the lock while a sign-out can't use it (say, a
+    /// helper started without `$XDG_RUNTIME_DIR`): sign-out clears and
+    /// revokes but answers `LOCK_UNAVAILABLE`, and the renewal revokes its
+    /// new pair instead of storing it.
+    #[test]
+    fn a_sign_out_that_cannot_lock_does_not_claim_success_over_a_renewal_in_flight() {
+        let hold = Hold::new();
+        let held = Arc::clone(&hold);
+        let (base, seen) = fake(Box::new(move |method, path, body| match (method, path) {
+            ("POST", "/oauth/tokens") if body["refresh_token"] == "R1" => {
+                held.pause();
+                (
+                    200,
+                    json!({"access_token": "A2", "refresh_token": "R2", "expires_in": 1800}),
+                )
+            }
+            ("DELETE", "/api/v2/oauth/tokens/current.json") => (204, Value::Null),
+            _ => (400, json!({"error": "invalid_grant"})),
+        }));
+        let dir = lock_dir("signout-split");
+        let vault = Memory::default();
+        vault.put(&expiring("A1", "R1")).unwrap();
+        let unusable: Locks = Err("XDG_RUNTIME_DIR is not set".to_string());
+        let (fetched, logout) = std::thread::scope(|scope| {
+            let fetch = scope.spawn(|| locked(&base, &vault, &dir).access_token());
+            hold.entered.wait();
+            let logout = without_locks(&base, &vault, &unusable).logout();
+            hold.released.wait();
+            (fetch.join().unwrap(), logout)
+        });
+        assert_eq!(logout.unwrap_err().code, "LOCK_UNAVAILABLE");
+        assert_eq!(fetched.unwrap_err().code, "SIGNED_OUT");
+        assert!(vault.get().unwrap().is_none());
+        assert_eq!(revoked(&seen), ["Bearer A1", "Bearer A2"]);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_check_without_the_lock_does_not_write_the_keyring() {
+        let (base, seen) = fake(Box::new(|method, path, _| match (method, path) {
+            ("GET", "/api/v2/users/me.json") => (
+                200,
+                json!({"user": {"name": "Alex", "email": "alex@acme.com"}}),
+            ),
+            _ => (200, json!({"access_token": "A2", "refresh_token": "R2"})),
+        }));
+        let (root, cases) = unusable_locks("status-unlocked");
+        for (what, locks) in &cases {
+            // A fresh token with no saved name: verified, but the name isn't saved.
+            let vault = Memory::default();
+            let fresh =
+                json!({"access_token": "A1", "refresh_token": "R1", "expires_at": now() + 3600})
+                    .to_string();
+            vault.put(&fresh).unwrap();
+            let status = without_locks(&base, &vault, locks).status().unwrap();
+            assert_eq!(
+                (
+                    status["state"].as_str(),
+                    status["verified"].as_bool(),
+                    status["user"]["name"].as_str()
+                ),
+                (Some("signed_in"), Some(true), Some("Alex")),
+                "{what}"
+            );
+            assert_eq!(
+                vault.get().unwrap().as_deref(),
+                Some(fresh.as_str()),
+                "{what}"
+            );
+            // An expiring one: not renewed, shown with the reason.
+            let pair = expiring("A1", "R1");
+            vault.put(&pair).unwrap();
+            let status = without_locks(&base, &vault, locks).status().unwrap();
+            assert_eq!(
+                (status["state"].as_str(), status["verified"].as_bool()),
+                (Some("signed_in"), Some(false)),
+                "{what}"
+            );
+            assert!(
+                status["error"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with("Can't renew the Zendesk sign-in"),
+                "{what}"
+            );
+            assert_eq!(
+                vault.get().unwrap().as_deref(),
+                Some(pair.as_str()),
+                "{what}"
+            );
+        }
+        assert!(
+            !seen
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|request| request.0 == "POST")
+        );
+        cleanup(root);
+    }
+
+    #[test]
+    fn a_login_without_the_lock_does_not_open_the_browser() {
+        let (base, seen) = fake(Box::new(|_, _, _| (500, json!({}))));
+        let (root, cases) = unusable_locks("login-unlocked");
+        for (what, locks) in &cases {
+            let vault = Memory::default();
+            let mut opened = false;
+            let failure = without_locks(&base, &vault, locks)
+                .login(free_port(), Duration::from_secs(1), |_| opened = true)
+                .unwrap_err();
+            assert_eq!(failure.code, "LOCK_UNAVAILABLE", "{what}");
+            assert!(!opened, "{what}");
+            assert!(vault.get().unwrap().is_none(), "{what}");
+        }
+        assert!(seen.lock().unwrap().is_empty());
+        cleanup(root);
     }
 }

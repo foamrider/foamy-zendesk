@@ -27,8 +27,9 @@
 //!   (`verified` false plus `error` when Zendesk can't be reached right now),
 //! - `{"ok":true,"state":"signed_out"}`, `{"ok":true,"state":"expired"}`,
 //! - `{"ok":false,"code":…,"error":…}` with code `INVALID_ARGUMENT`,
-//!   `KEYRING_UNAVAILABLE`, `PORT_IN_USE`, `BUSY`, `TIMEOUT`, `ACCESS_DENIED`,
-//!   `EXPIRED`, `SIGNED_OUT`, `NETWORK`, `HTTP`, `TLS_UNSUPPORTED` or `INTERNAL`.
+//!   `KEYRING_UNAVAILABLE`, `PORT_IN_USE`, `BUSY`, `LOCK_UNAVAILABLE`, `TIMEOUT`,
+//!   `ACCESS_DENIED`, `EXPIRED`, `SIGNED_OUT`, `NETWORK`, `HTTP`,
+//!   `TLS_UNSUPPORTED` or `INTERNAL`.
 //!
 //! Every `error` is a catalog key of the plugin's `i18n/en.json`; varying
 //! details follow it after U+001F separators and fill its `%1`, `%2`… (see
@@ -41,24 +42,37 @@
 //! `FOAMY_ZENDESK_BASE_URL` (a loopback `http://` URL only) replaces
 //! `https://<address>` in tests.
 //!
-//! Sign-out and refreshes are serialized by `$XDG_RUNTIME_DIR/foamy-zendesk/token.lock`,
-//! so a sign-out can't be undone by a `fetch` or `auth-status` in flight:
+//! Every keyring write and sign-out is serialized by
+//! `$XDG_RUNTIME_DIR/foamy-zendesk/token.lock` (the directory owner-only),
+//! so a sign-out can't be undone by a `fetch` or `auth-status` in flight.
+//! Nothing writes without that lock:
 //!
 //! - A refresh holds the lock from reading the keyring to storing the new
 //!   pair, and stores it only while the keyring still holds the pair it
 //!   started from: none left (signed out) is `SIGNED_OUT` without asking
 //!   Zendesk; cleared while Zendesk answered, it revokes the new pair
-//!   instead of storing it. `auth-status` saves the user's name the same
-//!   way, and answers `signed_out` when the sign-in went meanwhile.
+//!   instead of storing it. Waiting over 15 seconds for the lock is `BUSY`;
+//!   a lock that can't be taken at all (no usable `$XDG_RUNTIME_DIR`, or
+//!   `token.lock` can't be created or opened, say on a full filesystem) is
+//!   `LOCK_UNAVAILABLE`. Either way Zendesk isn't asked, so the stored pair
+//!   stays valid, and `fetch` fails with that code (`auth-status` answers
+//!   `signed_in` with `verified` false and the error).
+//! - `auth-status` saves the user's name under the lock the same way, skips
+//!   the save without it, and answers `signed_out` when the sign-in went
+//!   meanwhile.
+//! - `auth-login` checks the lock before opening the browser
+//!   (`LOCK_UNAVAILABLE`), and exchanges the code and stores the new pair
+//!   holding it, so a refresh of an older pair can't overwrite it.
 //! - `auth-logout` waits up to 30 seconds for the lock, then reads, clears
 //!   and revokes whatever is stored (a refresh that just finished: its new
-//!   pair). Still held by then (a refresh hung on Zendesk or the keyring):
-//!   it clears the keyring and revokes anyway but answers `BUSY`, never
-//!   `signed_out`, since that refresh could still store; signing out again
-//!   finishes once it is done. `KEYRING_UNAVAILABLE` when the keyring can't
-//!   be read or cleared (the token is still revoked when it was read).
-//! - Without a usable runtime directory there is no lock; the
-//!   compare-before-store still applies.
+//!   pair). Without the lock, still held by then (a refresh hung on Zendesk
+//!   or the keyring) or not usable at all, it clears the keyring and revokes
+//!   anyway but answers `BUSY` or `LOCK_UNAVAILABLE`, never `signed_out`,
+//!   since a refresh could still store; signing out again finishes once the
+//!   lock can be taken. `KEYRING_UNAVAILABLE` when the keyring can't be read
+//!   or cleared (the token is still revoked when it was read).
+//! - There is no fallback lock directory: helpers that disagree on where
+//!   the lock lives wouldn't exclude each other.
 
 mod auth;
 mod http;
@@ -124,7 +138,7 @@ fn run(args: Vec<String>) -> Result<Value, Failure> {
         client: http::Client::new(http::base_for(&host)?, http::TIMEOUT),
         client_id,
         vault: &keyring,
-        locks: foamy_helper::lock::runtime_dir("foamy-zendesk").ok(),
+        locks: foamy_helper::lock::runtime_dir("foamy-zendesk").map_err(|error| error.to_string()),
     };
     match command {
         "auth-status" => account.status(),

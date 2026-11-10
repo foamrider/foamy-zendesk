@@ -145,6 +145,80 @@ function visible(state, options) {
   return list;
 }
 
+// Desktop notifications: the newest comment from someone else that has been
+// seen on each ticket (0: none yet).
+function newestFromOthers(ticket) {
+  var item = ticket.history.find(function(entry) { return !entry.mine; });
+  return item ? item.revision : 0;
+}
+
+// What `arrivals` has seen, for one account: `revisions`, the newest comment
+// from someone else seen on each ticket, grows across fetches, so a ticket
+// that drops out of the search and comes back isn't announced again.
+// `pending`: tickets of the first inbox whose comments hadn't come yet (the
+// helper fetches at most 25 per run), id → when that inbox came. Their
+// comments up to then are old, taken in quietly once they arrive.
+function notices() {
+  return { started: false, revisions: {}, pending: {} };
+}
+
+// What a fetch brings that is worth a notification: unread tickets with a
+// comment from someone else newer than any seen before (a ticket new to the
+// inbox counts from 0), newest first. The first inbox (`seen.started` false)
+// only sets what counts as new. `scope` "mine" keeps only tickets assigned to
+// the agent. Updates `seen` (from `notices`); `now`: this inbox's time.
+function arrivals(state, seen, scope, now) {
+  var first = !seen.started;
+  seen.started = true;
+  var out = [];
+  for (var id of Object.keys(state.tickets)) {
+    var ticket = state.tickets[id];
+    if (first && !ticket.loaded) seen.pending[id] = now;
+    if (Object.prototype.hasOwnProperty.call(seen.pending, id)) {
+      // Waiting for its comments, also while it is out of the inbox.
+      if (!ticket.loaded) continue;
+      var cutoff = seen.pending[id];
+      delete seen.pending[id];
+      for (var item of ticket.history) {
+        if (!item.mine && item.received <= cutoff && item.revision > (seen.revisions[id] || 0)) seen.revisions[id] = item.revision;
+      }
+    }
+    var newest = newestFromOthers(ticket);
+    var before = seen.revisions[id] || 0;
+    if (newest > before) seen.revisions[id] = newest;
+    if (first || newest <= before || unread(state, ticket) === 0 || (scope === "mine" && !ticket.mine)) continue;
+    out.push(ticket);
+  }
+  return out.sort(function(a, b) { return b.received - a.received || a.id.localeCompare(b.id); });
+}
+
+// A notification's action carries the account it came from: "<host>/<id>"
+// (show) or "<host>/<id>:<revision>[,…]" (the buttons). Ticket ids and read
+// markers belong to one Zendesk account (`host`, as `host()` gives it), so an
+// action from another account's notification, or one without a host, is
+// null and does nothing. Otherwise the tickets, at most 100: [{ id, revision }]
+// (revision 0 for show); malformed entries are skipped.
+function parseAction(payload, host, withRevision) {
+  var value = String(payload || "");
+  var slash = value.indexOf("/");
+  if (!host || slash < 0 || value.slice(0, slash) !== host) return null;
+  var out = [];
+  var pattern = withRevision ? /^([0-9]{1,15}):([0-9]{1,16})$/ : /^([0-9]{1,15})$/;
+  for (var part of value.slice(slash + 1).split(",").slice(0, 100)) {
+    var match = pattern.exec(part.trim());
+    if (match) out.push({ id: match[1], revision: withRevision ? Number(match[2]) : 0 });
+  }
+  return out;
+}
+
+// Notification bodies are markup: plain text is escaped, folded to one line
+// and cut short. (The shell's JavaScript has no trimEnd.)
+function notificationText(value, limit) {
+  var text = String(value || "").replace(/\s+/g, " ").trim();
+  if (text.length > limit) text = text.slice(0, limit - 1).replace(/ $/, "") + "…";
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 // Whole calendar days from `ms` to `now` in local time: 0 today, 1 yesterday,
 // negative for a time ahead of the clock.
 function daysAgo(ms, now) {
@@ -157,6 +231,14 @@ function markRead(state, id, now) {
   var ticket = state.tickets[id];
   if (!ticket || unread(state, ticket) === 0) return false;
   state.read[id] = { revision: ticket.revision, at: now || Date.now() };
+  return true;
+}
+
+// A notification's button: read up to the comment it showed, so a reply that
+// came in since stays unread. Works for a ticket that has left the inbox too.
+function markReadUpTo(state, id, revision, now) {
+  if (!/^[0-9]{1,15}$/.test(String(id)) || !Number.isSafeInteger(revision) || revision <= marker(state, id)) return false;
+  state.read[id] = { revision: revision, at: now || Date.now() };
   return true;
 }
 
@@ -219,5 +301,6 @@ function ticketUrl(address, id) {
 
 if (typeof module !== "undefined") module.exports = {
   empty, ticketFrom, applySnapshot, known, unread, waiting, section, visible, daysAgo, markRead, markUnread,
-  markAllRead, restore, parseReadState, serializeReadState, host, ticketUrl
+  markReadUpTo, markAllRead, restore, parseReadState, serializeReadState, host, ticketUrl, newestFromOthers, notices,
+  arrivals, parseAction, notificationText
 };

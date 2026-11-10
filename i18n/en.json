@@ -9,7 +9,9 @@
   "Back": "Back",
   "Can't listen on port %1 (%2).": "Can't listen on port %1 (%2).",
   "Can't reach Zendesk. Check your connection.": "Can't reach Zendesk. Check your connection.",
+  "Can't renew the Zendesk sign-in: its lock file can't be used (%1).": "Can't renew the Zendesk sign-in: its lock file can't be used (%1).",
   "Can't sign in": "Can't sign in",
+  "Can't sign in to Zendesk: the sign-in's lock file can't be used (%1).": "Can't sign in to Zendesk: the sign-in's lock file can't be used (%1).",
   "Can't use %1 (%2).": "Can't use %1 (%2).",
   "Cancel": "Cancel",
   "Check every": "Check every",
@@ -89,6 +91,7 @@
   "Sign-in was cancelled in the browser.": "Sign-in was cancelled in the browser.",
   "Sign-in wasn't finished in the browser in time.": "Sign-in wasn't finished in the browser in time.",
   "Sign-out didn't finish: another Zendesk request is still renewing the sign-in. Try again.": "Sign-out didn't finish: another Zendesk request is still renewing the sign-in. Try again.",
+  "Sign-out didn't finish: the Zendesk sign-in's lock file can't be used (%1). Try again.": "Sign-out didn't finish: the Zendesk sign-in's lock file can't be used (%1). Try again.",
   "Signed in": "Signed in",
   "Signed in as %1": "Signed in as %1",
   "Solved": "Solved",
@@ -180,5 +183,18 @@
   "snoozed": "snoozed",
   "Zendesk — snoozed": "Zendesk — snoozed",
   "Stop snoozing": "Stop snoozing",
-  "Resume now": "Resume now"
+  "Resume now": "Resume now",
+  "Notifications": "Notifications",
+  "Desktop notifications": "Desktop notifications",
+  "Off": "Off",
+  "All tickets": "All tickets",
+  "A desktop notification for a new ticket or a new reply from someone else. None while this inbox is open, outside your schedule or while snoozed.": "A desktop notification for a new ticket or a new reply from someone else. None while this inbox is open, outside your schedule or while snoozed.",
+  "%1 updated Zendesk tickets": {
+    "one": "%1 updated Zendesk ticket",
+    "other": "%1 updated Zendesk tickets"
+  },
+  "and %1 more": {
+    "one": "and %1 more",
+    "other": "and %1 more"
+  }
 }

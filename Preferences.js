@@ -12,6 +12,9 @@ var fields = [
   { key: "hideRead", type: "boolean", defaultValue: false },
   { key: "unreadFirst", type: "boolean", defaultValue: false },
   { key: "groupWaiting", type: "boolean", defaultValue: true },
+  // Desktop notifications for new replies and tickets: off, "mine" (assigned
+  // to you) or "all" (also unassigned in your groups).
+  { key: "notify", type: "enum", options: ["off", "mine", "all"], defaultValue: "off" },
   { key: "scheduleEnabled", type: "boolean", defaultValue: false },
   { key: "scheduleOutsideMode", type: "enum", options: ["mute", "hide"], defaultValue: "mute" }
 ].concat(dayKeys.map(function(key) {
