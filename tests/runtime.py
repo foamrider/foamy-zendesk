@@ -394,21 +394,21 @@ ShellRoot {
         if (!check(shell.sent.length === 1 && argv[0] === "notify-send" && tail[0] === "VPN disconnects after sign-in"
                    && tail[1].indexOf("Anna: Follow-up 2: the VPN") === 0, "a new reply is announced with its subject and comment")) return;
         var buttons = hint("omarchy-actions") || [];
-        if (!check(JSON.stringify(hint("omarchy-exec-argv")) === JSON.stringify(["omarchy-shell", "-q", "foamy.zendesk", "show", "4821"])
+        if (!check(JSON.stringify(hint("omarchy-exec-argv")) === JSON.stringify(["omarchy-shell", "-q", "foamy.zendesk", "show", "acme.zendesk.com/4821"])
                    && buttons.length === 2 && buttons[0].label === "View in Zendesk" && buttons[1].label === "Mark as read"
-                   && JSON.stringify(buttons[0].argv.slice(3)) === JSON.stringify(["viewInZendesk", "4821:48215"])
-                   && JSON.stringify(buttons[1].argv.slice(3)) === JSON.stringify(["markRead", "4821:48215"]),
-                   "a click opens it in the inbox; buttons view it in Zendesk or mark it read up to the reply shown")) return;
+                   && JSON.stringify(buttons[0].argv.slice(3)) === JSON.stringify(["viewInZendesk", "acme.zendesk.com/4821:48215"])
+                   && JSON.stringify(buttons[1].argv.slice(3)) === JSON.stringify(["markRead", "acme.zendesk.com/4821:48215"]),
+                   "a click opens it in the inbox; buttons view it in Zendesk or mark it read up to the reply shown, for this account")) return;
         var icon = argv.find(function(arg) { return arg.indexOf("--icon=") === 0; }) || "";
         if (!check(/\/icons\/zendesk\.png$/.test(icon) && icon.slice(7).charAt(0) === "/", "the Zendesk icon is a local PNG path")) return;
         // The buttons' IPC: a newer reply (here: after the one announced) stays unread.
         store.receive(Fixtures.update(3, false));
         shell.sent = shell.sent.slice(0, 1);
         shell.opened = [];
-        store.viewInZendesk("4821:48215");
+        store.viewInZendesk("acme.zendesk.com/4821:48215");
         if (!check(shell.opened[0] === "https://acme.zendesk.com/agent/tickets/4821" && store.ticketById("4821").ticket.updates === 1,
                    "View in Zendesk opens it and reads up to the reply shown")) return;
-        store.markReadUpTo("4821:48216,4824:48241,junk");
+        store.markReadUpTo("acme.zendesk.com/4821:48216,4824:48241,junk");
         if (!check(store.ticketById("4821").ticket.read && store.ticketById("4824").ticket.read, "Mark as read takes several tickets")) return;
         store.markUnread("4824");
         store.receive(Fixtures.update(2, false));
@@ -429,15 +429,72 @@ ShellRoot {
         argv = shell.sent[1] || [];
         tail = argv.slice(argv.indexOf("--") + 1);
         if (!check(shell.sent.length === 2 && tail[0] === "2 updated Zendesk tickets" && hint("omarchy-actions").length === 1
-                   && hint("omarchy-actions")[0].label === "Mark all as read" && hint("omarchy-actions")[0].argv[4] === "4905:49005,4904:49004"
+                   && hint("omarchy-actions")[0].label === "Mark all as read" && hint("omarchy-actions")[0].argv[4] === "acme.zendesk.com/4905:49005,4904:49004"
                    && hint("omarchy-exec-argv")[3] === "open", "several at once are one notification that opens the inbox")) return;
         one.prefs.save("notify", "off");
         store.receive(Fixtures.update(6, false));
         if (!check(shell.sent.length === 2, "off: nothing is announced")) return;
         // The notification's click (the show IPC): the inbox with that ticket open and read.
-        one.showTicket("4824");
+        one.showNotified("acme.zendesk.com/4824");
         if (!check(one.opened && view.expandedIds.length === 1 && view.expandedIds[0] === "4824" && !view.editingSettings
                    && store.ticketById("4824").ticket.read, "show opens the inbox on the ticket and marks it read")) return;
+        one.close();
+        break;
+      case 15:
+        // A first inbox of more than 25 changed tickets: the helper brings the
+        // comments of 25 and defers the rest to later runs.
+        var inbox = function(withComments) {
+          var list = [];
+          for (var i = 0; i < 30; i++) {
+            var raw = { id: String(5000 + i), subject: "Ticket " + (5000 + i), status: "Open", priority: "Normal", assignee: "Alex", mine: true,
+                        group: "IT support", requester: "Jonas", updated_at: "2026-11-06T10:00:00Z" };
+            if (withComments(i)) raw.comments = [{ id: 50000 + i * 10, author: "Jonas", mine: false, public: true, created: Fixtures.BASE, body: "Old." }];
+            else raw.deferred = true;
+            list.push(raw);
+          }
+          return list;
+        };
+        if (!check(!store.watching, "the popup is closed again")) return;
+        one.prefs.save("notify", "mine");
+        shell.sent = [];
+        store.loadFixtures(inbox(function(i) { return i < 25; }));
+        store.receive(inbox(function() { return true; }));
+        if (!check(shell.sent.length === 0 && store.unreadCount === 30, "the first inbox's deferred comments come later and are not announced")) return;
+        var reply = inbox(function() { return true; });
+        reply[27].comments.unshift({ id: 50271, author: "Jonas", mine: false, public: true, created: Date.now(), body: "Still broken." });
+        store.receive(reply);
+        tail = (shell.sent[0] || []).slice((shell.sent[0] || []).indexOf("--") + 1);
+        if (!check(shell.sent.length === 1 && tail[0] === "Ticket 5027" && tail[1] === "Jonas: Still broken.", "a new reply on one of them is")) return;
+        // Another account: the old notifications' click and buttons do nothing to it.
+        one.prefs.save("zendeskAddress", "globex");
+        if (!check(store.host === "globex.zendesk.com", "the inbox belongs to the new account")) return;
+        store.loadFixtures(Fixtures.tickets());
+        shell.opened = [];
+        store.markReadUpTo("acme.zendesk.com/4821:48299,4824:48241");
+        store.viewInZendesk("acme.zendesk.com/4818:48181");
+        store.markReadUpTo("4821:48213");
+        store.viewInZendesk("4818:48181");
+        if (!check(shell.opened.length === 0 && store.unreadCount === 3 && Object.keys(store.state.read).length === 0,
+                   "another account's (or an older) notification marks nothing read and opens nothing")) return;
+        one.showNotified("acme.zendesk.com/4824");
+        if (!check(one.opened && view.expandedIds.length === 0 && !store.ticketById("4824").ticket.read, "its click opens only the inbox")) return;
+        one.close();
+        store.viewInZendesk("globex.zendesk.com/4818:48181");
+        store.markReadUpTo("globex.zendesk.com/4824:48241");
+        if (!check(shell.opened.length === 1 && shell.opened[0] === "https://globex.zendesk.com/agent/tickets/4818"
+                   && store.ticketById("4818").ticket.read && store.ticketById("4824").ticket.read && store.unreadCount === 1,
+                   "this account's notifications still work")) return;
+        break;
+      case 16:
+        if (!check(!store.watching, "the popup is closed")) return;
+        shell.sent = [];
+        store.receive(Fixtures.update(1, false));
+        var sentHint = function(name) {
+          var found = (shell.sent[0] || []).find(function(arg) { return arg.indexOf("--hint=string:" + name + ":") === 0; });
+          return found ? JSON.parse(found.slice(("--hint=string:" + name + ":").length)) : null;
+        };
+        if (!check(shell.sent.length === 1 && sentHint("omarchy-exec-argv")[4] === "globex.zendesk.com/4821"
+                   && sentHint("omarchy-actions")[1].argv[4] === "globex.zendesk.com/4821:48214", "new notifications name the new account")) return;
         console.log("FOAMY DONE runtime interactions passed"); Qt.quit();
       }
     }

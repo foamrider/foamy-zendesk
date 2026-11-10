@@ -51,7 +51,11 @@ Settings (in the ⋯ menu, `s`, or right-click the bar icon):
   all as read**. The buttons read only up to the comments announced, so a
   reply that came in since stays unread. Nothing is announced while an inbox
   popup is open, outside the schedule or while snoozed, and the first inbox
-  after the shell starts or you sign in only sets what counts as new.
+  after the shell starts or you sign in only sets what counts as new (also
+  for its tickets whose comments come on a later check: only comments
+  written after it are announced). A notification belongs to the account it
+  came from: while another Zendesk address is set, its buttons do nothing
+  and a click only opens the inbox.
   Zendesk can't push to the desktop (its webhooks need a public server and
   an admin), so a notification comes with the next check: up to **Check
   every** late, plus however far Zendesk's search lags.
@@ -160,9 +164,11 @@ clipped comment in full, then the earlier comments), `u` undoes Mark all as read
 and `s` opens settings.
 
 IPC: `omarchy-shell foamy.zendesk <open|close|toggle|settings|snooze>` (`snooze`
-is the ⋯ menu's snooze entry). A notification uses `show <ticket id>` (the
-inbox with that ticket open), `viewInZendesk <id>:<comment id>` and
-`markRead <id>:<comment id>[,…]` (read up to that comment).
+is the ⋯ menu's snooze entry). A notification uses `show <host>/<ticket id>`
+(the inbox with that ticket open), `viewInZendesk <host>/<id>:<comment id>`
+and `markRead <host>/<id>:<comment id>[,…]` (read up to that comment), where
+`<host>` is the account's, such as `acme.zendesk.com`. With another host, or
+none, they change nothing: `show` opens only the inbox.
 
 ## Install
 

@@ -62,6 +62,13 @@ Ui.Panel {
     var view = popup.ensureBody();
     if (view) view.showTicket(String(id));
   }
+  // The show IPC, "host/id": that ticket, or only the inbox when the
+  // notification came from another account.
+  function showNotified(ticket) {
+    var id = TicketStore.shownTicket(ticket);
+    if (id) showTicket(id);
+    else root.open();
+  }
   FoamyIpc {
     enabled: member.isLeader
     target: "foamy.zendesk"
@@ -69,8 +76,9 @@ Ui.Panel {
     function close(): void { root.close() }
     function toggle(): void { root.toggle() }
     function settings(): void { root.openSettings() }
-    function show(id: string): void { root.showTicket(id) }
-    // A notification's buttons: "id:revision" (comma-separated for markRead).
+    function show(ticket: string): void { root.showNotified(ticket) }
+    // A notification's buttons: "host/id:revision" (comma-separated for
+    // markRead); from another account they do nothing.
     function markRead(tickets: string): void { TicketStore.markReadUpTo(tickets) }
     function viewInZendesk(ticket: string): void { TicketStore.viewInZendesk(ticket) }
     function snooze(): void { TicketStore.toggleSnooze() }
