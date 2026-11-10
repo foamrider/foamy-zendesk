@@ -28,7 +28,7 @@
 //! - `{"ok":true,"state":"signed_out"}`, `{"ok":true,"state":"expired"}`,
 //! - `{"ok":false,"code":…,"error":…}` with code `INVALID_ARGUMENT`,
 //!   `KEYRING_UNAVAILABLE`, `PORT_IN_USE`, `BUSY`, `TIMEOUT`, `ACCESS_DENIED`,
-//!   `EXPIRED`, `NETWORK`, `HTTP`, `TLS_UNSUPPORTED` or `INTERNAL`.
+//!   `EXPIRED`, `SIGNED_OUT`, `NETWORK`, `HTTP`, `TLS_UNSUPPORTED` or `INTERNAL`.
 //!
 //! Every `error` is a catalog key of the plugin's `i18n/en.json`; varying
 //! details follow it after U+001F separators and fill its `%1`, `%2`… (see
@@ -40,6 +40,25 @@
 //! refreshed (and the rotated pair stored before use) when they expire.
 //! `FOAMY_ZENDESK_BASE_URL` (a loopback `http://` URL only) replaces
 //! `https://<address>` in tests.
+//!
+//! Sign-out and refreshes are serialized by `$XDG_RUNTIME_DIR/foamy-zendesk/token.lock`,
+//! so a sign-out can't be undone by a `fetch` or `auth-status` in flight:
+//!
+//! - A refresh holds the lock from reading the keyring to storing the new
+//!   pair, and stores it only while the keyring still holds the pair it
+//!   started from: none left (signed out) is `SIGNED_OUT` without asking
+//!   Zendesk; cleared while Zendesk answered, it revokes the new pair
+//!   instead of storing it. `auth-status` saves the user's name the same
+//!   way, and answers `signed_out` when the sign-in went meanwhile.
+//! - `auth-logout` waits up to 30 seconds for the lock, then reads, clears
+//!   and revokes whatever is stored (a refresh that just finished: its new
+//!   pair). Still held by then (a refresh hung on Zendesk or the keyring):
+//!   it clears the keyring and revokes anyway but answers `BUSY`, never
+//!   `signed_out`, since that refresh could still store; signing out again
+//!   finishes once it is done. `KEYRING_UNAVAILABLE` when the keyring can't
+//!   be read or cleared (the token is still revoked when it was read).
+//! - Without a usable runtime directory there is no lock; the
+//!   compare-before-store still applies.
 
 mod auth;
 mod http;

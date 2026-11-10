@@ -1,6 +1,12 @@
 //! Sign in, check and sign out: the authorization code grant with PKCE for
 //! a public OAuth client (no client secret), tokens in the keyring, and
 //! refresh-token rotation that saves the new pair before using it.
+//!
+//! Every write of an existing sign-in (a refreshed pair, the user's name)
+//! happens under the token lock and only while the keyring still holds the
+//! pair it started from, and sign-out clears the keyring under the same
+//! lock, so a refresh or check that was in flight can't store the sign-in
+//! again after sign-out.
 
 use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -19,6 +25,12 @@ use crate::vault::Vault;
 
 /// Refresh this long before the access token expires.
 const REFRESH_MARGIN: u64 = 60;
+/// How long a refresh (or a check saving the user) waits for the token lock.
+const REFRESH_WAIT: Duration = Duration::from_secs(15);
+/// How long sign-out waits for a refresh in flight. A refresh holds the lock
+/// for one keyring read, one token request (`http::TIMEOUT`, 20 s) and one
+/// keyring read and write, normally well under a second.
+const LOGOUT_WAIT: Duration = Duration::from_secs(30);
 const MAX_HEAD: usize = 8 * 1024;
 
 pub struct Account<'a> {
@@ -43,6 +55,18 @@ fn expired() -> Failure {
 
 fn signed_out() -> Value {
     json!({"ok": true, "state": "signed_out"})
+}
+
+fn not_signed_in() -> Failure {
+    Failure::coded("SIGNED_OUT", "Sign in to Zendesk in the settings.")
+}
+
+/// Another helper holds the token lock (it is refreshing the sign-in).
+struct Busy;
+
+/// Whether two records hold the same token pair.
+fn same_pair(a: &Value, b: &Value) -> bool {
+    a["access_token"] == b["access_token"] && a["refresh_token"] == b["refresh_token"]
 }
 
 fn text(value: &Value, key: &str) -> Option<String> {
@@ -109,17 +133,37 @@ impl Account<'_> {
         }
     }
 
+    fn stored(&self) -> Result<Option<Value>, Failure> {
+        Ok(self.vault.get()?.as_deref().and_then(parse_record))
+    }
+
+    /// Asks Zendesk to revoke the record's access token (best effort).
+    fn revoke(&self, record: &Value) {
+        let access = text(record, "access_token").unwrap_or_default();
+        let _ = self.client.request(
+            "DELETE",
+            "/api/v2/oauth/tokens/current.json",
+            Some(&access),
+            None,
+        );
+    }
+
     /// Exchanges the refresh token for a new pair and stores it before
     /// returning it: Zendesk invalidates the old pair, so losing the new one
-    /// would sign the user out. One refresh at a time across processes.
+    /// would sign the user out. One refresh at a time across processes, and
+    /// only while the keyring still holds `old`: `SIGNED_OUT` once sign-out
+    /// has cleared it.
     fn refresh(&self, old: &Value) -> Result<Value, Failure> {
         let refresh = text(old, "refresh_token").ok_or_else(expired)?;
-        let _lock = self.token_lock()?;
-        // Another helper may have refreshed while this one waited.
-        if let Some(current) = self.vault.get()?.as_deref().and_then(parse_record)
-            && current["access_token"] != old["access_token"]
-        {
-            return Ok(current);
+        let _lock = self.token_lock(REFRESH_WAIT).map_err(|Busy| {
+            Failure::coded("BUSY", "Another Zendesk request is renewing the sign-in.")
+        })?;
+        match self.stored()? {
+            // Signed out since `old` was read: don't sign in again.
+            None => return Err(not_signed_in()),
+            // Another helper refreshed while this one waited.
+            Some(current) if !same_pair(&current, old) => return Ok(current),
+            Some(_) => {}
         }
         let reply = self.client.request(
             "POST",
@@ -136,18 +180,25 @@ impl Account<'_> {
             return Err(refused(&reply));
         }
         let record = tokens_from(&reply.body, old.get("user"))?;
-        self.vault.put(&record.to_string())?;
-        Ok(record)
+        // Compare again before storing: a sign-out that gave up waiting for
+        // this lock may have cleared the keyring meanwhile.
+        match self.stored()? {
+            Some(current) if same_pair(&current, old) => {
+                self.vault.put(&record.to_string())?;
+                Ok(record)
+            }
+            current => {
+                self.revoke(&record);
+                current.ok_or_else(not_signed_in)
+            }
+        }
     }
 
     /// A usable access token, refreshed (and the new pair stored) when it is
     /// about to expire. `SIGNED_OUT` or `EXPIRED` when there is none.
     pub fn access_token(&self) -> Result<String, Failure> {
-        let Some(mut record) = self.vault.get()?.as_deref().and_then(parse_record) else {
-            return Err(Failure::coded(
-                "SIGNED_OUT",
-                "Sign in to Zendesk in the settings.",
-            ));
+        let Some(mut record) = self.stored()? else {
+            return Err(not_signed_in());
         };
         if record["expires_at"]
             .as_u64()
@@ -161,7 +212,7 @@ impl Account<'_> {
     /// `signed_out`, `expired`, or `signed_in` with the user (`verified`
     /// false and an `error` when Zendesk can't be reached right now).
     pub fn status(&self) -> Result<Value, Failure> {
-        let Some(mut record) = self.vault.get()?.as_deref().and_then(parse_record) else {
+        let Some(mut record) = self.stored()? else {
             return Ok(signed_out());
         };
         let offline = |record: &Value, failure: Failure| {
@@ -178,6 +229,7 @@ impl Account<'_> {
                 Err(failure) if failure.code == "EXPIRED" => {
                     return Ok(json!({"ok": true, "state": "expired"}));
                 }
+                Err(failure) if failure.code == "SIGNED_OUT" => return Ok(signed_out()),
                 Err(failure) if failure.code == "KEYRING_UNAVAILABLE" => return Err(failure),
                 Err(failure) => return Ok(offline(&record, failure)),
             }
@@ -188,7 +240,9 @@ impl Account<'_> {
                 Ok(user) => {
                     if record.get("user") != Some(&user) {
                         record["user"] = user.clone();
-                        self.vault.put(&record.to_string())?;
+                        if !self.save_user(&record)? {
+                            return Ok(signed_out());
+                        }
                     }
                     return Ok(
                         json!({"ok": true, "state": "signed_in", "user": user, "verified": true}),
@@ -204,6 +258,7 @@ impl Account<'_> {
                         Err(failure) if failure.code == "EXPIRED" => {
                             return Ok(json!({"ok": true, "state": "expired"}));
                         }
+                        Err(failure) if failure.code == "SIGNED_OUT" => return Ok(signed_out()),
                         Err(failure) => return Ok(offline(&record, failure)),
                     }
                 }
@@ -215,19 +270,53 @@ impl Account<'_> {
         }
     }
 
-    /// Revokes the token at Zendesk (best effort) and removes it from the keyring.
-    pub fn logout(&self) -> Result<Value, Failure> {
-        if let Some(record) = self.vault.get()?.as_deref().and_then(parse_record) {
-            let access = text(&record, "access_token").unwrap_or_default();
-            let _ = self.client.request(
-                "DELETE",
-                "/api/v2/oauth/tokens/current.json",
-                Some(&access),
-                None,
-            );
+    /// Stores `record` (the same pair with the user's current name) only
+    /// while the keyring still holds its pair. False when signed out
+    /// meanwhile; a busy lock or a newer pair just skips the save.
+    fn save_user(&self, record: &Value) -> Result<bool, Failure> {
+        let Ok(_lock) = self.token_lock(REFRESH_WAIT) else {
+            return Ok(true);
+        };
+        match self.stored()? {
+            None => Ok(false),
+            Some(current) if same_pair(&current, record) => {
+                self.vault.put(&record.to_string())?;
+                Ok(true)
+            }
+            Some(_) => Ok(true),
         }
-        self.vault.delete()?;
-        Ok(signed_out())
+    }
+
+    /// Removes the sign-in from the keyring and revokes its token at
+    /// Zendesk (best effort), under the token lock: a refresh in flight
+    /// finishes first, and the pair it stored is the one removed and revoked.
+    pub fn logout(&self) -> Result<Value, Failure> {
+        self.logout_within(LOGOUT_WAIT)
+    }
+
+    /// [`Account::logout`], waiting at most `wait` for a refresh in flight.
+    /// When it is still running by then, the keyring is cleared anyway (and
+    /// that refresh, comparing before it stores, revokes its pair instead),
+    /// but sign-out answers `BUSY`: it can't promise nothing survives.
+    fn logout_within(&self, wait: Duration) -> Result<Value, Failure> {
+        let lock = self.token_lock(wait);
+        // Read under the lock: what a refresh just stored is what goes.
+        let record = self.stored()?;
+        let cleared = self.vault.delete();
+        let waited = lock.is_ok();
+        drop(lock);
+        if let Some(record) = &record {
+            self.revoke(record);
+        }
+        cleared?;
+        if waited {
+            Ok(signed_out())
+        } else {
+            Err(Failure::coded(
+                "BUSY",
+                "Sign-out didn't finish: another Zendesk request is still renewing the sign-in. Try again.",
+            ))
+        }
     }
 
     /// The browser flow. `authorize` receives the URL to open; the helper
@@ -305,16 +394,16 @@ impl Account<'_> {
 }
 
 impl Account<'_> {
-    fn token_lock(&self) -> Result<Option<FileLock>, Failure> {
+    /// The token lock, waiting at most `wait`: `Err(Busy)` while another
+    /// helper still holds it. No lock directory, or it can't be used: go on
+    /// without one (`Ok(None)`).
+    fn token_lock(&self, wait: Duration) -> Result<Option<FileLock>, Busy> {
         let Some(dir) = &self.locks else {
             return Ok(None);
         };
-        match FileLock::exclusive_within(&dir.join("token.lock"), Duration::from_secs(15)) {
+        match FileLock::exclusive_within(&dir.join("token.lock"), wait) {
             Ok(Some(lock)) => Ok(Some(lock)),
-            Ok(None) => Err(Failure::coded(
-                "BUSY",
-                "Another Zendesk request is renewing the sign-in.",
-            )),
+            Ok(None) => Err(Busy),
             Err(_) => Ok(None),
         }
     }
@@ -432,52 +521,58 @@ mod tests {
     use super::*;
     use crate::vault::Memory;
     use std::io::BufRead;
-    use std::sync::{Arc, Mutex};
+    use std::path::Path;
+    use std::sync::{Arc, Barrier, Mutex};
 
-    type Route = Box<dyn Fn(&str, &str, &Value) -> (u16, Value) + Send>;
+    type Route = Box<dyn Fn(&str, &str, &Value) -> (u16, Value) + Send + Sync>;
     /// (method, path, authorization, body) per request.
     type Log = Arc<Mutex<Vec<(String, String, String, Value)>>>;
 
-    /// A fake Zendesk on loopback: answers every request with `route`,
-    /// recording (method, path, authorization, body).
+    /// A fake Zendesk on loopback: answers every request with `route` (each
+    /// connection on its own thread, so one held reply doesn't hold the
+    /// others), recording (method, path, authorization, body).
     fn fake(route: Route) -> (String, Log) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
         let seen = Arc::new(Mutex::new(Vec::new()));
         let log = Arc::clone(&seen);
+        let route = Arc::new(route);
         std::thread::spawn(move || {
             for stream in listener.incoming() {
-                let mut stream = std::io::BufReader::new(stream.unwrap());
-                let mut line = String::new();
-                stream.read_line(&mut line).unwrap();
-                let mut parts = line.split_whitespace();
-                let (method, path) = (
-                    parts.next().unwrap_or("").to_string(),
-                    parts.next().unwrap_or("").to_string(),
-                );
-                let (mut length, mut auth) = (0usize, String::new());
-                loop {
-                    let mut header = String::new();
-                    stream.read_line(&mut header).unwrap();
-                    let header = header.trim_end();
-                    if header.is_empty() {
-                        break;
+                let (log, route) = (Arc::clone(&log), Arc::clone(&route));
+                std::thread::spawn(move || {
+                    let mut stream = std::io::BufReader::new(stream.unwrap());
+                    let mut line = String::new();
+                    stream.read_line(&mut line).unwrap();
+                    let mut parts = line.split_whitespace();
+                    let (method, path) = (
+                        parts.next().unwrap_or("").to_string(),
+                        parts.next().unwrap_or("").to_string(),
+                    );
+                    let (mut length, mut auth) = (0usize, String::new());
+                    loop {
+                        let mut header = String::new();
+                        stream.read_line(&mut header).unwrap();
+                        let header = header.trim_end();
+                        if header.is_empty() {
+                            break;
+                        }
+                        let (name, value) = header.split_once(": ").unwrap_or((header, ""));
+                        match name.to_ascii_lowercase().as_str() {
+                            "content-length" => length = value.parse().unwrap(),
+                            "authorization" => auth = value.into(),
+                            _ => {}
+                        }
                     }
-                    let (name, value) = header.split_once(": ").unwrap_or((header, ""));
-                    match name.to_ascii_lowercase().as_str() {
-                        "content-length" => length = value.parse().unwrap(),
-                        "authorization" => auth = value.into(),
-                        _ => {}
-                    }
-                }
-                let mut body = vec![0; length];
-                stream.read_exact(&mut body).unwrap();
-                let body: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
-                let (status, reply) = route(&method, &path, &body);
-                log.lock().unwrap().push((method, path, auth, body));
-                let reply = reply.to_string();
-                let mut stream = stream.into_inner();
-                write!(stream, "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}", reply.len()).unwrap();
+                    let mut body = vec![0; length];
+                    stream.read_exact(&mut body).unwrap();
+                    let body: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+                    let (status, reply) = route(&method, &path, &body);
+                    log.lock().unwrap().push((method, path, auth, body));
+                    let reply = reply.to_string();
+                    let mut stream = stream.into_inner();
+                    write!(stream, "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}", reply.len()).unwrap();
+                });
             }
         });
         (base, seen)
@@ -827,5 +922,241 @@ mod tests {
             (seen[0].0.as_str(), seen[0].1.as_str(), seen[0].2.as_str()),
             ("DELETE", "/api/v2/oauth/tokens/current.json", "Bearer A1")
         );
+    }
+    /// A reply the test holds: the route calls `pause`, which returns once
+    /// the test has seen the request arrive (`entered`) and let it go
+    /// (`released`).
+    struct Hold {
+        entered: Barrier,
+        released: Barrier,
+    }
+
+    impl Hold {
+        fn new() -> Arc<Hold> {
+            Arc::new(Hold {
+                entered: Barrier::new(2),
+                released: Barrier::new(2),
+            })
+        }
+        fn pause(&self) {
+            self.entered.wait();
+            self.released.wait();
+        }
+    }
+
+    /// A fresh lock directory for one test (like `$XDG_RUNTIME_DIR/foamy-zendesk`).
+    fn lock_dir(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("foamy-zendesk-test-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// Another helper process: its own account, the same keyring and locks.
+    fn locked<'a>(base: &str, vault: &'a Memory, dir: &Path) -> Account<'a> {
+        let mut account = account(base, vault);
+        account.locks = Some(dir.to_owned());
+        account
+    }
+
+    fn expiring(access: &str, refresh: &str) -> String {
+        json!({"access_token": access, "refresh_token": refresh, "expires_at": now() + 10})
+            .to_string()
+    }
+
+    fn revoked(seen: &Log) -> Vec<String> {
+        seen.lock()
+            .unwrap()
+            .iter()
+            .filter(|request| request.0 == "DELETE")
+            .map(|request| request.2.clone())
+            .collect()
+    }
+
+    /// The reported race: a fetch's refresh has spent A1/R1 at Zendesk and
+    /// not yet stored A2/R2 when sign-out runs.
+    #[test]
+    fn sign_out_waits_for_a_renewal_in_flight_and_revokes_the_new_pair() {
+        let hold = Hold::new();
+        let held = Arc::clone(&hold);
+        let (base, seen) = fake(Box::new(move |method, path, body| match (method, path) {
+            ("POST", "/oauth/tokens") if body["refresh_token"] == "R1" => {
+                held.pause();
+                (
+                    200,
+                    json!({"access_token": "A2", "refresh_token": "R2", "expires_in": 1800}),
+                )
+            }
+            ("DELETE", "/api/v2/oauth/tokens/current.json") => (204, Value::Null),
+            _ => (400, json!({"error": "invalid_grant"})),
+        }));
+        let dir = lock_dir("signout-waits");
+        let vault = Memory::default();
+        vault.put(&expiring("A1", "R1")).unwrap();
+        let (fetched, waited, logout) = std::thread::scope(|scope| {
+            let fetch = scope.spawn(|| locked(&base, &vault, &dir).access_token());
+            hold.entered.wait();
+            let logout = scope.spawn(|| locked(&base, &vault, &dir).logout());
+            std::thread::sleep(Duration::from_millis(300));
+            let waited = !logout.is_finished();
+            hold.released.wait();
+            (fetch.join().unwrap(), waited, logout.join().unwrap())
+        });
+        assert!(waited, "sign-out waits for the renewal");
+        assert_eq!(fetched.unwrap(), "A2");
+        assert_eq!(logout.unwrap()["state"], "signed_out");
+        assert!(
+            vault.get().unwrap().is_none(),
+            "no sign-in survives sign-out"
+        );
+        assert_eq!(revoked(&seen), ["Bearer A2"]);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_renewal_after_sign_out_neither_asks_zendesk_nor_stores() {
+        let (base, seen) = fake(Box::new(|_, _, _| {
+            (200, json!({"access_token": "A2", "refresh_token": "R2"}))
+        }));
+        let vault = Memory::default();
+        // The fetch read A1/R1 before sign-out cleared the keyring.
+        let old: Value = serde_json::from_str(&expiring("A1", "R1")).unwrap();
+        let failure = account(&base, &vault).refresh(&old).unwrap_err();
+        assert_eq!(failure.code, "SIGNED_OUT");
+        assert!(vault.get().unwrap().is_none());
+        assert!(seen.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_check_running_across_sign_out_does_not_store_the_sign_in_again() {
+        let hold = Hold::new();
+        let held = Arc::clone(&hold);
+        let (base, _) = fake(Box::new(move |method, path, _| match (method, path) {
+            ("GET", "/api/v2/users/me.json") => {
+                held.pause();
+                (
+                    200,
+                    json!({"user": {"name": "Alex", "email": "alex@acme.com"}}),
+                )
+            }
+            _ => (204, Value::Null),
+        }));
+        let dir = lock_dir("status-signout");
+        let vault = Memory::default();
+        vault
+            .put(
+                &json!({"access_token": "A1", "refresh_token": "R1", "expires_at": now() + 3600})
+                    .to_string(),
+            )
+            .unwrap();
+        let (status, logout) = std::thread::scope(|scope| {
+            let status = scope.spawn(|| locked(&base, &vault, &dir).status());
+            hold.entered.wait();
+            let logout = locked(&base, &vault, &dir).logout();
+            hold.released.wait();
+            (status.join().unwrap(), logout)
+        });
+        assert_eq!(logout.unwrap()["state"], "signed_out");
+        assert_eq!(status.unwrap()["state"], "signed_out");
+        assert!(vault.get().unwrap().is_none());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+    #[test]
+    fn a_sign_out_that_cannot_wait_longer_clears_the_keyring_but_says_it_did_not_finish() {
+        let (base, seen) = fake(Box::new(|_, _, _| (204, Value::Null)));
+        let dir = lock_dir("signout-timeout");
+        // A refresh that hangs with the lock.
+        let hung = FileLock::try_exclusive(&dir.join("token.lock"))
+            .unwrap()
+            .unwrap();
+        let vault = Memory::default();
+        vault.put(&expiring("A1", "R1")).unwrap();
+        let started = Instant::now();
+        let failure = locked(&base, &vault, &dir)
+            .logout_within(Duration::from_millis(200))
+            .unwrap_err();
+        assert!(started.elapsed() < Duration::from_secs(4));
+        assert_eq!(failure.code, "BUSY");
+        assert!(vault.get().unwrap().is_none());
+        assert_eq!(revoked(&seen), ["Bearer A1"]);
+        drop(hung);
+        // Once the lock is free, signing out again finishes.
+        assert_eq!(
+            locked(&base, &vault, &dir).logout().unwrap()["state"],
+            "signed_out"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_renewal_that_outlives_a_sign_out_revokes_its_new_pair_instead_of_storing_it() {
+        let hold = Hold::new();
+        let held = Arc::clone(&hold);
+        let (base, seen) = fake(Box::new(move |method, path, body| match (method, path) {
+            ("POST", "/oauth/tokens") if body["refresh_token"] == "R1" => {
+                held.pause();
+                (
+                    200,
+                    json!({"access_token": "A2", "refresh_token": "R2", "expires_in": 1800}),
+                )
+            }
+            ("DELETE", "/api/v2/oauth/tokens/current.json") => (204, Value::Null),
+            _ => (400, json!({"error": "invalid_grant"})),
+        }));
+        let dir = lock_dir("renewal-outlives");
+        let vault = Memory::default();
+        vault.put(&expiring("A1", "R1")).unwrap();
+        let (fetched, logout) = std::thread::scope(|scope| {
+            let fetch = scope.spawn(|| locked(&base, &vault, &dir).access_token());
+            hold.entered.wait();
+            let logout = locked(&base, &vault, &dir).logout_within(Duration::from_millis(100));
+            hold.released.wait();
+            (fetch.join().unwrap(), logout)
+        });
+        assert_eq!(logout.unwrap_err().code, "BUSY");
+        assert_eq!(fetched.unwrap_err().code, "SIGNED_OUT");
+        assert!(vault.get().unwrap().is_none());
+        assert_eq!(revoked(&seen), ["Bearer A1", "Bearer A2"]);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_renewal_uses_the_pair_another_helper_just_stored() {
+        let (base, seen) = fake(Box::new(|_, _, _| (500, json!({}))));
+        let dir = lock_dir("renewal-newer");
+        let vault = Memory::default();
+        vault.put(&expiring("A2", "R2")).unwrap();
+        let old: Value = serde_json::from_str(&expiring("A1", "R1")).unwrap();
+        let current = locked(&base, &vault, &dir).refresh(&old).unwrap();
+        assert_eq!(current["access_token"], "A2");
+        assert!(seen.lock().unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_renewal_waits_its_turn_and_signs_out_cleanly_after() {
+        let (base, seen) = fake(Box::new(|method, path, body| match (method, path) {
+            ("POST", "/oauth/tokens") if body["refresh_token"] == "R1" => (
+                200,
+                json!({"access_token": "A2", "refresh_token": "R2", "expires_in": 1800}),
+            ),
+            ("DELETE", _) => (204, Value::Null),
+            _ => (400, json!({"error": "invalid_grant"})),
+        }));
+        let dir = lock_dir("renewal-normal");
+        let vault = Memory::default();
+        vault.put(&expiring("A1", "R1")).unwrap();
+        let helper = locked(&base, &vault, &dir);
+        assert_eq!(helper.access_token().unwrap(), "A2");
+        let stored: Value = serde_json::from_str(&vault.get().unwrap().unwrap()).unwrap();
+        assert_eq!(stored["refresh_token"], "R2");
+        // The lock was released: the next helper doesn't wait.
+        let started = Instant::now();
+        assert_eq!(helper.logout().unwrap()["state"], "signed_out");
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(vault.get().unwrap().is_none());
+        assert_eq!(revoked(&seen), ["Bearer A2"]);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }
