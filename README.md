@@ -109,7 +109,10 @@ keyring (through `secret-tool`), never in the plugin settings, a file or a
 log; the panel only learns the outcome. Access tokens are refreshed when they
 expire, and the new pair is stored before it is used (Zendesk invalidates the
 old one). An expired refresh token shows "Sign-in expired". **Sign out**
-revokes the token and removes it from the keyring.
+removes the token from the keyring and revokes it; a refresh still running
+finishes first (up to 30 seconds), so the pair it stores is the one removed.
+If it takes longer, sign-out still clears the keyring but says it didn't
+finish: try again.
 
 ## Fetching
 
