@@ -110,8 +110,12 @@ QtObject {
       return;
     }
     error = reply.error ? helperText(reply.error) : FoamyI18n.t("The Zendesk helper failed.");
-    // A failed sign-in leaves the previous state; anything else is an error state.
-    if (reply.code === "ACCESS_DENIED" || reply.code === "TIMEOUT" || reply.code === "PORT_IN_USE" || reply.code === "BUSY")
+    // A failed sign-in, or a sign-out that didn't finish (BUSY, LOCK_UNAVAILABLE:
+    // the keyring is cleared but it can't promise nothing is stored again), leaves
+    // the previous state, so Sign out stays there to try again; anything else is
+    // an error state.
+    if (reply.code === "ACCESS_DENIED" || reply.code === "TIMEOUT" || reply.code === "PORT_IN_USE" || reply.code === "BUSY"
+        || reply.code === "LOCK_UNAVAILABLE")
       state = user ? "signed_in" : "signed_out";
     else
       state = "error";

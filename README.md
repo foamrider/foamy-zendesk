@@ -99,6 +99,14 @@ finishes first (up to 30 seconds), so the pair it stores is the one removed.
 If it takes longer, sign-out still clears the keyring but says it didn't
 finish: try again.
 
+Refreshes, sign-in and sign-out take a lock in `$XDG_RUNTIME_DIR/foamy-zendesk/`
+(owner-only) and never write the keyring without it. When that lock can't be
+used (no `$XDG_RUNTIME_DIR`, or its filesystem is full or read-only), an
+expiring sign-in isn't renewed (the inbox says why, and checking resumes once
+the lock works; the stored sign-in stays valid), **Sign in** refuses to start,
+and **Sign out** clears and revokes the token but says it didn't finish:
+fix the runtime directory and try again.
+
 ## Fetching
 
 Every minute (your **Check every**) while signed in and within the schedule,

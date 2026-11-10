@@ -665,7 +665,8 @@ PanelKeyCatcher {
       case "waiting": return FoamyI18n.t("Finish signing in in your browser.");
       case "signed_in": {
         var email = ZendeskAccount.user && ZendeskAccount.user.email ? ZendeskAccount.user.email : "";
-        return ZendeskAccount.verified ? email : [email, ZendeskAccount.error].filter(function(part) { return part; }).join(" · ");
+        // The error: why it isn't verified, or why sign-out didn't finish.
+        return [email, ZendeskAccount.error].filter(function(part) { return part; }).join(" · ");
       }
       case "expired": return FoamyI18n.t("Sign in again to keep checking for updates.");
       default: return ZendeskAccount.error;
