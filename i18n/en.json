@@ -88,6 +88,7 @@
   "Sign-in expired": "Sign-in expired",
   "Sign-in was cancelled in the browser.": "Sign-in was cancelled in the browser.",
   "Sign-in wasn't finished in the browser in time.": "Sign-in wasn't finished in the browser in time.",
+  "Sign-out didn't finish: another Zendesk request is still renewing the sign-in. Try again.": "Sign-out didn't finish: another Zendesk request is still renewing the sign-in. Try again.",
   "Signed in": "Signed in",
   "Signed in as %1": "Signed in as %1",
   "Solved": "Solved",

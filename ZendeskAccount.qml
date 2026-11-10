@@ -30,6 +30,9 @@ QtObject {
   readonly property bool busy: statusProcess.running || loginProcess.running || logoutProcess.running
   readonly property bool signedIn: state === "signed_in"
   property bool checkAgain: false
+  // Bumped by sign-out: a check that started before it answers for a sign-in
+  // that is gone.
+  property int signOuts: 0
 
   function configure(next) {
     if (next.address === address && next.clientId === clientId && next.port === port) return;
@@ -55,6 +58,7 @@ QtObject {
     if (state === "unavailable" || loginProcess.running || logoutProcess.running) return;
     if (statusProcess.running) { checkAgain = true; return; }
     if (!signedIn) state = "checking";
+    statusProcess.signOuts = signOuts;
     // Up to a minute for a keyring unlock prompt, then the Zendesk requests.
     start(statusProcess, "auth-status", [], "120s");
   }
@@ -72,7 +76,9 @@ QtObject {
   function signOut() {
     if (!configured || logoutProcess.running) return;
     if (loginProcess.running) loginProcess.running = false;
-    start(logoutProcess, "auth-logout", [], "90s");
+    signOuts++;
+    // Up to 30 seconds for a token refresh in flight to finish first.
+    start(logoutProcess, "auth-logout", [], "120s");
   }
 
   // A helper `error`, translated: a catalog key, then the values for its
@@ -112,9 +118,10 @@ QtObject {
   }
 
   property Process statusProcess: Process {
+    property int signOuts: 0
     stdout: StdioCollector { id: statusOutput; waitForEnd: true }
     onExited: function(code) {
-      account.apply(statusOutput.text, code);
+      if (statusProcess.signOuts === account.signOuts) account.apply(statusOutput.text, code);
       if (account.checkAgain) { account.checkAgain = false; Qt.callLater(account.check); }
     }
   }

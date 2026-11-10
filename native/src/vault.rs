@@ -1,9 +1,9 @@
 //! Where the tokens live: the Secret Service keyring through `secret-tool`
 //! (libsecret), one item per account and OAuth client. Nothing else on disk.
 
-#[cfg(test)]
-use std::cell::RefCell;
 use std::io::ErrorKind;
+#[cfg(test)]
+use std::sync::Mutex;
 use std::time::Duration;
 
 use foamy_helper::Failure;
@@ -122,22 +122,22 @@ impl Vault for SecretTool {
     }
 }
 
-/// For tests.
+/// For tests; shared between threads, like the keyring between helpers.
 #[cfg(test)]
 #[derive(Default)]
-pub struct Memory(pub RefCell<Option<String>>);
+pub struct Memory(pub Mutex<Option<String>>);
 
 #[cfg(test)]
 impl Vault for Memory {
     fn get(&self) -> Result<Option<String>, Failure> {
-        Ok(self.0.borrow().clone())
+        Ok(self.0.lock().unwrap().clone())
     }
     fn put(&self, secret: &str) -> Result<(), Failure> {
-        *self.0.borrow_mut() = Some(secret.into());
+        *self.0.lock().unwrap() = Some(secret.into());
         Ok(())
     }
     fn delete(&self) -> Result<(), Failure> {
-        *self.0.borrow_mut() = None;
+        *self.0.lock().unwrap() = None;
         Ok(())
     }
 }
