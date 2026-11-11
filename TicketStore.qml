@@ -213,7 +213,10 @@ QtObject {
   // announced (`id:revision`). The click and the buttons name the account's
   // host, so a notification left from another account changes nothing and
   // opens nothing on it. They use Omarchy's notification hints; the icon is a
-  // PNG path (the glyph is for hosts that drop it).
+  // PNG path (the glyph is for hosts that drop it). It goes out twice:
+  // notify-send's --icon is the image-path hint (a picture: stock 4.5 shows it
+  // and keeps no file app icon), --app-icon is app_icon, which Foamy
+  // Notifications and the notification center use as the app's own icon.
   function notificationCommand(list) {
     var ipc = ["omarchy-shell", "-q", "foamy.zendesk"];
     var through = function(item) { return item.id + ":" + Model.newestFromOthers(item); };
@@ -235,7 +238,8 @@ QtObject {
       click = ipc.concat(["open"]);
       actions = [{ label: FoamyI18n.t("Mark all as read"), argv: ipc.concat(["markRead", from(list.slice(0, 100).map(through).join(","))]) }];
     }
-    return ["notify-send", "--app-name=Zendesk", "--urgency=normal", "--icon=" + pluginDir + "/icons/zendesk.png",
+    var icon = pluginDir + "/icons/zendesk.png";
+    return ["notify-send", "--app-name=Zendesk", "--urgency=normal", "--icon=" + icon, "--app-icon=" + icon,
       "--hint=string:omarchy-glyph:\u{f0516}", "--hint=string:omarchy-exec-argv:" + JSON.stringify(click),
       "--hint=string:omarchy-actions:" + JSON.stringify(actions), "--", summary, body];
   }

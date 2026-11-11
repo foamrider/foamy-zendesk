@@ -421,6 +421,11 @@ ShellRoot {
                    "a click opens it in the inbox; buttons view it in Zendesk or mark it read up to the reply shown, for this account")) return;
         var icon = argv.find(function(arg) { return arg.indexOf("--icon=") === 0; }) || "";
         if (!check(/\/icons\/zendesk\.png$/.test(icon) && icon.slice(7).charAt(0) === "/", "the Zendesk icon is a local PNG path")) return;
+        // notify-send's --icon is the notification's image (image-path), which
+        // history and stack headers treat as a picture; --app-icon is app_icon,
+        // the field that names the sending app's icon there.
+        var appIcon = argv.find(function(arg) { return arg.indexOf("--app-icon=") === 0; }) || "";
+        if (!check(appIcon.slice("--app-icon=".length) === icon.slice("--icon=".length), "the Zendesk logo is also the notification's app icon")) return;
         // The buttons' IPC: a newer reply (here: after the one announced) stays unread.
         store.receive(Fixtures.update(3, false));
         shell.sent = shell.sent.slice(0, 1);
