@@ -143,8 +143,11 @@ and, in or outside the schedule, when the popup opens on an inbox older than
 - looks up the names of assignees, requesters and comment authors in one call.
 
 Failures back off (2×, 4×, … up to 15 minutes) and keep the last inbox. Read
-markers live in `$XDG_STATE_HOME/foamy-zendesk/read-<account>.json` (private
-directory); markers of tickets that left the inbox are kept 30 days.
+markers live in `$XDG_STATE_HOME/foamy-zendesk/read-<host>.json`, such as
+`read-acme.zendesk.com.json` (private directory); markers of tickets that left
+the inbox are kept 30 days, and at most the 2000 most recently marked are
+loaded. A read file that exists but can't be read is left alone: markers
+then last until the shell restarts or the account changes.
 
 Requirements: `secret-tool` (libsecret) with a running keyring (Omarchy's
 gnome-keyring). HTTPS needs AES, carry-less multiply, AVX2, BMI2 and ADX on
