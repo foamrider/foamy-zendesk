@@ -72,7 +72,9 @@ Settings (in the ⋯ menu, `s`, or right-click the bar icon):
   outside the schedule it reads **Resume now** and turns the widget on until
   midnight (or until the schedule starts, if sooner). Either goes back to
   the schedule when pressed again. Snoozing is kept in
-  `$XDG_STATE_HOME/foamy-zendesk/schedule-override.json`, never in `shell.json`.
+  `$XDG_STATE_HOME/foamy-zendesk/schedule-override.json`, never in `shell.json`;
+  when that file can't be written the footer says **Can't save snooze or
+  resume**, and the snooze lasts until the shell restarts.
 - **Zendesk** (at the bottom): the account, and **Check every** (1 to 15
   minutes, default 1). Signed out, it also holds the connection fields below.
 
@@ -148,8 +150,10 @@ Failures back off (2×, 4×, … up to 15 minutes) and keep the last inbox. Read
 markers live in `$XDG_STATE_HOME/foamy-zendesk/read-<host>.json`, such as
 `read-acme.zendesk.com.json` (private directory); markers of tickets that left
 the inbox are kept 30 days, and at most the 2000 most recently marked are
-loaded. A read file that exists but can't be read is left alone: markers
-then last until the shell restarts or the account changes.
+loaded. A read file that exists but can't be read is left alone, and one
+that can't be written (a full or read-only disk) isn't saved: either way the
+footer says **Can't save read markers**, and markers last until the shell
+restarts or the account changes.
 
 Requirements: `secret-tool` (libsecret) with a running keyring (Omarchy's
 gnome-keyring). HTTPS needs AES, carry-less multiply, AVX2, BMI2 and ADX on
