@@ -197,5 +197,8 @@
     "one": "and %1 more",
     "other": "and %1 more"
   },
-  "The saved list in shell.json isn't valid, so it wasn't replaced.": "The saved list in shell.json isn't valid, so it wasn't replaced."
+  "The saved list in shell.json isn't valid, so it wasn't replaced.": "The saved list in shell.json isn't valid, so it wasn't replaced.",
+  "Can't save read markers": "Can't save read markers",
+  "Can't save snooze or resume": "Can't save snooze or resume",
+  "Kept only until the shell restarts.": "Kept only until the shell restarts."
 }

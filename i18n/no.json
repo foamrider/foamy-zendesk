@@ -197,5 +197,8 @@
     "one": "og %1 til",
     "other": "og %1 til"
   },
-  "The saved list in shell.json isn't valid, so it wasn't replaced.": "Den lagrede listen i shell.json er ugyldig, så den ble ikke erstattet."
+  "The saved list in shell.json isn't valid, so it wasn't replaced.": "Den lagrede listen i shell.json er ugyldig, så den ble ikke erstattet.",
+  "Can't save read markers": "Kan ikke lagre lesestatusen",
+  "Can't save snooze or resume": "Kan ikke lagre slumring eller gjenopptakelse",
+  "Kept only until the shell restarts.": "Beholdes bare til skallet startes på nytt."
 }

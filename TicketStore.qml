@@ -24,6 +24,13 @@ QtObject {
   // Why the last fetch failed (the tickets shown are the last good ones).
   property string error: ""
   property string notice: ""
+  // A read-marker or snooze file that can't be written: what was marked or
+  // snoozed is kept only in memory, until the shell restarts. The footer
+  // says so; the next save that works clears it.
+  property bool readSaveFailed: false
+  property bool snoozeSaveFailed: false
+  readonly property string saveError: readSaveFailed || readUnusable ? FoamyI18n.t("Can't save read markers")
+    : snoozeSaveFailed ? FoamyI18n.t("Can't save snooze or resume") : ""
   property double lastUpdated: 0
   // When the next check after a failure runs (0 when none is due).
   property double retryAt: 0
@@ -64,6 +71,8 @@ QtObject {
     atomicWrites: true
     printErrors: false
     onLoaded: store.scheduleOverride = Schedule.parseOverride(text(), Date.now())
+    onSaved: store.snoozeSaveFailed = false
+    onSaveFailed: store.snoozeSaveFailed = true
   }
   function toggleSnooze() {
     scheduleOverride = Schedule.toggled(new Date(), scheduleEnabled, week, scheduleOverride);
@@ -345,6 +354,8 @@ QtObject {
     atomicWrites: true
     printErrors: false
     onLoaded: store.readLoaded(text())
+    onSaved: store.readSaveFailed = false
+    onSaveFailed: store.readSaveFailed = true
     onLoadFailed: function(failure) {
       // No file yet: nothing read. Anything else: start empty, and don't
       // overwrite a file we couldn't read.
@@ -363,7 +374,7 @@ QtObject {
     state = Model.empty();
     pending = null; pendingChanges = 0; lastBatch = []; waitingSnapshot = null; seen = Model.notices();
     error = ""; notice = ""; loaded = false; lastUpdated = 0; failures = 0; retryAt = 0;
-    readPath = ""; readReady = false; readUnusable = false;
+    readPath = ""; readReady = false; readUnusable = false; readSaveFailed = false;
     sync();
     if (active) refresh();
   }

@@ -347,10 +347,14 @@ PanelKeyCatcher {
     source: ZendeskAccount.signedIn ? Model.host(ZendeskAccount.address) : ""
     // The last good inbox stays shown; the footer says when it is from, or why not newer.
     // Without an inbox the error is already on screen: say when the next try is.
+    // A file that can't be saved comes next: what was marked or snoozed is
+    // kept only until the shell restarts.
     status: TicketStore.error !== "" ? (TicketStore.loaded ? TicketStore.error : root.retryText)
+      : TicketStore.saveError !== "" ? TicketStore.saveError
       : TicketStore.loaded ? FoamyI18n.updatedAgo(TicketStore.lastUpdated, clock.date.getTime()) : ""
-    statusError: TicketStore.error !== "" && TicketStore.loaded
-    statusTooltip: TicketStore.error !== "" && TicketStore.loaded ? FoamyI18n.updatedAgo(TicketStore.lastUpdated, clock.date.getTime()) : ""
+    statusError: TicketStore.error !== "" ? TicketStore.loaded : TicketStore.saveError !== ""
+    statusTooltip: TicketStore.error !== "" ? (TicketStore.loaded ? FoamyI18n.updatedAgo(TicketStore.lastUpdated, clock.date.getTime()) : "")
+      : TicketStore.saveError !== "" ? FoamyI18n.t("Kept only until the shell restarts.") : ""
     showRefresh: ZendeskAccount.signedIn
     refreshing: TicketStore.loading
     refreshEnabled: TicketStore.connected && !TicketStore.loading

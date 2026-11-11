@@ -67,6 +67,10 @@ ShellRoot {
       shell.windowResult = { running: account.statusProcess.running, again: account.checkAgain, busy: account.busy };
     }
   }
+  function footer() {
+    var view = one.popup.bodyItem;
+    return view ? view.children.find(function(item) { return item.hasOwnProperty("statusError"); }) : null;
+  }
   function find(item, name) {
     if (!item) return null;
     if (item.objectName === name) return item;
@@ -101,6 +105,11 @@ ShellRoot {
     case 23: return [function() { return store.loaded; }, 10000, "the inbox with an unreadable read file arrived"];
     case 24: return [function() { return shell.fetches.length !== shell.fetchProbe && !store.fetchProcess.running; }, 10000, "the next fetch finished"];
     case 26: return [function() { return shell.statusRuns >= 2 && !account.busy && account.user && account.user.name === "Check 2"; }, 10000, "both account checks finished"];
+    case 28: return [function() { return store.loaded && one.popup.bodyItem; }, 10000, "the inbox with a read-only state folder arrived"];
+    case 29: return [function() { return shell.footer().status === "Can't save read markers"; }, 10000, "the failed save of the read markers is shown"];
+    case 30: return [function() { return store.loaded && store.host === "unlocked.zendesk.com"; }, 10000, "the next account's inbox arrived"];
+    case 31: return [function() { return shell.footer().status === "Can't save snooze or resume"; }, 10000, "the failed save of the snooze is shown"];
+    case 32: return [function() { return shell.footer().status !== "Can't save snooze or resume"; }, 10000, "a snooze saved again clears it"];
     }
     return null;
   }
@@ -671,6 +680,43 @@ ShellRoot {
       if (!check(shell.windowResult && !shell.windowResult.running && shell.windowResult.again && shell.windowResult.busy,
                  "a check asked for while the last reply is delivered waits for it, and the account stays busy (" + JSON.stringify(shell.windowResult) + ")")) return;
       if (!check(shell.statusRuns === 2 && account.state === "signed_in" && account.user.name === "Check 2", "then it runs once, and its own reply is the one shown")) return;
+      // A state folder that can't be written (made read-only by the script).
+      store.helperCommand = function(args) {
+        var reply = shell.inboxReply("locked", 9101);
+        reply.state_path = Quickshell.env("FOAMY_OUT") + "/locked/read-locked.json";
+        return shell.fake("now", reply);
+      };
+      account.address = "locked";
+      one.open();
+      break;
+    case 28:
+      if (!check(!shell.footer().statusError && shell.footer().status.indexOf("Updated") === 0, "a read file that doesn't exist yet is no error")) return;
+      store.markRead("9101");
+      break;
+    case 29:
+      var failed = shell.footer();
+      if (!check(failed.statusError && failed.statusTooltip === "Kept only until the shell restarts." && store.unreadCount === 0,
+                 "the footer says the read markers last only until the shell restarts; the ticket stays read")) return;
+      // Then another account (its read file can be written) starts without it.
+      one.popup.bodyItem.grabToImage(function(result) {
+        result.saveToFile(Quickshell.env("FOAMY_OUT") + "/save-failed.png");
+        store.helperCommand = function(args) { return shell.fake("now", shell.inboxReply("unlocked", 9201)); };
+        account.address = "unlocked";
+      });
+      break;
+    case 30:
+      if (!check(!shell.footer().statusError, "another account's inbox starts without the failure")) return;
+      store.overridePath = Quickshell.env("FOAMY_OUT") + "/locked/schedule-override.json";
+      store.toggleSnooze();
+      break;
+    case 31:
+      if (!check(store.snoozed && shell.footer().statusError && shell.footer().statusTooltip === "Kept only until the shell restarts.", "the snooze still holds, until the shell restarts")) return;
+      store.overridePath = Quickshell.env("FOAMY_OUT") + "/schedule-override.json";
+      store.toggleSnooze();
+      break;
+    case 32:
+      if (!check(!store.snoozed && !shell.footer().statusError, "resumed and saved, the footer is back to normal")) return;
+      one.close();
       shell.finished = true;
       console.log("FOAMY DONE runtime interactions passed"); Qt.quit();
     }
@@ -680,6 +726,8 @@ ShellRoot {
 
 run = harness.Run("4.5", SHELL, plugin=plugin, prefix="foamy-zendesk-runtime-")
 try:
+    # The read-only state folder for the failed saves (steps 27 to 32).
+    (run.out / "locked").mkdir(mode=0o555)
     run.run(timeout=60)
     if os.environ.get("FOAMY_TEST_OUTPUT"):
         output = Path(os.environ["FOAMY_TEST_OUTPUT"])
