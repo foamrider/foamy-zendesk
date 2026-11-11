@@ -49,6 +49,7 @@ ShellRoot {
   property int statusRuns: 0
   property bool probeWindow: false
   property var windowResult: null
+  property var cut: undefined
   // The shell reflects saved settings back to every instance, like the host.
   property var entry: ({})
   TestEvent { id: ev }
@@ -110,6 +111,9 @@ ShellRoot {
     case 30: return [function() { return store.loaded && store.host === "unlocked.zendesk.com"; }, 10000, "the next account's inbox arrived"];
     case 31: return [function() { return shell.footer().status === "Can't save snooze or resume"; }, 10000, "the failed save of the snooze is shown"];
     case 32: return [function() { return shell.footer().status !== "Can't save snooze or resume"; }, 10000, "a snooze saved again clears it"];
+    case 33: return [function() { return store.loaded && store.host === "big.zendesk.com"; }, 10000, "the cut-short inbox arrived"];
+    case 34:
+    case 35: return [function() { return shell.fetches.length > shell.fetchProbe && !store.fetchProcess.running; }, 10000, "the next fetch finished"];
     }
     return null;
   }
@@ -716,6 +720,32 @@ ShellRoot {
       break;
     case 32:
       if (!check(!store.snoozed && !shell.footer().statusError, "resumed and saved, the footer is back to normal")) return;
+      // An inbox the helper cut short says so below its last ticket.
+      store.helperCommand = function(args) {
+        var reply = shell.inboxReply("big", 9301);
+        reply.truncated = shell.cut;
+        shell.fetches = shell.fetches.concat(["big"]);
+        return shell.fake("now", reply);
+      };
+      shell.cut = { tickets: true, groups: true };
+      account.address = "big";
+      break;
+    case 33:
+      var note = shell.find(view, "truncatedNote");
+      if (!check(note && note.visible && note.text === "Showing the 100 most recently updated tickets", "the inbox says it shows the 100 most recently updated")) return;
+      shell.cut = { tickets: false, groups: true };
+      shell.fetchProbe = shell.fetches.length;
+      view.grabToImage(function(result) { result.saveToFile(Quickshell.env("FOAMY_OUT") + "/truncated.png"); store.refresh(); });
+      break;
+    case 34:
+      var groupsNote = shell.find(view, "truncatedNote");
+      if (!check(groupsNote.visible && groupsNote.text === "Showing unassigned tickets from your first 20 groups", "or that only the first 20 groups were searched")) return;
+      shell.cut = undefined;
+      shell.fetchProbe = shell.fetches.length;
+      store.refresh();
+      break;
+    case 35:
+      if (!check(!shell.find(view, "truncatedNote").visible, "a complete inbox has no note")) return;
       one.close();
       shell.finished = true;
       console.log("FOAMY DONE runtime interactions passed"); Qt.quit();

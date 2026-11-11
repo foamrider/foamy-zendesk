@@ -335,6 +335,19 @@ PanelKeyCatcher {
           onReadToggleRequested: root.toggleRead(model.id, index)
         }
       }
+      // Below the last ticket, where the ones left out would be.
+      PlainText {
+        objectName: "truncatedNote"
+        visible: TicketStore.count > 0 && text !== ""
+        x: FoamyStyle.gapLarge
+        width: body.width - FoamyStyle.gapLarge * 2
+        topPadding: FoamyStyle.gap
+        horizontalAlignment: Text.AlignHCenter
+        text: TicketStore.ticketsTruncated ? FoamyI18n.t("Showing the 100 most recently updated tickets")
+          : TicketStore.groupsTruncated ? FoamyI18n.t("Showing unassigned tickets from your first 20 groups") : ""
+        color: FoamyPalette.mutedText
+        font.pixelSize: FoamyStyle.font.bodySmall
+      }
     }
   }
   FoamyPanelFooter {

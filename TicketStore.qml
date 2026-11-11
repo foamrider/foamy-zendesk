@@ -36,6 +36,10 @@ QtObject {
   property double retryAt: 0
   // The inbox has been filled at least once for this account.
   property bool loaded: false
+  // The helper's bounds left tickets out (it sends the 100 most recently
+  // updated) or groups (it searches the first 20): the list says so.
+  property bool ticketsTruncated: false
+  property bool groupsTruncated: false
   readonly property bool loading: fetchProcess.running
   property int failures: 0
   property bool helperMissing: false
@@ -288,6 +292,8 @@ QtObject {
       failures = 0;
       retryAt = 0;
       lastUpdated = Date.now();
+      ticketsTruncated = outcome.truncated.tickets;
+      groupsTruncated = outcome.truncated.groups;
       if (outcome.statePath !== null && outcome.statePath !== readPath) {
         // The read markers come first, or every ticket would flash unread.
         waitingSnapshot = outcome.tickets;
@@ -374,6 +380,7 @@ QtObject {
     state = Model.empty();
     pending = null; pendingChanges = 0; lastBatch = []; waitingSnapshot = null; seen = Model.notices();
     error = ""; notice = ""; loaded = false; lastUpdated = 0; failures = 0; retryAt = 0;
+    ticketsTruncated = false; groupsTruncated = false;
     readPath = ""; readReady = false; readUnusable = false; readSaveFailed = false;
     sync();
     if (active) refresh();
@@ -385,6 +392,7 @@ QtObject {
     resetting();
     state = Model.empty();
     pending = null; pendingChanges = 0; lastBatch = []; error = ""; notice = "";
+    ticketsTruncated = false; groupsTruncated = false;
     readReady = true;
     if (list) { Model.applySnapshot(state, list); loaded = true; lastUpdated = Date.now(); }
     else loaded = false;

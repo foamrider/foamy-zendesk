@@ -208,6 +208,13 @@ test('a fetch from before an account switch is ignored, even a full reply that a
   assert.equal(Model.fetchOutcome(3, 3, JSON.stringify({ ok: true, tickets: 'nope' })).ok, false);
 });
 
+test("the helper's truncated flags reach the inbox; anything else is not cut", () => {
+  const outcome = truncated => Model.fetchOutcome(1, 1, JSON.stringify({ ok: true, tickets: [], truncated })).truncated;
+  assert.deepEqual(outcome({ tickets: true, groups: false }), { tickets: true, groups: false });
+  assert.deepEqual(outcome({ tickets: false, groups: true }), { tickets: false, groups: true });
+  for (const odd of [undefined, null, 'yes', { tickets: 'true', groups: 1 }]) assert.deepEqual(outcome(odd), { tickets: false, groups: false });
+});
+
 test('ticket links use the configured account only', () => {
   assert.equal(Model.host('ACME'), 'acme.zendesk.com');
   assert.equal(Model.host('https://acme.zendesk.com/'), 'acme.zendesk.com');

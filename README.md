@@ -134,8 +134,9 @@ and, in or outside the schedule, when the popup opens on an inbox older than
 
 - searches `type:ticket status<solved assignee:me`, and
   `type:ticket status<solved assignee:none group:<id>` for each of your groups
-  (up to 20 groups and 100 tickets; Zendesk's search can lag a few minutes
-  behind);
+  (up to 20 groups and the 100 most recently updated tickets, and the list
+  says so below its last ticket when either left some out; Zendesk's search
+  can lag a few minutes behind);
 - fetches the latest 20 comments only for tickets whose `updated_at` changed
   (at most 25 per run; the rest follow next run) and shows their plain text,
   with the HTML entities Zendesk leaves in it (`&nbsp;`, `&amp;`, …) decoded

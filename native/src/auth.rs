@@ -948,6 +948,10 @@ mod tests {
             json!({"id": 502, "author": "Alex", "mine": true, "public": false, "created": 1_793_957_280_000_i64, "body": "Checking"})
         );
         assert_eq!(comments[1]["author"], "Maria");
+        assert_eq!(
+            reply["truncated"],
+            json!({"tickets": false, "groups": false})
+        );
         let seen = seen.lock().unwrap();
         assert!(seen.iter().all(|request| request.2 == "Bearer A1"));
         assert!(
@@ -956,6 +960,74 @@ mod tests {
                 .any(|request| request.1.starts_with("/api/v2/tickets/1/")),
             "no comments for an unchanged ticket"
         );
+    }
+
+    /// An agent in 25 groups whose own search has more than one page.
+    fn crowded(more_mine: bool, groups: usize) -> (String, Log) {
+        fake(Box::new(move |_, path, _| {
+            let path = path.to_string();
+            let ticket = |id: u64| {
+                json!({"id": id, "result_type": "ticket", "subject": "T", "status": "open",
+                                         "assignee_id": 7, "requester_id": 7, "updated_at": format!("2026-11-06T09:{:02}:00Z", id % 60)})
+            };
+            if path == "/api/v2/users/me.json" {
+                (200, json!({"user": {"id": 7, "name": "Alex"}}))
+            } else if path == "/api/v2/users/7/groups.json" {
+                let list: Vec<Value> = (0..groups as u64)
+                    .map(|id| json!({"id": 100 + id, "name": format!("G{id}")}))
+                    .collect();
+                (200, json!({"groups": list}))
+            } else if path.starts_with("/api/v2/groups.json") {
+                (200, json!({"groups": []}))
+            } else if path.contains("assignee%3Ame") {
+                let page: Vec<Value> = (1..=100).map(ticket).collect();
+                if more_mine {
+                    (
+                        200,
+                        json!({"results": page, "count": 130, "next_page": "https://acme.zendesk.com/api/v2/search.json?page=2"}),
+                    )
+                } else {
+                    (
+                        200,
+                        json!({"results": page, "count": 100, "next_page": null}),
+                    )
+                }
+            } else if path.contains("assignee%3Anone") {
+                (200, json!({"results": [], "count": 0, "next_page": null}))
+            } else if path.contains("/comments.json") {
+                (200, json!({"comments": []}))
+            } else if path.starts_with("/api/v2/users/show_many.json") {
+                (200, json!({"users": [{"id": 7, "name": "Alex"}]}))
+            } else {
+                (404, json!({"error": path}))
+            }
+        }))
+    }
+
+    #[test]
+    fn fetch_says_when_the_inbox_is_cut_short() {
+        let vault = Memory::default();
+        vault
+            .put(&json!({"access_token": "A1"}).to_string())
+            .unwrap();
+        let none = serde_json::Map::new();
+        for (more_mine, groups, expected) in [
+            (false, 20, json!({"tickets": false, "groups": false})),
+            (true, 20, json!({"tickets": true, "groups": false})),
+            (false, 25, json!({"tickets": false, "groups": true})),
+        ] {
+            let (base, seen) = crowded(more_mine, groups);
+            let reply = crate::tickets::fetch(&account(&base, &vault), &none).unwrap();
+            assert_eq!(reply["tickets"].as_array().unwrap().len(), 100);
+            assert_eq!(reply["truncated"], expected, "{more_mine} {groups}");
+            let searches = seen
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|request| request.1.contains("assignee%3Anone"))
+                .count();
+            assert_eq!(searches, 20, "at most 20 group searches");
+        }
     }
 
     #[test]

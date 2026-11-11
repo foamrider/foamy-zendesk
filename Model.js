@@ -322,13 +322,17 @@ function ticketUrl(address, id) {
 // (another account, or signed out) moves it on, and an older fetch's exit,
 // stopped (143) or with a full reply that was already on its way, belongs to
 // an inbox that is gone. Otherwise the helper's last line: the tickets (and
-// the read-state file they go with), or the failed reply (null if none).
+// the read-state file they go with, and whether the helper's bounds left
+// tickets or groups out), or the failed reply (null if none).
 function fetchOutcome(started, current, text) {
   if (started !== current) return { stale: true };
   var reply = null;
   try { reply = JSON.parse(String(text).trim().split("\n").pop()); } catch (e) {}
-  if (reply && reply.ok && Array.isArray(reply.tickets))
-    return { ok: true, tickets: reply.tickets, statePath: typeof reply.state_path === "string" ? reply.state_path : null };
+  if (reply && reply.ok && Array.isArray(reply.tickets)) {
+    var cut = reply.truncated && typeof reply.truncated === "object" ? reply.truncated : {};
+    return { ok: true, tickets: reply.tickets, statePath: typeof reply.state_path === "string" ? reply.state_path : null,
+             truncated: { tickets: cut.tickets === true, groups: cut.groups === true } };
+  }
   return { ok: false, reply: reply };
 }
 

@@ -1,7 +1,8 @@
 //! The inbox: unsolved tickets assigned to the signed-in agent, and
 //! unassigned unsolved tickets in the agent's groups, with their latest
 //! comments. Comments are fetched only for tickets whose `updated_at` the
-//! caller doesn't already have.
+//! caller doesn't already have. `truncated` says when the bounds below left
+//! tickets or groups out, so the panel never shows a cut inbox as complete.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -180,7 +181,9 @@ fn clip(text: &str) -> String {
     out
 }
 
-fn search(account: &Account, access: &str, query: &str) -> Result<Vec<Value>, Failure> {
+/// One page of a search (the most recently updated first), and whether
+/// Zendesk has more results than it.
+fn search(account: &Account, access: &str, query: &str) -> Result<(Vec<Value>, bool), Failure> {
     let body = get(
         account,
         access,
@@ -189,21 +192,25 @@ fn search(account: &Account, access: &str, query: &str) -> Result<Vec<Value>, Fa
             encode(query)
         ),
     )?;
-    Ok(body["results"]
+    let page = body["results"]
         .as_array()
-        .map(|results| {
-            results
-                .iter()
-                .filter(|r| {
-                    r.get("result_type")
-                        .and_then(Value::as_str)
-                        .unwrap_or("ticket")
-                        == "ticket"
-                })
-                .cloned()
-                .collect()
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let more = body["next_page"].is_string()
+        || body["count"]
+            .as_u64()
+            .is_some_and(|count| count > page.len() as u64);
+    let tickets = page
+        .iter()
+        .filter(|r| {
+            r.get("result_type")
+                .and_then(Value::as_str)
+                .unwrap_or("ticket")
+                == "ticket"
         })
-        .unwrap_or_default())
+        .cloned()
+        .collect();
+    Ok((tickets, more))
 }
 
 fn names(
@@ -249,11 +256,14 @@ pub fn fetch(account: &Account, known: &Map<String, Value>) -> Result<Value, Fai
     let me = get(account, &access, "/api/v2/users/me.json")?;
     let me_id =
         id_of(&me["user"]["id"]).ok_or_else(|| Failure::coded("HTTP", "Zendesk sent no user."))?;
-    let mine = group_names(&get(
+    let my_groups = get(
         account,
         &access,
         &format!("/api/v2/users/{me_id}/groups.json"),
-    )?);
+    )?;
+    let mine = group_names(&my_groups);
+    // Groups past MAX_GROUPS (or past Zendesk's first page) aren't searched.
+    let groups_cut = mine.len() > MAX_GROUPS || my_groups["next_page"].is_string();
     let mut group_name: HashMap<u64, String> = mine.iter().cloned().collect();
     // Names of other groups a ticket assigned to me may sit in (best effort).
     if let Ok(all) = get(account, &access, "/api/v2/groups.json?per_page=100") {
@@ -268,8 +278,11 @@ pub fn fetch(account: &Account, known: &Map<String, Value>) -> Result<Value, Fai
             .take(MAX_GROUPS)
             .map(|(id, _)| format!("type:ticket status<solved assignee:none group:{id}")),
     );
+    let mut tickets_cut = false;
     for query in &queries {
-        for ticket in search(account, &access, query)? {
+        let (page, more) = search(account, &access, query)?;
+        tickets_cut |= more;
+        for ticket in page {
             if let Some(id) = id_of(&ticket["id"]) {
                 found.entry(id).or_insert(ticket);
             }
@@ -277,6 +290,7 @@ pub fn fetch(account: &Account, known: &Map<String, Value>) -> Result<Value, Fai
     }
     let mut tickets: Vec<Value> = found.into_values().collect();
     tickets.sort_by(|a, b| b["updated_at"].as_str().cmp(&a["updated_at"].as_str()));
+    tickets_cut |= tickets.len() > MAX_TICKETS;
     tickets.truncate(MAX_TICKETS);
 
     // Comments for tickets the caller doesn't have at this `updated_at`.
@@ -356,6 +370,7 @@ pub fn fetch(account: &Account, known: &Map<String, Value>) -> Result<Value, Fai
         "ok": true,
         "me": {"id": me_id.to_string(), "name": me["user"]["name"].as_str().unwrap_or("")},
         "tickets": out,
+        "truncated": {"tickets": tickets_cut, "groups": groups_cut},
     }))
 }
 
