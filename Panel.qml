@@ -28,60 +28,86 @@ Ui.Panel {
     settings: root.settings
   }
   // Demand: this popup is open, so the store holds back notifications.
-  FoamyMember { id: member; scope: "zendesk"; demanding: root.opened }
+  FoamyMember {
+    id: member
+    scope: "zendesk"
+    demanding: root.opened
+  }
   // Whichever instance saves pushes at once, before the host reflects the value
   // back; every instance then pushes the same reflected settings.
   function pushSettings() {
-    TicketStore.hideRead = prefs.value("hideRead");
-    TicketStore.unreadFirst = prefs.value("unreadFirst");
-    TicketStore.groupWaiting = prefs.value("groupWaiting");
-    TicketStore.notify = prefs.value("notify");
-    TicketStore.scheduleEnabled = prefs.value("scheduleEnabled");
-    TicketStore.week = Schedule.week(prefs.effectiveSettings || ({}));
-    TicketStore.refreshSeconds = prefs.value("refreshSeconds");
+    TicketStore.hideRead = prefs.value("hideRead")
+    TicketStore.unreadFirst = prefs.value("unreadFirst")
+    TicketStore.groupWaiting = prefs.value("groupWaiting")
+    TicketStore.notify = prefs.value("notify")
+    TicketStore.scheduleEnabled = prefs.value("scheduleEnabled")
+    TicketStore.week = Schedule.week(prefs.effectiveSettings || ({}))
+    TicketStore.refreshSeconds = prefs.value("refreshSeconds")
     ZendeskAccount.configure({
       address: String(prefs.value("zendeskAddress")).trim(),
       clientId: String(prefs.value("oauthClientId")).trim(),
       port: Number(prefs.value("oauthPort")) || Schema.defaultPort
-    });
+    })
   }
   Connections {
     target: prefs
-    function onEffectiveSettingsChanged() { root.pushSettings(); }
+    function onEffectiveSettingsChanged() {
+      root.pushSettings()
+    }
   }
   Component.onCompleted: pushSettings()
 
   function openSettings() {
-    root.open();
-    var view = popup.ensureBody();
-    if (view) view.editingSettings = true;
+    root.open()
+    var view = popup.ensureBody()
+    if (view)
+      view.editingSettings = true
   }
   // A notification's click: the inbox with that ticket open (and read).
   function showTicket(id) {
-    root.open();
-    var view = popup.ensureBody();
-    if (view) view.showTicket(String(id));
+    root.open()
+    var view = popup.ensureBody()
+    if (view)
+      view.showTicket(String(id))
   }
   // The show IPC, "host/id": that ticket, or only the inbox when the
   // notification came from another account.
   function showNotified(ticket) {
-    var id = TicketStore.shownTicket(ticket);
-    if (id) showTicket(id);
-    else root.open();
+    var id = TicketStore.shownTicket(ticket)
+    if (id)
+      showTicket(id)
+    else
+      root.open()
   }
   FoamyIpc {
     enabled: member.isLeader
     target: "foamy.zendesk"
-    function open(): void { root.open() }
-    function close(): void { root.close() }
-    function toggle(): void { root.toggle() }
-    function settings(): void { root.openSettings() }
-    function show(ticket: string): void { root.showNotified(ticket) }
+    function open(): void {
+      root.open()
+    }
+    function close(): void {
+      root.close()
+    }
+    function toggle(): void {
+      root.toggle()
+    }
+    function settings(): void {
+      root.openSettings()
+    }
+    function show(ticket: string): void {
+      root.showNotified(ticket)
+    }
     // A notification's buttons: "host/id:revision" (comma-separated for
     // markRead); from another account they do nothing.
-    function markRead(tickets: string): void { TicketStore.markReadUpTo(tickets) }
-    function viewInZendesk(ticket: string): void { TicketStore.viewInZendesk(ticket) }
-    function snooze(): void { TicketStore.toggleSnooze() }
+    function markRead(tickets: string): void {
+      TicketStore.markReadUpTo(tickets)
+    }
+    function viewInZendesk(ticket: string): void {
+      TicketStore.viewInZendesk(ticket)
+    }
+    function snooze(): void {
+      TicketStore.toggleSnooze()
+    }
   }
   readonly property alias barContent: barContent
   Ui.WidgetButton {
@@ -96,13 +122,12 @@ Ui.Panel {
     fixedWidth: root.bar && root.bar.vertical ? -1 : Math.max(Style.bar.iconSlot, barContent.implicitWidth + Style.bar.iconSlot - Style.bar.iconCanvas)
     active: TicketStore.unreadCount > 0 && TicketStore.withinSchedule
     activeColor: Commons.Color.accent
-    tooltipText: TicketStore.snoozed ? FoamyI18n.t("Zendesk — snoozed")
-      : !TicketStore.withinSchedule ? FoamyI18n.t("Zendesk — outside your schedule")
-      : !ZendeskAccount.signedIn ? FoamyI18n.t("Zendesk — not signed in")
-      : TicketStore.unreadCount ? FoamyI18n.tn("Zendesk — %1 unread", TicketStore.unreadCount) : "Zendesk"
-    onPressed: function(pressedButton) {
-      if (pressedButton === Qt.RightButton) root.openSettings();
-      else root.toggle();
+    tooltipText: TicketStore.snoozed ? FoamyI18n.t("Zendesk — snoozed") : !TicketStore.withinSchedule ? FoamyI18n.t("Zendesk — outside your schedule") : !ZendeskAccount.signedIn ? FoamyI18n.t("Zendesk — not signed in") : TicketStore.unreadCount ? FoamyI18n.tn("Zendesk — %1 unread", TicketStore.unreadCount) : "Zendesk"
+    onPressed: function (pressedButton) {
+      if (pressedButton === Qt.RightButton)
+        root.openSettings()
+      else
+        root.toggle()
     }
     Row {
       id: barContent
@@ -149,8 +174,12 @@ Ui.Panel {
         settingsError: prefs.error !== "" ? FoamyI18n.t(prefs.error) : ""
         retryable: prefs.canRetry
         onCloseView: root.close()
-        onSwitchPanel: function(direction) { root.switchPanel(direction) }
-        onSaveRequested: function(key, value) { prefs.save(key, value) }
+        onSwitchPanel: function (direction) {
+          root.switchPanel(direction)
+        }
+        onSaveRequested: function (key, value) {
+          prefs.save(key, value)
+        }
         onRetryRequested: prefs.retry()
       }
     }

@@ -286,7 +286,6 @@ Shared components are copied from foamy-kit and pinned by `foamy-kit.lock`.
 Change the kit source and sync; never edit its stamped copies here.
 
 The tests run on Omarchy 4.5, the installed `/usr/share/omarchy/shell`
-(`FOAMY_HOST_45` picks another 4.5 tree). The installed Qt formatter
-cannot process typed `void` IPC methods in `Panel.qml` (also true for existing
-Foamy plugins); the runtime test loads and exercises that file without removing
-its types.
+(`FOAMY_HOST_45` picks another 4.5 tree). QML is formatted with Qt 6.12's
+`qmlformat` and the kit's `.qmlformat.ini`, which keeps `Panel.qml`'s typed
+`void` IPC methods; the runtime test loads and exercises that file.

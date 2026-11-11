@@ -22,9 +22,9 @@ Item {
   property int sectionCount: 0
   property int cursorPart: -1
   signal hovered(int part)
-  signal toggleRequested()
-  signal openRequested()
-  signal readToggleRequested()
+  signal toggleRequested
+  signal openRequested
+  signal readToggleRequested
   readonly property alias bodyItem: bodySurface
   readonly property alias frameItem: frame
   readonly property alias unreadDot: unreadDot
@@ -44,8 +44,11 @@ Item {
   property int openedSince: 0
   property int openedUpdates: 0
   onExpandedChanged: {
-    if (expanded) { openedSince = ticket.since; openedUpdates = ticket.updates; }
-    else showEarlier = false;
+    if (expanded) {
+      openedSince = ticket.since
+      openedUpdates = ticket.updates
+    } else
+      showEarlier = false
   }
   readonly property int historyCount: ticket.history ? ticket.history.count : 0
   readonly property int shownCount: showEarlier ? historyCount : Math.min(historyCount, Math.max(openedUpdates + 1, 2))
@@ -53,11 +56,17 @@ Item {
   // full, else the earlier comments. False when there's nothing more.
   function showMore() {
     for (var i = 0; i < shownCount; i++) {
-      var item = history.itemAt(i);
-      if (item && item.clipped) { item.full = true; return true; }
+      var item = history.itemAt(i)
+      if (item && item.clipped) {
+        item.full = true
+        return true
+      }
     }
-    if (shownCount < historyCount) { showEarlier = true; return true; }
-    return false;
+    if (shownCount < historyCount) {
+      showEarlier = true
+      return true
+    }
+    return false
   }
   readonly property bool read: ticket.read === true
   // Read tickets are dimmed, except the one being read.
@@ -77,26 +86,31 @@ Item {
   readonly property int clipLines: 6
   // The open card, opaque so clipped comments can fade into it.
   readonly property color cardColor: Qt.tint(FoamyPalette.background, FoamyPalette.noteFill)
-  readonly property color priorityTone: ticket.priority === "Urgent" ? FoamyPalette.onSurface(FoamyPalette.error)
-    : ticket.priority === "High" ? FoamyPalette.onSurface(FoamyPalette.warning) : FoamyPalette.mutedText
+  readonly property color priorityTone: ticket.priority === "Urgent" ? FoamyPalette.onSurface(FoamyPalette.error) : ticket.priority === "High" ? FoamyPalette.onSurface(FoamyPalette.warning) : FoamyPalette.mutedText
   // On-hold waits like Pending (on a third party instead of the requester).
-  readonly property color statusTone: FoamyPalette.onSurface(ticket.status === "Solved" ? FoamyPalette.success
-    : ticket.status === "Pending" || ticket.status === "On-hold" ? FoamyPalette.warning : FoamyPalette.info)
-  function format(ms, fmt) { return new Date(ms).toLocaleString(Qt.locale(FoamyI18n.formatLocale), fmt) }
+  readonly property color statusTone: FoamyPalette.onSurface(ticket.status === "Solved" ? FoamyPalette.success : ticket.status === "Pending" || ticket.status === "On-hold" ? FoamyPalette.warning : FoamyPalette.info)
+  function format(ms, fmt) {
+    return new Date(ms).toLocaleString(Qt.locale(FoamyI18n.formatLocale), fmt)
+  }
   // A row's time: 10:40 today, then Yesterday, a weekday, 28 Oct, 28 Oct 2025.
   function when(ms) {
-    var days = Model.daysAgo(ms, now);
-    if (days <= 0) return format(ms, "HH:mm");
-    if (days === 1) return FoamyI18n.t("Yesterday");
-    if (days < 7) return format(ms, "ddd");
-    return format(ms, new Date(ms).getFullYear() === new Date(now).getFullYear() ? "d MMM" : "d MMM yyyy");
+    var days = Model.daysAgo(ms, now)
+    if (days <= 0)
+      return format(ms, "HH:mm")
+    if (days === 1)
+      return FoamyI18n.t("Yesterday")
+    if (days < 7)
+      return format(ms, "ddd")
+    return format(ms, new Date(ms).getFullYear() === new Date(now).getFullYear() ? "d MMM" : "d MMM yyyy")
   }
   // A comment's time: the row's day (today is left out) and the time.
   function stamp(ms) {
-    var days = Model.daysAgo(ms, now);
-    return days <= 0 ? format(ms, "HH:mm") : when(ms) + ", " + format(ms, "HH:mm");
+    var days = Model.daysAgo(ms, now)
+    return days <= 0 ? format(ms, "HH:mm") : when(ms) + ", " + format(ms, "HH:mm")
   }
-  function author(name, mine) { return mine ? FoamyI18n.t("You") : name }
+  function author(name, mine) {
+    return mine ? FoamyI18n.t("You") : name
+  }
   implicitHeight: column.implicitHeight
   height: implicitHeight
 
@@ -107,7 +121,13 @@ Item {
     implicitHeight: label.implicitHeight + FoamyStyle.gapSmall * 2
     radius: FoamyStyle.pillRadius(height)
     color: Qt.alpha(tone, 0.10)
-    PlainText { id: label; anchors.centerIn: parent; text: parent.text; color: parent.tone; font.pixelSize: FoamyStyle.font.bodySmall }
+    PlainText {
+      id: label
+      anchors.centerIn: parent
+      text: parent.text
+      color: parent.tone
+      font.pixelSize: FoamyStyle.font.bodySmall
+    }
   }
   // A text link in the open ticket ("Show full comment", "Show earlier").
   component MoreLink: FoamyCursorSurface {
@@ -198,19 +218,21 @@ Item {
       FoamyCursorSurface {
         id: bodySurface
         readonly property real inset: ticketRow.expanded ? FoamyStyle.borderWidth : 0
-        x: inset; y: inset
+        x: inset
+        y: inset
         width: card.width - inset * 2
         height: ticketRow.expanded ? head.height + ticketRow.pad * 2 - inset : card.height
         radius: ticketRow.expanded ? FoamyStyle.bandRadius : FoamyStyle.radius
         bottomLeftRadius: ticketRow.expanded ? 0 : radius
         bottomRightRadius: ticketRow.expanded ? 0 : radius
-        color: ticketRow.expanded ? (hasCursor ? Qt.tint(FoamyPalette.bandFill, fill) : FoamyPalette.bandFill)
-          : (hasCursor ? fill : "transparent")
+        color: ticketRow.expanded ? (hasCursor ? Qt.tint(FoamyPalette.bandFill, fill) : FoamyPalette.bandFill) : (hasCursor ? fill : "transparent")
         foreground: FoamyPalette.text
         hasCursor: ticketRow.cursorPart === 0
         onHovered: ticketRow.hovered(0)
         onClicked: ticketRow.toggleRequested()
-        HoverHandler { id: rowHover }
+        HoverHandler {
+          id: rowHover
+        }
         Accessible.role: Accessible.Button
         Accessible.name: ticketRow.ticket.subject + (ticketRow.read ? "" : ", " + FoamyI18n.t("unread"))
         Accessible.description: ticketRow.expanded ? FoamyI18n.t("Collapse ticket") : FoamyI18n.t("Expand ticket")
@@ -234,7 +256,8 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             name: ticketRow.expanded ? "chevron-down" : "chevron-right"
             color: ticketRow.expanded ? FoamyPalette.secondaryText : FoamyPalette.mutedText
-            width: 14; height: width
+            width: 14
+            height: width
           }
           PlainText {
             id: subject
@@ -256,7 +279,9 @@ Item {
             visible: !ticketRow.read && !ticketRow.expanded
             x: whenLabel.x - (visible ? width + FoamyStyle.gapSmall : 0)
             anchors.verticalCenter: parent.verticalCenter
-            width: 7; height: 7; radius: 3.5
+            width: 7
+            height: 7
+            radius: 3.5
             color: FoamyPalette.accent
           }
           // Closed, the time sits on the subject line (with the sender on a
@@ -268,8 +293,7 @@ Item {
             anchors.right: actions.left
             anchors.rightMargin: FoamyStyle.gapSmall
             anchors.verticalCenter: parent.verticalCenter
-            text: (ticketRow.oneLine ? ticketRow.author(ticketRow.ticket.sender, ticketRow.ticket.senderMine) + " · " : "")
-              + ticketRow.when(ticketRow.ticket.received)
+            text: (ticketRow.oneLine ? ticketRow.author(ticketRow.ticket.sender, ticketRow.ticket.senderMine) + " · " : "") + ticketRow.when(ticketRow.ticket.received)
             color: FoamyPalette.mutedText
             font.pixelSize: FoamyStyle.font.bodySmall
             wrapMode: Text.NoWrap
@@ -286,9 +310,14 @@ Item {
               tooltipText: ticketRow.read ? FoamyI18n.t("Mark as unread") : FoamyI18n.t("Mark as read")
               foreground: FoamyPalette.secondaryText
               opacity: ticketRow.readActionShown ? 1 : 0
-              Behavior on opacity { NumberAnimation { duration: FoamyMotion.hover } }
+              Behavior on opacity {
+                NumberAnimation {
+                  duration: FoamyMotion.hover
+                }
+              }
               hasCursor: ticketRow.cursorPart === 1
-              onHoveredChanged: if (hovered) ticketRow.hovered(1)
+              onHoveredChanged: if (hovered)
+                ticketRow.hovered(1)
               onClicked: ticketRow.readToggleRequested()
             }
             FoamyAction {
@@ -297,7 +326,8 @@ Item {
               tooltipText: FoamyI18n.t("View in Zendesk")
               foreground: ticketRow.muted ? FoamyPalette.secondaryText : FoamyPalette.text
               hasCursor: ticketRow.cursorPart === 2
-              onHoveredChanged: if (hovered) ticketRow.hovered(2)
+              onHoveredChanged: if (hovered)
+                ticketRow.hovered(2)
               onClicked: ticketRow.openRequested()
             }
           }
@@ -309,8 +339,18 @@ Item {
           spacing: FoamyStyle.gapSmall
           opacity: ticketRow.muted ? 0.6 : 1
           // Most tickets are Open and Normal: only the exceptions get a label.
-          StatusLabel { id: statusPill; visible: ticketRow.ticket.status !== "Open"; text: FoamyI18n.t(ticketRow.ticket.status); tone: ticketRow.statusTone }
-          StatusLabel { id: priorityPill; visible: ticketRow.ticket.priority !== "Normal"; text: FoamyI18n.t(ticketRow.ticket.priority); tone: ticketRow.priorityTone }
+          StatusLabel {
+            id: statusPill
+            visible: ticketRow.ticket.status !== "Open"
+            text: FoamyI18n.t(ticketRow.ticket.status)
+            tone: ticketRow.statusTone
+          }
+          StatusLabel {
+            id: priorityPill
+            visible: ticketRow.ticket.priority !== "Normal"
+            text: FoamyI18n.t(ticketRow.ticket.priority)
+            tone: ticketRow.priorityTone
+          }
           PlainText {
             id: meta
             objectName: "meta"
@@ -370,11 +410,23 @@ Item {
               visible: index < ticketRow.shownCount
               width: timeline.width
               height: visible ? entry.implicitHeight + FoamyStyle.gapLarge : 0
-              Rectangle { x: 3; y: 12; width: 1; height: parent.height - 6; color: FoamyPalette.divider; visible: index < ticketRow.shownCount - 1 }
               Rectangle {
-                x: 0; y: 4; width: 7; height: 7; radius: 3.5
+                x: 3
+                y: 12
+                width: 1
+                height: parent.height - 6
+                color: FoamyPalette.divider
+                visible: index < ticketRow.shownCount - 1
+              }
+              Rectangle {
+                x: 0
+                y: 4
+                width: 7
+                height: 7
+                radius: 3.5
                 color: entryItem.fresh ? FoamyPalette.accent : ticketRow.cardColor
-                border.width: 1; border.color: entryItem.fresh ? FoamyPalette.accent : FoamyPalette.mutedText
+                border.width: 1
+                border.color: entryItem.fresh ? FoamyPalette.accent : FoamyPalette.mutedText
               }
               Column {
                 id: entry
@@ -382,9 +434,10 @@ Item {
                 width: parent.width - x
                 spacing: 2
                 PlainText {
-                  text: ticketRow.author(model.sender, model.mine) + "  ·  " + ticketRow.stamp(model.received)
-                    + (model.internal ? "  ·  " + FoamyI18n.t("internal note") : "") + (entryItem.fresh ? "  ·  " + FoamyI18n.t("new") : "")
-                  font.pixelSize: FoamyStyle.font.bodySmall; font.weight: Font.DemiBold; color: FoamyPalette.secondaryText
+                  text: ticketRow.author(model.sender, model.mine) + "  ·  " + ticketRow.stamp(model.received) + (model.internal ? "  ·  " + FoamyI18n.t("internal note") : "") + (entryItem.fresh ? "  ·  " + FoamyI18n.t("new") : "")
+                  font.pixelSize: FoamyStyle.font.bodySmall
+                  font.weight: Font.DemiBold
+                  color: FoamyPalette.secondaryText
                 }
                 PlainText {
                   id: entryBody
@@ -401,8 +454,14 @@ Item {
                     anchors.bottom: parent.bottom
                     height: Math.min(parent.height, parent.font.pixelSize * 3)
                     gradient: Gradient {
-                      GradientStop { position: 0; color: Qt.alpha(ticketRow.cardColor, 0) }
-                      GradientStop { position: 1; color: ticketRow.cardColor }
+                      GradientStop {
+                        position: 0
+                        color: Qt.alpha(ticketRow.cardColor, 0)
+                      }
+                      GradientStop {
+                        position: 1
+                        color: ticketRow.cardColor
+                      }
                     }
                   }
                 }
@@ -435,16 +494,16 @@ Item {
           visible: !ticketRow.oneLine
           x: ticketRow.indent
           width: parent.width - x
-          text: (ticketRow.expanded ? ticketRow.when(ticketRow.ticket.received) + "  ·  " : "")
-            + (ticketRow.ticket.mine ? FoamyI18n.t("Assigned to you")
-              : ticketRow.ticket.unassigned ? FoamyI18n.t("Unassigned") : FoamyI18n.t("Assigned to %1", ticketRow.ticket.assignee || "?"))
-            + (ticketRow.ticket.group ? "  ·  " + ticketRow.ticket.group : "")
+          text: (ticketRow.expanded ? ticketRow.when(ticketRow.ticket.received) + "  ·  " : "") + (ticketRow.ticket.mine ? FoamyI18n.t("Assigned to you") : ticketRow.ticket.unassigned ? FoamyI18n.t("Unassigned") : FoamyI18n.t("Assigned to %1", ticketRow.ticket.assignee || "?")) + (ticketRow.ticket.group ? "  ·  " + ticketRow.ticket.group : "")
           color: FoamyPalette.mutedText
           font.pixelSize: FoamyStyle.font.bodySmall
           elide: Text.ElideRight
         }
       }
     }
-    Item { width: 1; height: ticketRow.oneLine ? 0 : FoamyStyle.gap }
+    Item {
+      width: 1
+      height: ticketRow.oneLine ? 0 : FoamyStyle.gap
+    }
   }
 }
