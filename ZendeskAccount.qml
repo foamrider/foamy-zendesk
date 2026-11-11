@@ -33,9 +33,15 @@ QtObject {
   // Bumped by sign-out: a check that started before it answers for a sign-in
   // that is gone.
   property int signOuts: 0
+  // Bumped by configure(): a helper started before it (a check, a sign-in
+  // being stopped, a sign-out) answers for another address or client.
+  property int configurations: 0
+  // The helper's argv (after the timeout); tests replace it.
+  property var helperCommand: function(args) { return FoamyNative.command(account.pluginDir, account.helper, args); }
 
   function configure(next) {
     if (next.address === address && next.clientId === clientId && next.port === port) return;
+    configurations++;
     if (loginProcess.running) loginProcess.running = false;
     address = next.address;
     clientId = next.clientId;
@@ -49,7 +55,8 @@ QtObject {
     return [command, "--address", address, "--client-id", clientId].concat(extra || []);
   }
   function start(process, command, extra, limit) {
-    process.command = ["timeout", "--kill-after=2s", limit].concat(FoamyNative.command(pluginDir, helper, args(command, extra)));
+    process.command = ["timeout", "--kill-after=2s", limit].concat(helperCommand(args(command, extra)));
+    process.configuration = configurations;
     process.running = true;
   }
 
@@ -123,25 +130,35 @@ QtObject {
 
   property Process statusProcess: Process {
     property int signOuts: 0
+    property int configuration: 0
     stdout: StdioCollector { id: statusOutput; waitForEnd: true }
     onExited: function(code) {
-      if (statusProcess.signOuts === account.signOuts) account.apply(statusOutput.text, code);
+      // From before configure(): the check it asked for follows.
+      if (statusProcess.signOuts === account.signOuts && statusProcess.configuration === account.configurations)
+        account.apply(statusOutput.text, code);
       if (account.checkAgain) { account.checkAgain = false; Qt.callLater(account.check); }
     }
   }
 
   property Process loginProcess: Process {
     property string lastLine: ""
+    property int configuration: 0
     stdout: SplitParser {
       onRead: function(line) {
         var message = null;
         try { message = JSON.parse(line); } catch (e) {}
-        // The helper is listening: hand the authorize URL to the browser.
-        if (message && message.event === "authorize" && /^https?:\/\//.test(message.url)) Qt.openUrlExternally(message.url);
+        // The helper is listening: hand the authorize URL to the browser
+        // (not one for an address or client configure() replaced).
+        if (message && message.event === "authorize" && /^https?:\/\//.test(message.url)) {
+          if (loginProcess.configuration === account.configurations) Qt.openUrlExternally(message.url);
+        }
         else loginProcess.lastLine = line;
       }
     }
     onExited: function(code) {
+      // Stopped by configure(): whatever it brings is for the old address or
+      // client, and the check configure() asked for waited for this exit.
+      if (loginProcess.configuration !== account.configurations) { Qt.callLater(account.check); return; }
       if (loginProcess.lastLine === "" && code !== 0 && !FoamyNative.unavailable(code)) {
         // Cancelled (stopped by us) or killed: back to where it was.
         account.state = account.user ? "signed_in" : "signed_out";
@@ -152,7 +169,12 @@ QtObject {
   }
 
   property Process logoutProcess: Process {
+    property int configuration: 0
     stdout: StdioCollector { id: logoutOutput; waitForEnd: true }
-    onExited: function(code) { account.apply(logoutOutput.text, code); }
+    onExited: function(code) {
+      // As for a sign-in: the new address or client gets its own check.
+      if (logoutProcess.configuration !== account.configurations) { Qt.callLater(account.check); return; }
+      account.apply(logoutOutput.text, code);
+    }
   }
 }

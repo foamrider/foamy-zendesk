@@ -44,6 +44,7 @@ ShellRoot {
   property int fetchProbe: 0
   property var opened: []
   property var sent: []
+  property var fetches: []
   // The shell reflects saved settings back to every instance, like the host.
   property var entry: ({})
   TestEvent { id: ev }
@@ -56,6 +57,21 @@ ShellRoot {
   function check(ok, message) {
     if (!ok) { console.log("FOAMY FAIL " + message); Qt.quit(); }
     return ok;
+  }
+  // A stand-in helper: "now" replies at once, "slow" after a second;
+  // "late" replies only when stopped (a full reply already on its way),
+  // "stopped" then exits 143 with nothing.
+  function fake(mode, reply) {
+    var script = mode === "now" ? "printf '%s\\n' \"$1\""
+      : mode === "slow" ? "sleep 1; printf '%s\\n' \"$1\""
+      : "trap 'kill $! 2>/dev/null; " + (mode === "late" ? "printf \"%s\\n\" \"$1\"; exit 0" : "exit 143") + "' TERM; sleep 30 & wait";
+    return ["sh", "-c", script, "fake", JSON.stringify(reply)];
+  }
+  function inboxReply(address, id) {
+    return { ok: true, state_path: Quickshell.env("FOAMY_OUT") + "/read-" + address + ".json",
+             tickets: [{ id: String(id), subject: "Ticket " + id, status: "Open", priority: "Normal", assignee: "Alex", mine: true,
+                         group: "IT support", requester: "Jonas", updated_at: "2026-11-06T10:00:00Z",
+                         comments: [{ id: id * 10, author: "Jonas", mine: false, public: true, created: Fixtures.BASE, body: "Hello." }] }] };
   }
   function many() {
     var list = Fixtures.tickets();
@@ -495,6 +511,61 @@ ShellRoot {
         };
         if (!check(shell.sent.length === 1 && sentHint("omarchy-exec-argv")[4] === "globex.zendesk.com/4821"
                    && sentHint("omarchy-actions")[1].argv[4] === "globex.zendesk.com/4821:48214", "new notifications name the new account")) return;
+        break;
+      case 17:
+        // Switching accounts mid-fetch: the old fetch's exit is ignored. The
+        // helper is a stand-in from here on, inside the real timeout wrapper.
+        if (account.busy) { shell.step--; if (++shell.waited > 160) check(false, "the account check finished"); return; }
+        store.helperCommand = function(args) {
+          var address = args[args.indexOf("--address") + 1];
+          shell.fetches = shell.fetches.concat([address]);
+          return shell.fake({ dies: "stopped", late: "late", initech: "slow" }[address] || "now", shell.inboxReply(address, address === "late" ? 7001 : 8001));
+        };
+        store.fixtures = false;
+        account.state = "signed_out";
+        account.address = "dies";
+        account.state = "signed_in";
+        if (!check(store.active && store.fetchProcess.running && shell.fetches.length === 1 && !store.loaded && store.count === 0,
+                   "signed in, the inbox is fetched")) return;
+        account.address = "late";
+        shell.waited = 0;
+        break;
+      case 18:
+        if (shell.fetches.length < 2 || !store.fetchProcess.running) { shell.step--; if (++shell.waited > 40) check(false, "the new account's fetch started"); return; }
+        if (!check(store.error === "" && store.failures === 0 && store.retryAt === 0 && store.pollTimer.interval === store.refreshSeconds * 1000,
+                   "a fetch stopped by an account switch (143) is no error and doubles no poll interval (" + store.error + ")")) return;
+        account.address = "initech";
+        break;
+      case 19:
+        // The previous account's full reply came in as it was stopped.
+        if (!check(shell.fetches.length === 3 && store.fetchProcess.running, "the next account's fetch is under way")) return;
+        if (!check(store.count === 0 && !store.loaded && store.readPath === "" && store.error === "" && store.failures === 0,
+                   "the previous account's late reply is ignored (" + store.count + " tickets, " + store.readPath + ")")) return;
+        shell.waited = 0;
+        break;
+      case 20:
+        if (!store.loaded) { shell.step--; if (++shell.waited > 40) check(false, "the new account's inbox arrived"); return; }
+        if (!check(store.count === 1 && store.tickets.get(0).id === "8001" && /\/read-initech\.json$/.test(store.readPath)
+                   && store.error === "" && store.failures === 0, "only the new account's tickets and read markers")) return;
+        // Another address mid sign-in: the stopped sign-in's reply is the old
+        // address's; the new one gets its own check.
+        account.helperCommand = function(args) {
+          var who = args[args.indexOf("--address") + 1] === "newco" ? "New" : "Old";
+          return shell.fake(args[0] === "auth-login" ? "late" : "now", { ok: true, state: "signed_in", verified: true, user: { name: who, email: who + "@example.invalid" } });
+        };
+        account.state = "signed_out";
+        account.user = null;
+        account.signIn();
+        break;
+      case 21:
+        if (!check(account.state === "waiting" && account.loginProcess.running, "signing in waits for the browser")) return;
+        account.configure({ address: "newco", clientId: account.clientId, port: account.port });
+        shell.waited = 0;
+        break;
+      case 22:
+        if (account.busy || account.state === "waiting" || account.state === "checking") { shell.step--; if (++shell.waited > 40) check(false, "the new address was checked (" + account.state + ")"); return; }
+        if (!check(account.state === "signed_in" && account.user && account.user.name === "New" && account.address === "newco",
+                   "a sign-in stopped by another address never signs that address in; the new address is checked (" + account.state + ", " + JSON.stringify(account.user) + ")")) return;
         console.log("FOAMY DONE runtime interactions passed"); Qt.quit();
       }
     }
