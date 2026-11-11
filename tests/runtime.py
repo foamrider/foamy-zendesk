@@ -125,8 +125,12 @@ ShellRoot {
                    && one.barContent.countLabel.color == bar.urgent && one.barContent.icon.color == button.foreground, "bar badge counts unread tickets")) return;
         button.grabToImage(function(result) { result.saveToFile(Quickshell.env("FOAMY_OUT") + "/bar.png"); });
         button.triggerPress(Qt.LeftButton);
+        shell.waited = 0;
         break;
       case 2:
+        // The header lays out its actions once the popup is shown (a 0 ms
+        // timer); under load that can come after this tick.
+        if (!view || !view.band.settingsInMenu) { shell.step--; if (++shell.waited > 40) check(false, "the popup's header laid out"); return; }
         if (!check(view !== null && view.repeater.count === 3, "real popup loads ticket cards")) return;
         // Rows are dated against the wall clock, or the preview's fixed time.
         var dated = shell.find(view, "ticket-4824");
@@ -515,7 +519,10 @@ ShellRoot {
       case 17:
         // Switching accounts mid-fetch: the old fetch's exit is ignored. The
         // helper is a stand-in from here on, inside the real timeout wrapper.
-        if (account.busy) { shell.step--; if (++shell.waited > 160) check(false, "the account check finished"); return; }
+        // As in step 1: the check's process can be gone a tick before its
+        // reply is applied; a reply applied after the fields set below would
+        // sign the stand-in accounts out ("no keyring").
+        if (account.busy || account.state === "checking") { shell.step--; if (++shell.waited > 160) check(false, "the account check finished"); return; }
         store.helperCommand = function(args) {
           var address = args[args.indexOf("--address") + 1];
           shell.fetches = shell.fetches.concat([address]);
@@ -535,9 +542,13 @@ ShellRoot {
         if (!check(store.error === "" && store.failures === 0 && store.retryAt === 0 && store.pollTimer.interval === store.refreshSeconds * 1000,
                    "a fetch stopped by an account switch (143) is no error and doubles no poll interval (" + store.error + ")")) return;
         account.address = "initech";
+        shell.waited = 0;
         break;
       case 19:
-        // The previous account's full reply came in as it was stopped.
+        // The previous account's full reply came in as it was stopped; its
+        // exit starts the next account's fetch (a process exit and a start:
+        // under load, more than one tick).
+        if (shell.fetches.length < 3) { shell.step--; if (++shell.waited > 40) check(false, "the next account's fetch started"); return; }
         if (!check(shell.fetches.length === 3 && store.fetchProcess.running, "the next account's fetch is under way")) return;
         if (!check(store.count === 0 && !store.loaded && store.readPath === "" && store.error === "" && store.failures === 0,
                    "the previous account's late reply is ignored (" + store.count + " tickets, " + store.readPath + ")")) return;
