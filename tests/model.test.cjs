@@ -170,6 +170,25 @@ test('invalid replies are refused; text stays plain data', () => {
   assert.equal(Model.visible(seeded(list))[0].body, body);
 });
 
+test('text cut to its limit says so; a comment the helper clipped keeps its mark', () => {
+  // The helper clips a comment at 16384 characters (code points) and adds "…".
+  const clipped = 'x'.repeat(16384) + '…';
+  const emoji = '😀'.repeat(16384) + '…';
+  const list = Fixtures.tickets();
+  list[0].comments[0].body = clipped;
+  list[1].comments[0].body = emoji;
+  list[2].subject = 's'.repeat(600);
+  const state = seeded(list);
+  assert.equal(state.tickets[list[0].id].body, clipped);
+  assert.equal(state.tickets[list[1].id].body, emoji);
+  const subject = state.tickets[list[2].id].subject;
+  assert.equal(subject.length, 512);
+  assert.ok(subject.endsWith('…'), 'a subject cut short ends in an ellipsis');
+  // Never half a surrogate pair.
+  const cut = Model.ticketFrom({ id: '1', subject: 'a' + '😀'.repeat(300) }).subject;
+  assert.ok(cut.endsWith('…') && !/[\uD800-\uDBFF]…$/.test(cut));
+});
+
 test('a fetch from before an account switch is ignored, even a full reply that arrives late', () => {
   const reply = JSON.stringify({ ok: true, tickets: Fixtures.tickets(), state_path: '/state/acme.json' });
   const now = Model.fetchOutcome(3, 3, 'progress\n' + reply + '\n');

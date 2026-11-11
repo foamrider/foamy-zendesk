@@ -14,8 +14,21 @@ function empty() {
 }
 
 function text(value, limit) {
-  return typeof value === "string" ? value.slice(0, limit || 16384) : "";
+  return typeof value === "string" ? value.slice(0, limit) : "";
 }
+
+// Text the panel shows, at most `limit` UTF-16 units: cut short, it ends in
+// "…" (never half a surrogate pair), so a clipped value never looks complete.
+function shown(value, limit) {
+  if (typeof value !== "string") return "";
+  if (value.length <= limit) return value;
+  var cut = value.slice(0, limit - 1);
+  if (/[\uD800-\uDBFF]$/.test(cut)) cut = cut.slice(0, -1);
+  return cut + "\u2026";
+}
+// The helper clips a comment at 16384 characters (code points, up to two
+// UTF-16 units each) plus its own "…": such a body fits whole.
+var MAX_BODY = 2 * 16384 + 1
 
 // One ticket from the helper's `fetch` reply, merged with what we had:
 // "unchanged"/"deferred" tickets keep their earlier comments.
@@ -27,7 +40,7 @@ function ticketFrom(raw, previous) {
       return comment && Number.isSafeInteger(comment.id) && Number.isSafeInteger(comment.created);
     }).slice(0, MAX_HISTORY).map(function(comment) {
       return { eventId: raw.id + ":" + comment.id, revision: comment.id, received: comment.created,
-               sender: text(comment.author, 256) || "?", body: text(comment.body),
+               sender: shown(comment.author, 256) || "?", body: shown(comment.body, MAX_BODY),
                mine: comment.mine === true, internal: comment.public === false };
     });
   }
@@ -35,20 +48,20 @@ function ticketFrom(raw, previous) {
   var updated = Date.parse(raw.updated_at);
   return {
     id: String(raw.id),
-    subject: text(raw.subject, 512) || "(no subject)",
+    subject: shown(raw.subject, 512) || "(no subject)",
     status: text(raw.status, 32) || "Open",
     priority: text(raw.priority, 32) || "Normal",
-    assignee: text(raw.assignee, 256) || "Unassigned",
+    assignee: shown(raw.assignee, 256) || "Unassigned",
     mine: raw.mine === true,
-    group: text(raw.group, 256),
-    requester: text(raw.requester, 256),
+    group: shown(raw.group, 256),
+    requester: shown(raw.requester, 256),
     updatedAt: text(raw.updated_at, 64),
     // Comments not fetched yet: ask for them again next time.
     loaded: Array.isArray(raw.comments) || (!!previous && previous.loaded),
     history: history,
     revision: latest ? latest.revision : 0,
     received: latest ? latest.received : (isNaN(updated) ? 0 : updated),
-    sender: latest ? latest.sender : text(raw.requester, 256),
+    sender: latest ? latest.sender : shown(raw.requester, 256),
     // The latest comment is the agent's own reply.
     senderMine: latest ? latest.mine : false,
     body: latest ? latest.body : ""
