@@ -17,8 +17,8 @@
 //! `fetch` replies `{"ok":true,"me":{…},"tickets":[…],"truncated":{…},"state_path":…}`:
 //! unsolved tickets assigned to the agent and unassigned ones in the agent's
 //! groups, each with its latest comments (newest first) unless `known` already
-//! has that `updated_at` (`"unchanged":true`) or the run's comment budget is
-//! spent (`"deferred":true`). `truncated` is `{"tickets":bool,"groups":bool}`:
+//! has that `updated_at` (`"unchanged":true`) or the run's comment budget (25
+//! tickets, about 8 MB) is spent (`"deferred":true`: they follow next run). `truncated` is `{"tickets":bool,"groups":bool}`:
 //! true when the 100 most recently updated tickets (one search page each) or
 //! the first 20 groups left some out. `state_path` is the plugin's read-state
 //! file in a private `$XDG_STATE_HOME/foamy-zendesk/` (created here; the panel

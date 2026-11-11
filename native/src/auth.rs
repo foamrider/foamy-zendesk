@@ -1031,6 +1031,56 @@ mod tests {
     }
 
     #[test]
+    fn one_run_sends_about_8_mb_of_comments_and_defers_the_rest() {
+        // Ten changed tickets with 20 comments of 16384 four-byte characters
+        // each: about 1.3 MB of comments per ticket, 13 MB in all.
+        let (base, _) = fake(Box::new(|_, path, _| {
+            let path = path.to_string();
+            if path == "/api/v2/users/me.json" {
+                (200, json!({"user": {"id": 7, "name": "Alex"}}))
+            } else if path.contains("groups.json") {
+                (200, json!({"groups": []}))
+            } else if path.contains("assignee%3Ame") {
+                let page: Vec<Value> = (1..=10u64)
+                    .map(|id| json!({"id": id, "result_type": "ticket", "subject": "T", "status": "open", "assignee_id": 7,
+                                     "requester_id": 7, "updated_at": format!("2026-11-06T09:{:02}:00Z", 60 - id)}))
+                    .collect();
+                (200, json!({"results": page, "count": 10}))
+            } else if path.contains("/comments.json") {
+                let list: Vec<Value> = (0..20)
+                    .map(|n| json!({"id": n, "author_id": 7, "public": true, "plain_body": "😀".repeat(16 * 1024),
+                                    "created_at": "2026-11-06T09:00:00Z"}))
+                    .collect();
+                (200, json!({"comments": list}))
+            } else if path.starts_with("/api/v2/users/show_many.json") {
+                (200, json!({"users": [{"id": 7, "name": "Alex"}]}))
+            } else {
+                (404, json!({"error": path}))
+            }
+        }));
+        let vault = Memory::default();
+        vault
+            .put(&json!({"access_token": "A1"}).to_string())
+            .unwrap();
+        let reply =
+            crate::tickets::fetch(&account(&base, &vault), &serde_json::Map::new()).unwrap();
+        let tickets = reply["tickets"].as_array().unwrap();
+        let with: Vec<&str> = tickets
+            .iter()
+            .filter(|t| t["comments"].is_array())
+            .map(|t| t["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(with, ["1", "2", "3", "4", "5", "6"], "the newest first");
+        assert!(tickets[6..].iter().all(|t| t["deferred"] == true));
+        let size = reply.to_string().len();
+        assert!(
+            size <= 8 * 1024 * 1024 + 64 * 1024,
+            "{size} bytes in one reply"
+        );
+        assert_eq!(tickets[0]["comments"].as_array().unwrap().len(), 20);
+    }
+
+    #[test]
     fn fetch_without_a_sign_in_says_so() {
         let vault = Memory::default();
         let failure = crate::tickets::fetch(

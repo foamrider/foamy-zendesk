@@ -23,6 +23,14 @@ const MAX_COMMENT_FETCHES: usize = 25;
 const MAX_BODY: usize = 16 * 1024;
 /// Group searches (one per group).
 const MAX_GROUPS: usize = 20;
+/// Bytes of comments one run sends (the panel keeps what it gets). Once the
+/// next ticket's comments would pass it, they and the rest are deferred to
+/// later runs, like past MAX_COMMENT_FETCHES. One ticket's comments take at
+/// most about 2 MB (COMMENTS × MAX_BODY characters, escaped), so the first
+/// changed ticket always fits and every run makes progress.
+const OUTPUT_BUDGET: usize = 8 * 1024 * 1024;
+/// What a comment's other fields (ids, flags, time, author) add to its body.
+const COMMENT_OVERHEAD: usize = 256;
 
 fn expired() -> Failure {
     Failure::coded("EXPIRED", "The Zendesk sign-in has expired. Sign in again.")
@@ -293,16 +301,18 @@ pub fn fetch(account: &Account, known: &Map<String, Value>) -> Result<Value, Fai
     tickets_cut |= tickets.len() > MAX_TICKETS;
     tickets.truncate(MAX_TICKETS);
 
-    // Comments for tickets the caller doesn't have at this `updated_at`.
+    // Comments for tickets the caller doesn't have at this `updated_at`,
+    // tidied and clipped as they will be sent, so the budget counts them.
     let mut comments: HashMap<u64, Vec<Value>> = HashMap::new();
     let mut deferred = BTreeSet::new();
+    let (mut spent, mut over_budget) = (0, false);
     for ticket in &tickets {
         let id = id_of(&ticket["id"]).unwrap_or(0);
         let updated = ticket["updated_at"].as_str().unwrap_or("");
         if known.get(&id.to_string()).and_then(Value::as_str) == Some(updated) {
             continue;
         }
-        if comments.len() >= MAX_COMMENT_FETCHES {
+        if comments.len() >= MAX_COMMENT_FETCHES || over_budget {
             deferred.insert(id);
             continue;
         }
@@ -311,7 +321,31 @@ pub fn fetch(account: &Account, known: &Map<String, Value>) -> Result<Value, Fai
             &access,
             &format!("/api/v2/tickets/{id}/comments.json?sort_order=desc&per_page={COMMENTS}"),
         )?;
-        comments.insert(id, body["comments"].as_array().cloned().unwrap_or_default());
+        let list: Vec<Value> = body["comments"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|c| {
+                Some(json!({
+                    "id": id_of(&c["id"])?,
+                    "author_id": c["author_id"].clone(),
+                    "public": c["public"].as_bool().unwrap_or(true),
+                    "created": epoch_ms(c["created_at"].as_str()?)?,
+                    "body": clip(&tidy(c["plain_body"].as_str().or(c["body"].as_str()).unwrap_or(""))),
+                }))
+            })
+            .collect();
+        let cost: usize = list
+            .iter()
+            .map(|c| c["body"].to_string().len() + COMMENT_OVERHEAD)
+            .sum();
+        if spent + cost > OUTPUT_BUDGET && !comments.is_empty() {
+            over_budget = true;
+            deferred.insert(id);
+            continue;
+        }
+        spent += cost;
+        comments.insert(id, list);
     }
 
     let mut people = BTreeSet::new();
@@ -348,15 +382,15 @@ pub fn fetch(account: &Account, known: &Map<String, Value>) -> Result<Value, Fai
                 Some(list) => {
                     entry["comments"] = Value::Array(
                         list.iter()
-                            .filter_map(|c| {
-                                Some(json!({
-                                    "id": id_of(&c["id"])?,
+                            .map(|c| {
+                                json!({
+                                    "id": c["id"],
                                     "author": person(id_of(&c["author_id"])),
                                     "mine": id_of(&c["author_id"]) == Some(me_id),
-                                    "public": c["public"].as_bool().unwrap_or(true),
-                                    "created": epoch_ms(c["created_at"].as_str()?)?,
-                                    "body": clip(&tidy(c["plain_body"].as_str().or(c["body"].as_str()).unwrap_or(""))),
-                                }))
+                                    "public": c["public"],
+                                    "created": c["created"],
+                                    "body": c["body"],
+                                })
                             })
                             .collect(),
                     )

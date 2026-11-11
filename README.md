@@ -138,7 +138,8 @@ and, in or outside the schedule, when the popup opens on an inbox older than
   says so below its last ticket when either left some out; Zendesk's search
   can lag a few minutes behind);
 - fetches the latest 20 comments only for tickets whose `updated_at` changed
-  (at most 25 per run; the rest follow next run) and shows their plain text,
+  (at most 25 tickets and about 8 MB of comments per run, the most recently
+  updated first; the rest follow next run) and shows their plain text,
   with the HTML entities Zendesk leaves in it (`&nbsp;`, `&amp;`, …) decoded
   and blank lines collapsed;
 - looks up the names of assignees, requesters and comment authors in one call.
