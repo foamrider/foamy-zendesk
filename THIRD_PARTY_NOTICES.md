@@ -12,9 +12,9 @@ How the lists are made:
 
 ## `foamy-zendesk-helper`
 
-- `bin/aarch64/foamy-zendesk-helper`: sha256 `1a20e2638ff453d8bc3ec2f925c6c11450be5566aa94f26f9e1bd9157f02a3e6`
-- `bin/x86_64/foamy-zendesk-helper`: sha256 `a669785f7a4b7eb3289c162b4e3b3a1473119c9225fece280dc975ec88369cea`
-- `native/native.pin`: source `b9b587f5aa731d87200506dadacec25786c64d4db067f651b867df47a5b6a8c6`, toolchain 1.99.1
+- `bin/aarch64/foamy-zendesk-helper`: sha256 `ca73945f435fae274a3d29f83015917a769446dba06d5ada5fd51ac9b901af12`
+- `bin/x86_64/foamy-zendesk-helper`: sha256 `e30a6a2f1a25f58fe487cf6f7bd2e5bdbd5499fd0c528bb62c42790f1ae4acf6`
+- `native/native.pin`: source `50a1aa3f62d5e1ca146f7560b8ff8c2be5e7ff604c076d160273cf4d8948a427`, toolchain 1.99.1
 
 ### Crates linked into `foamy-zendesk-helper`
 
@@ -57,7 +57,7 @@ First-party crates (not third-party code, listed for completeness):
 
 | Crate | Version | Source | License | Arches | Notices |
 |---|---|---|---|---|---|
-| foamy-helper | 0.1.1 | `kit/rust/foamy-helper/` (foamy-kit, vendored) | MIT | both | [N7](#n7) |
+| foamy-helper | 0.1.2 | `kit/rust/foamy-helper/` (foamy-kit, vendored) | MIT | both | [N7](#n7) |
 | foamy-zendesk-helper | 0.1.0 | `native/` (this plugin) | MIT | both | `LICENSE` |
 
 ### Toolchain code linked into `foamy-zendesk-helper`
@@ -426,7 +426,7 @@ DEALINGS IN THE SOFTWARE.
 
 ### N7
 
-Shipped by: foamy-helper 0.1.1 (foamy-kit's LICENSE).
+Shipped by: foamy-helper 0.1.2 (foamy-kit's LICENSE).
 
 ```text
 MIT License

@@ -196,5 +196,6 @@
   "and %1 more": {
     "one": "and %1 more",
     "other": "and %1 more"
-  }
+  },
+  "The saved list in shell.json isn't valid, so it wasn't replaced.": "The saved list in shell.json isn't valid, so it wasn't replaced."
 }
