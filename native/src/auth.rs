@@ -940,7 +940,14 @@ mod tests {
                 display["assignee"].as_str(),
                 display["requester"].as_str()
             ),
-            (Some("On-hold"), Some("Unassigned"), Some("Maria"))
+            (Some("On-hold"), Some(""), Some("Maria"))
+        );
+        assert_eq!(
+            (
+                tickets[0]["unassigned"].as_bool(),
+                display["unassigned"].as_bool()
+            ),
+            (Some(false), Some(true))
         );
         let comments = display["comments"].as_array().unwrap();
         assert_eq!(
@@ -1078,6 +1085,44 @@ mod tests {
             "{size} bytes in one reply"
         );
         assert_eq!(tickets[0]["comments"].as_array().unwrap().len(), 20);
+    }
+
+    #[test]
+    fn an_agent_named_unassigned_is_an_assignee() {
+        let (base, _) = fake(Box::new(|_, path, _| {
+            let path = path.to_string();
+            if path == "/api/v2/users/me.json" {
+                (200, json!({"user": {"id": 7, "name": "Alex"}}))
+            } else if path.contains("groups.json") {
+                (200, json!({"groups": []}))
+            } else if path.contains("assignee%3Ame") {
+                (
+                    200,
+                    json!({"results": [
+                    {"id": 1, "result_type": "ticket", "status": "open", "assignee_id": 8, "requester_id": 9, "updated_at": "2026-11-06T09:40:00Z"},
+                    {"id": 2, "result_type": "ticket", "status": "open", "assignee_id": null, "requester_id": 9, "updated_at": "2026-11-06T09:30:00Z"}]}),
+                )
+            } else if path.contains("/comments.json") {
+                (200, json!({"comments": []}))
+            } else if path.starts_with("/api/v2/users/show_many.json") {
+                (
+                    200,
+                    json!({"users": [{"id": 8, "name": "Unassigned"}, {"id": 9, "name": "Maria"}]}),
+                )
+            } else {
+                (404, json!({"error": path}))
+            }
+        }));
+        let vault = Memory::default();
+        vault
+            .put(&json!({"access_token": "A1"}).to_string())
+            .unwrap();
+        let reply =
+            crate::tickets::fetch(&account(&base, &vault), &serde_json::Map::new()).unwrap();
+        let tickets = reply["tickets"].as_array().unwrap();
+        let who = |t: &Value| (t["assignee"].clone(), t["unassigned"].clone());
+        assert_eq!(who(&tickets[0]), (json!("Unassigned"), json!(false)));
+        assert_eq!(who(&tickets[1]), (json!(""), json!(true)));
     }
 
     #[test]

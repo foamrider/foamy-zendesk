@@ -437,7 +437,7 @@ Item {
           width: parent.width - x
           text: (ticketRow.expanded ? ticketRow.when(ticketRow.ticket.received) + "  ·  " : "")
             + (ticketRow.ticket.mine ? FoamyI18n.t("Assigned to you")
-              : ticketRow.ticket.assignee === "Unassigned" ? FoamyI18n.t("Unassigned") : FoamyI18n.t("Assigned to %1", ticketRow.ticket.assignee))
+              : ticketRow.ticket.unassigned ? FoamyI18n.t("Unassigned") : FoamyI18n.t("Assigned to %1", ticketRow.ticket.assignee || "?"))
             + (ticketRow.ticket.group ? "  ·  " + ticketRow.ticket.group : "")
           color: FoamyPalette.mutedText
           font.pixelSize: FoamyStyle.font.bodySmall

@@ -746,6 +746,16 @@ ShellRoot {
       break;
     case 35:
       if (!check(!shell.find(view, "truncatedNote").visible, "a complete inbox has no note")) return;
+      // An agent may be called "Unassigned": the helper's flag says who has none.
+      var named = Fixtures.update(8, true);
+      named[0].assignee = "Unassigned";
+      named[0].unassigned = false;
+      store.loadFixtures(named);
+      break;
+    case 36:
+      var footerOf = function(id) { return shell.find(shell.find(view, "ticket-" + id), "cardFooter").text.split("  ·  ")[0]; };
+      if (!check(footerOf("4908") === "Assigned to Unassigned" && footerOf("4824") === "Unassigned",
+                 "an agent named Unassigned is an assignee (" + footerOf("4908") + "; " + footerOf("4824") + ")")) return;
       one.close();
       shell.finished = true;
       console.log("FOAMY DONE runtime interactions passed"); Qt.quit();

@@ -208,6 +208,16 @@ test('a fetch from before an account switch is ignored, even a full reply that a
   assert.equal(Model.fetchOutcome(3, 3, JSON.stringify({ ok: true, tickets: 'nope' })).ok, false);
 });
 
+test('unassigned comes from the flag, not the name: an agent may be called "Unassigned"', () => {
+  const named = Model.ticketFrom({ id: '1', assignee: 'Unassigned', unassigned: false });
+  assert.equal(named.unassigned, false);
+  assert.equal(named.assignee, 'Unassigned');
+  const none = Model.ticketFrom({ id: '2', assignee: '', unassigned: true });
+  assert.equal(none.unassigned, true);
+  assert.equal(none.assignee, '');
+  assert.equal(Model.ticketFrom({ id: '3', assignee: 'Alex', unassigned: 'yes' }).unassigned, false);
+});
+
 test("the helper's truncated flags reach the inbox; anything else is not cut", () => {
   const outcome = truncated => Model.fetchOutcome(1, 1, JSON.stringify({ ok: true, tickets: [], truncated })).truncated;
   assert.deepEqual(outcome({ tickets: true, groups: false }), { tickets: true, groups: false });
@@ -267,7 +277,7 @@ function deferredInbox(count, withComments, created) {
   const list = [];
   for (let i = 0; i < count; i++) {
     const id = String(5000 + i);
-    const raw = { id, subject: 'Ticket ' + id, status: 'Open', priority: 'Normal', assignee: i % 2 ? 'Unassigned' : 'Alex',
+    const raw = { id, subject: 'Ticket ' + id, status: 'Open', priority: 'Normal', assignee: i % 2 ? '' : 'Alex', unassigned: i % 2 === 1,
                   mine: i % 2 === 0, group: 'IT support', requester: 'Jonas', updated_at: '2026-11-06T10:00:00Z' };
     if (withComments(i)) raw.comments = [{ id: 50000 + i * 10, author: 'Jonas', mine: false, public: true, created: created, body: 'Old.' }];
     else raw.deferred = true;

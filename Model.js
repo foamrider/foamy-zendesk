@@ -51,7 +51,9 @@ function ticketFrom(raw, previous) {
     subject: shown(raw.subject, 512) || "(no subject)",
     status: text(raw.status, 32) || "Open",
     priority: text(raw.priority, 32) || "Normal",
-    assignee: shown(raw.assignee, 256) || "Unassigned",
+    // `unassigned` from the helper, not a name: an agent may be called "Unassigned".
+    assignee: shown(raw.assignee, 256),
+    unassigned: raw.unassigned === true,
     mine: raw.mine === true,
     group: shown(raw.group, 256),
     requester: shown(raw.requester, 256),

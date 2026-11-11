@@ -22,7 +22,8 @@
 //! true when the 100 most recently updated tickets (one search page each) or
 //! the first 20 groups left some out. `state_path` is the plugin's read-state
 //! file in a private `$XDG_STATE_HOME/foamy-zendesk/` (created here; the panel
-//! writes it).
+//! writes it). A ticket's `assignee` is the assignee's name ("" for none or
+//! unknown) and `unassigned` says whether it has one.
 //!
 //! Every command prints one JSON reply as its last line:
 //!

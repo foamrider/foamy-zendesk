@@ -28,7 +28,7 @@ function tickets() {
       group: "IT support", requester: "Erik", updated_at: iso(BASE - 6 * 60000),
       comments: [comment(48181, "Erik", 6, "The group membership is correct now. Waiting for the requester to sign out and try again.")] },
     // From yesterday, unassigned in another of the agent's groups.
-    { id: "4824", subject: "Meeting room display is blank", status: "New", priority: "Normal", assignee: "Unassigned", mine: false,
+    { id: "4824", subject: "Meeting room display is blank", status: "New", priority: "Normal", assignee: "", unassigned: true, mine: false,
       group: "Facilities", requester: "Maria", updated_at: iso(BASE - 26 * 3600000),
       comments: [comment(48241, "Maria", 26 * 60, "The screen stays black when connecting the laptop. We have tried a second cable.")] }
   ]
@@ -39,7 +39,7 @@ function update(sequence, newTicket) {
   var list = tickets()
   if (newTicket) {
     list.unshift({ id: String(4900 + sequence), subject: "Print job stays in the queue", status: "Open", priority: "Normal",
-      assignee: "Unassigned", mine: false, group: "IT support", requester: "Jonas", updated_at: iso(BASE + sequence * 60000),
+      assignee: "", unassigned: true, mine: false, group: "IT support", requester: "Jonas", updated_at: iso(BASE + sequence * 60000),
       comments: [comment(49000 + sequence, "Jonas", -sequence, "The printer is available, but the print job stays in the queue. Could you check it?")] })
   } else {
     var vpn = list[0]

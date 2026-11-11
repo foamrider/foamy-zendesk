@@ -372,7 +372,9 @@ pub fn fetch(account: &Account, known: &Map<String, Value>) -> Result<Value, Fai
                 "subject": ticket["subject"].as_str().unwrap_or("").trim(),
                 "status": status(ticket["status"].as_str().unwrap_or("")),
                 "priority": priority(ticket["priority"].as_str()),
-                "assignee": if assignee.is_some() { person(assignee) } else { "Unassigned".into() },
+                // A name (or "" when unknown), never a stand-in word: an agent may be called anything.
+                "assignee": person(assignee),
+                "unassigned": assignee.is_none(),
                 "mine": assignee == Some(me_id),
                 "group": id_of(&ticket["group_id"]).and_then(|g| group_name.get(&g).cloned()).unwrap_or_default(),
                 "requester": person(id_of(&ticket["requester_id"])),
