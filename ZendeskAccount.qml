@@ -26,7 +26,14 @@ QtObject {
   // false while Zendesk can't be reached: the user shown is the saved one.
   property bool verified: false
   property string error: ""
-  readonly property bool busy: statusProcess.running || loginProcess.running || logoutProcess.running
+  // Quickshell drops a finished Process (running turns false) and ends its
+  // output stream before it emits exited, so the check's reply is still to
+  // be applied for a moment after the process is gone. Until onExited has
+  // applied it, the check is busy: another check waits for it (checkAgain)
+  // instead of starting a second process. Set from the stream's end, which
+  // a process that never started has none of, so it can't stick.
+  property bool statusReplyPending: false
+  readonly property bool busy: statusProcess.running || statusReplyPending || loginProcess.running || logoutProcess.running
   readonly property bool signedIn: state === "signed_in"
   property bool checkAgain: false
   // Bumped by sign-out: a check that started before it answers for a sign-in
@@ -62,7 +69,7 @@ QtObject {
   function check() {
     if (!configured) { state = "not_configured"; user = null; error = ""; return; }
     if (state === "unavailable" || loginProcess.running || logoutProcess.running) return;
-    if (statusProcess.running) { checkAgain = true; return; }
+    if (statusProcess.running || statusReplyPending) { checkAgain = true; return; }
     if (!signedIn) state = "checking";
     statusProcess.signOuts = signOuts;
     // Up to a minute for a keyring unlock prompt, then the Zendesk requests.
@@ -130,8 +137,13 @@ QtObject {
   property Process statusProcess: Process {
     property int signOuts: 0
     property int configuration: 0
-    stdout: StdioCollector { id: statusOutput; waitForEnd: true }
+    stdout: StdioCollector {
+      id: statusOutput
+      waitForEnd: true
+      onStreamFinished: account.statusReplyPending = true
+    }
     onExited: function(code) {
+      account.statusReplyPending = false;
       // From before configure(): the check it asked for follows.
       if (statusProcess.signOuts === account.signOuts && statusProcess.configuration === account.configurations)
         account.apply(statusOutput.text, code);

@@ -46,10 +46,27 @@ ShellRoot {
   property var opened: []
   property var sent: []
   property var fetches: []
+  property int statusRuns: 0
+  property bool probeWindow: false
+  property var windowResult: null
   // The shell reflects saved settings back to every instance, like the host.
   property var entry: ({})
   TestEvent { id: ev }
   FoamyWait { id: wait }
+  // Quickshell ends a Process by dropping it (running is false), ending its
+  // collectors' streams and only then emitting exited: a check() that runs
+  // in between (here from the collector's streamFinished) finds no process
+  // running while the last reply is still to be applied.
+  Connections {
+    target: Plugin.ZendeskAccount.statusProcess.stdout
+    enabled: shell.probeWindow
+    function onStreamFinished() {
+      var account = Plugin.ZendeskAccount;
+      shell.probeWindow = false;
+      account.check();
+      shell.windowResult = { running: account.statusProcess.running, again: account.checkAgain, busy: account.busy };
+    }
+  }
   function find(item, name) {
     if (!item) return null;
     if (item.objectName === name) return item;
@@ -83,6 +100,7 @@ ShellRoot {
     case 22: return [function() { return checked() && account.state !== "waiting"; }, 10000, "the new address was checked"];
     case 23: return [function() { return store.loaded; }, 10000, "the inbox with an unreadable read file arrived"];
     case 24: return [function() { return shell.fetches.length !== shell.fetchProbe && !store.fetchProcess.running; }, 10000, "the next fetch finished"];
+    case 26: return [function() { return shell.statusRuns >= 2 && !account.busy && account.user && account.user.name === "Check 2"; }, 10000, "both account checks finished"];
     }
     return null;
   }
@@ -638,6 +656,21 @@ ShellRoot {
       break;
     case 24:
       if (!check(store.unreadCount === 0 && store.error === "", "the next fetch keeps what was read this session (" + store.unreadCount + " unread)")) return;
+      break;
+    case 25:
+      // An account check asked for while the last one's reply is on its way.
+      account.helperCommand = function(args) {
+        if (args[0] !== "auth-status") return ["false"];
+        shell.statusRuns++;
+        return shell.fake("now", { ok: true, state: "signed_in", verified: true, user: { name: "Check " + shell.statusRuns, email: "check@example.invalid" } });
+      };
+      shell.probeWindow = true;
+      account.check();
+      break;
+    case 26:
+      if (!check(shell.windowResult && !shell.windowResult.running && shell.windowResult.again && shell.windowResult.busy,
+                 "a check asked for while the last reply is delivered waits for it, and the account stays busy (" + JSON.stringify(shell.windowResult) + ")")) return;
+      if (!check(shell.statusRuns === 2 && account.state === "signed_in" && account.user.name === "Check 2", "then it runs once, and its own reply is the one shown")) return;
       shell.finished = true;
       console.log("FOAMY DONE runtime interactions passed"); Qt.quit();
     }
