@@ -9,6 +9,7 @@ signed in, and ticket links go to a stub instead of a browser.
 The host is Omarchy 4.5, the installed /usr/share/omarchy/shell
 (FOAMY_HOST_45 picks another 4.5 tree).
 """
+
 import os
 import shutil
 import sys
@@ -16,15 +17,19 @@ from pathlib import Path
 
 plugin = Path(__file__).resolve().parents[1]
 # The sibling checkout, else the usual one (a worktree has no sibling kit).
-kit = Path(os.environ.get("FOAMY_KIT") or next(
-    (p for p in (plugin.parent / "foamy-kit", Path.home() / "GitHub/Personal/foamy-kit") if p.is_dir()),
-    plugin.parent / "foamy-kit"))
+kit = Path(
+    os.environ.get("FOAMY_KIT")
+    or next(
+        (p for p in (plugin.parent / "foamy-kit", Path.home() / "GitHub/Personal/foamy-kit") if p.is_dir()),
+        plugin.parent / "foamy-kit",
+    )
+)
 # Set before the harness reads them.
 os.environ.setdefault("FOAMY_HOST_45", "/usr/share/omarchy/shell")
 sys.path.insert(0, str(kit / "preview"))
 import harness
 
-SHELL = r'''
+SHELL = r"""
 import QtQuick
 import QtTest
 import Quickshell
@@ -762,7 +767,7 @@ ShellRoot {
     }
   }
 }
-'''
+"""
 
 run = harness.Run("4.5", SHELL, plugin=plugin, prefix="foamy-zendesk-runtime-")
 try:
