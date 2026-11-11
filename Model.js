@@ -270,16 +270,21 @@ function restore(state, batch) {
 }
 
 // The read-state file: { version: 1, read: { id: { revision, at } } }.
+// At most MAX_MARKERS are kept, the most recently marked: numeric keys
+// enumerate in ascending order, so cutting by key order would drop the newest
+// tickets, the ones most likely still in the inbox.
+var MAX_MARKERS = 2000
 function parseReadState(text) {
   var doc = null;
   try { doc = JSON.parse(text || "{}"); } catch (e) { return {}; }
-  var read = {};
   var source = doc && doc.read && typeof doc.read === "object" ? doc.read : {};
-  for (var id of Object.keys(source).slice(0, 2000)) {
+  var valid = Object.keys(source).filter(function(id) {
     var entry = source[id];
-    if (/^[0-9]{1,15}$/.test(id) && entry && Number.isSafeInteger(entry.revision) && Number.isFinite(entry.at))
-      read[id] = { revision: entry.revision, at: entry.at };
-  }
+    return /^[0-9]{1,15}$/.test(id) && entry && Number.isSafeInteger(entry.revision) && Number.isFinite(entry.at);
+  });
+  valid.sort(function(a, b) { return source[b].at - source[a].at; });
+  var read = {};
+  for (var id of valid.slice(0, MAX_MARKERS)) read[id] = { revision: source[id].revision, at: source[id].at };
   return read;
 }
 

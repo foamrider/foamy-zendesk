@@ -148,6 +148,19 @@ test('the read-state file round-trips and ignores junk', () => {
   assert.deepEqual(Model.parseReadState(JSON.stringify({ read: { x: { revision: 1, at: 1 }, 7: { revision: 'a', at: 1 } } })), {});
 });
 
+test('a read-state file over the limit keeps the most recently marked tickets', () => {
+  // Numeric keys enumerate in ascending order, so the newest tickets (the
+  // highest ids, most likely in the inbox) come last.
+  const read = {};
+  for (let i = 1; i <= 2001; i++) read[String(1000 + i)] = { revision: i, at: i };
+  read['1001'].at = 5000;
+  const kept = Model.parseReadState(JSON.stringify({ version: 1, read }));
+  assert.equal(Object.keys(kept).length, 2000);
+  assert.deepEqual(kept['3001'], { revision: 2001, at: 2001 }, 'the newest marker stays');
+  assert.deepEqual(kept['1001'], { revision: 1, at: 5000 }, 'an old ticket marked recently stays');
+  assert.equal(kept['1002'], undefined, 'the least recently marked goes');
+});
+
 test('invalid replies are refused; text stays plain data', () => {
   assert.throws(() => Model.applySnapshot(Model.empty(), 'nope'));
   assert.throws(() => Model.applySnapshot(Model.empty(), [{ id: '__proto__' }]));
