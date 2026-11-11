@@ -262,7 +262,10 @@ use a fake Zendesk on loopback and an in-memory keyring; nothing touches a
 real account.
 
 ```sh
-bash tests/run.sh
+mise install            # once: the linters and node that mise.toml pins
+tests/validate.sh       # kit-check, omarchy-plugin-validate, linters, formatters,
+                        # the helper's tests and tests/suite.sh (node, i18n, runtime)
+tests/validate.sh --ci  # what GitHub's runner can do: no Quickshell or Omarchy host
 KIT=../foamy-kit   # a foamy-kit checkout at the version in foamy-kit.lock
 kit/native/build-native.sh . --test     # fmt, clippy, cargo test
 kit/native/build-native.sh .            # rebuild bin/<arch>/ and native/native.pin
