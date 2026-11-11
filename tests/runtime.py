@@ -4,11 +4,10 @@ The account check runs the real helper (the isolated session has no keyring,
 so it reports that); the inbox is then filled from preview/Fixtures.js, as if
 signed in, and ticket links go to a stub instead of a browser.
 
-  python3 tests/runtime.py [4.5|4.0]
+  python3 tests/runtime.py
 
 The host is Omarchy 4.5, the installed /usr/share/omarchy/shell
-(FOAMY_HOST_45 picks another 4.5 tree). 4.0 runs only when FOAMY_HOST_40
-names a 4.0 shell tree; otherwise it prints a SKIP line.
+(FOAMY_HOST_45 picks another 4.5 tree).
 """
 import os
 import shutil
@@ -80,7 +79,7 @@ ShellRoot {
   }
   FloatingWindow {
     implicitWidth: 1920; implicitHeight: 1080
-    ScreenSim { fullScreenBar: true }
+    ScreenSim { }
     Plugin.Panel { id: one; settings: shell.entry; x: 1400; y: 4; width: 45; height: 26 }
     Plugin.Panel { id: two; settings: shell.entry; x: 1450; y: 4; width: 45; height: 26 }
   }
@@ -611,11 +610,7 @@ ShellRoot {
 }
 '''
 
-host = sys.argv[1] if len(sys.argv) > 1 else "4.5"
-if host == "4.0" and not os.environ.get("FOAMY_HOST_40"):
-    print("4.0: SKIP (set FOAMY_HOST_40 to a 4.0 shell tree to run it)")
-    sys.exit(0)
-run = harness.Run(host, SHELL, plugin=plugin, prefix="foamy-zendesk-runtime-")
+run = harness.Run("4.5", SHELL, plugin=plugin, prefix="foamy-zendesk-runtime-")
 try:
     run.run(timeout=60)
     if os.environ.get("FOAMY_TEST_OUTPUT"):

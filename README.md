@@ -281,9 +281,7 @@ Shared components are copied from foamy-kit and pinned by `foamy-kit.lock`.
 Change the kit source and sync; never edit its stamped copies here.
 
 The tests run on Omarchy 4.5, the installed `/usr/share/omarchy/shell`
-(`FOAMY_HOST_45` picks another 4.5 tree); `python3 tests/runtime.py 4.0` runs
-only when `FOAMY_HOST_40` names a 4.0 shell tree and otherwise prints a SKIP
-line. The installed Qt formatter
+(`FOAMY_HOST_45` picks another 4.5 tree). The installed Qt formatter
 cannot process typed `void` IPC methods in `Panel.qml` (also true for existing
 Foamy plugins); the runtime test loads and exercises that file without removing
 its types.
