@@ -125,6 +125,10 @@ fn parse_record(raw: &str) -> Option<Value> {
     text(&record, "access_token").map(|_| record)
 }
 
+/// The most of Zendesk's `error` a refusal shows (one line): OAuth error
+/// codes are short, and the settings page shows the message whole.
+const MAX_REFUSAL: usize = 80;
+
 /// Why Zendesk refused a token request (`error`, never a token).
 fn refused(reply: &crate::http::Reply) -> Failure {
     let error = text(&reply.body, "error").unwrap_or_else(|| format!("HTTP {}", reply.status));
@@ -133,7 +137,10 @@ fn refused(reply: &crate::http::Reply) -> Failure {
     } else {
         Failure::coded(
             "HTTP",
-            crate::text::message("Zendesk refused the sign-in (%1).", &[&error]),
+            crate::text::message(
+                "Zendesk refused the sign-in (%1).",
+                &[&crate::text::short(&error, MAX_REFUSAL)],
+            ),
         )
     }
 }
@@ -1123,6 +1130,32 @@ mod tests {
         let who = |t: &Value| (t["assignee"].clone(), t["unassigned"].clone());
         assert_eq!(who(&tickets[0]), (json!("Unassigned"), json!(false)));
         assert_eq!(who(&tickets[1]), (json!(""), json!(true)));
+    }
+
+    #[test]
+    fn a_refusal_shows_one_short_line_of_zendesk_s_error() {
+        let refusal = |error: Value| {
+            refused(&crate::http::Reply {
+                status: 400,
+                body: json!({ "error": error }),
+            })
+            .message
+        };
+        assert_eq!(
+            refusal(json!("invalid_client")),
+            "Zendesk refused the sign-in (%1).\u{1f}invalid_client"
+        );
+        let long = refusal(json!(format!("{}\nmore", "x".repeat(10_000))));
+        let value = long.split('\u{1f}').nth(1).unwrap();
+        assert_eq!(value, format!("{}…", "x".repeat(80)));
+        assert_eq!(
+            refused(&crate::http::Reply {
+                status: 400,
+                body: json!({"error": "invalid_grant"})
+            })
+            .code,
+            "EXPIRED"
+        );
     }
 
     #[test]
