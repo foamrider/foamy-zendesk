@@ -242,12 +242,18 @@ QtObject {
 
   // ---- fetching -------------------------------------------------------------
   property bool refreshAgain: false
+  // Bumped by restart(): a fetch started before it answers for an inbox that
+  // is gone (see Model.fetchOutcome).
+  property int generation: 0
+  // The helper's argv (after the timeout); tests replace it.
+  property var helperCommand: function(args) { return FoamyNative.command(store.pluginDir, "foamy-zendesk-helper", args); }
   function refresh() {
     if (!connected) return;
     if (fetchProcess.running) { refreshAgain = true; return; }
     fetchProcess.input = JSON.stringify({ known: Model.known(state) }) + "\n";
-    fetchProcess.command = ["timeout", "--kill-after=2s", "150s"].concat(FoamyNative.command(pluginDir, "foamy-zendesk-helper",
+    fetchProcess.command = ["timeout", "--kill-after=2s", "150s"].concat(helperCommand(
       ["fetch", "--address", ZendeskAccount.address, "--client-id", ZendeskAccount.clientId]));
+    fetchProcess.generation = generation;
     fetchProcess.stdinEnabled = true;
     fetchProcess.running = true;
   }
@@ -255,29 +261,31 @@ QtObject {
   function refreshIfStale(maxAgeMs) {
     if (connected && !loading && Date.now() - lastUpdated > maxAgeMs) refresh();
   }
-  function fetched(text, code) {
+  function fetched(text, code, started) {
+    var outcome = Model.fetchOutcome(started, generation, text);
+    // From before restart(): no error, no backoff, no tickets.
+    if (outcome.stale) return;
     if (FoamyNative.unavailable(code)) {
       helperMissing = true;
       error = FoamyI18n.t(FoamyNative.UNAVAILABLE_TEXT);
       return;
     }
-    var reply = null;
-    try { reply = JSON.parse(String(text).trim().split("\n").pop()); } catch (e) {}
-    if (reply && reply.ok && Array.isArray(reply.tickets)) {
+    if (outcome.ok) {
       error = "";
       failures = 0;
       retryAt = 0;
       lastUpdated = Date.now();
-      if (typeof reply.state_path === "string" && reply.state_path !== readPath) {
+      if (outcome.statePath !== null && outcome.statePath !== readPath) {
         // The read markers come first, or every ticket would flash unread.
-        waitingSnapshot = reply.tickets;
-        readPath = reply.state_path;
+        waitingSnapshot = outcome.tickets;
+        readPath = outcome.statePath;
         return;
       }
-      if (!readReady) { waitingSnapshot = reply.tickets; return; }
-      receive(reply.tickets);
+      if (!readReady) { waitingSnapshot = outcome.tickets; return; }
+      receive(outcome.tickets);
       return;
     }
+    var reply = outcome.reply;
     failures++;
     error = reply && reply.error ? ZendeskAccount.helperText(reply.error)
       : code === 124 ? FoamyI18n.t("Zendesk didn't answer in time.") : FoamyI18n.t("Can't reach Zendesk. Check your connection.");
@@ -289,10 +297,11 @@ QtObject {
 
   property Process fetchProcess: Process {
     property string input: ""
+    property int generation: 0
     onStarted: { write(input); stdinEnabled = false; }
     stdout: StdioCollector { id: fetchOutput; waitForEnd: true }
     onExited: function(code) {
-      store.fetched(fetchOutput.text, code);
+      store.fetched(fetchOutput.text, code, fetchProcess.generation);
       if (store.refreshAgain) { store.refreshAgain = false; Qt.callLater(store.refresh); }
     }
   }
@@ -337,9 +346,11 @@ QtObject {
   }
 
   // A different account (or signed out): forget the inbox, keep the files.
+  // A fetch still running is stopped, and its exit (whatever it brings) ignored.
   function restart() {
     resetting();
     if (saveTimer.running) { saveTimer.stop(); readFile.setText(Model.serializeReadState(state)); }
+    generation++;
     fetchProcess.running = false;
     state = Model.empty();
     pending = null; pendingChanges = 0; lastBatch = []; waitingSnapshot = null; seen = Model.notices();

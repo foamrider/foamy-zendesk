@@ -251,7 +251,8 @@ Uses the existing Quickshell, Node.js, Python and foamy-kit tools. The
 runtime test isolates HOME, XDG paths and D-Bus, loads the real Panel, stores
 and view offscreen, and runs the real helper (which finds no keyring there);
 the inbox comes from `preview/Fixtures.js` (fictional tickets, used only by
-the preview and tests) and ticket links go to a stub. The helper's own tests
+the preview and tests) and ticket links go to a stub; switching accounts mid
+fetch and mid sign-in uses a stand-in helper. The helper's own tests
 use a fake Zendesk on loopback and an in-memory keyring; nothing touches a
 real account.
 

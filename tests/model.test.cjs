@@ -157,6 +157,22 @@ test('invalid replies are refused; text stays plain data', () => {
   assert.equal(Model.visible(seeded(list))[0].body, body);
 });
 
+test('a fetch from before an account switch is ignored, even a full reply that arrives late', () => {
+  const reply = JSON.stringify({ ok: true, tickets: Fixtures.tickets(), state_path: '/state/acme.json' });
+  const now = Model.fetchOutcome(3, 3, 'progress\n' + reply + '\n');
+  assert.equal(now.ok, true);
+  assert.equal(now.tickets.length, 3);
+  assert.equal(now.statePath, '/state/acme.json');
+  assert.deepEqual(Model.fetchOutcome(2, 3, reply), { stale: true }, 'the previous account\'s full reply');
+  assert.deepEqual(Model.fetchOutcome(2, 3, ''), { stale: true }, 'stopped (143) with nothing');
+  assert.deepEqual(Model.fetchOutcome(3, 3, ''), { ok: false, reply: null });
+  const failed = Model.fetchOutcome(3, 3, JSON.stringify({ ok: false, code: 'EXPIRED', error: 'x' }));
+  assert.equal(failed.ok, false);
+  assert.equal(failed.reply.code, 'EXPIRED');
+  assert.equal(Model.fetchOutcome(3, 3, JSON.stringify({ ok: true, tickets: [] })).statePath, null);
+  assert.equal(Model.fetchOutcome(3, 3, JSON.stringify({ ok: true, tickets: 'nope' })).ok, false);
+});
+
 test('ticket links use the configured account only', () => {
   assert.equal(Model.host('ACME'), 'acme.zendesk.com');
   assert.equal(Model.host('https://acme.zendesk.com/'), 'acme.zendesk.com');
