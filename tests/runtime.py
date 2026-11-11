@@ -577,6 +577,28 @@ ShellRoot {
         if (account.busy || account.state === "waiting" || account.state === "checking") { shell.step--; if (++shell.waited > 40) check(false, "the new address was checked (" + account.state + ")"); return; }
         if (!check(account.state === "signed_in" && account.user && account.user.name === "New" && account.address === "newco",
                    "a sign-in stopped by another address never signs that address in; the new address is checked (" + account.state + ", " + JSON.stringify(account.user) + ")")) return;
+        // A read-state file that can't be read (here a directory): the inbox
+        // starts unread and nothing is saved over it.
+        store.helperCommand = function(args) {
+          var reply = shell.inboxReply("broken", 9001);
+          reply.state_path = Quickshell.env("FOAMY_OUT");
+          shell.fetches = shell.fetches.concat(["broken"]);
+          return shell.fake("now", reply);
+        };
+        account.address = "broken";
+        shell.waited = 0;
+        break;
+      case 23:
+        if (!store.loaded) { shell.step--; if (++shell.waited > 40) check(false, "the inbox with an unreadable read file arrived"); return; }
+        if (!check(store.count === 1 && store.unreadCount === 1, "an unreadable read file starts the inbox unread")) return;
+        store.markRead("9001");
+        shell.fetchProbe = shell.fetches.length;
+        store.refresh();
+        shell.waited = 0;
+        break;
+      case 24:
+        if (shell.fetches.length === shell.fetchProbe || store.fetchProcess.running) { shell.step--; if (++shell.waited > 40) check(false, "the next fetch finished"); return; }
+        if (!check(store.unreadCount === 0 && store.error === "", "the next fetch keeps what was read this session (" + store.unreadCount + " unread)")) return;
         console.log("FOAMY DONE runtime interactions passed"); Qt.quit();
       }
     }

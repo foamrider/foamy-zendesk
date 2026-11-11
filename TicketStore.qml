@@ -318,6 +318,10 @@ QtObject {
   // ---- read state -------------------------------------------------------------
   property string readPath: ""
   property bool readReady: false
+  // The read file exists but can't be read: markers stay in memory for this
+  // account and nothing is written over the file. The path is kept, so the
+  // next fetch (same path) doesn't load it again and wipe them.
+  property bool readUnusable: false
   property var waitingSnapshot: null
   function readLoaded(text) {
     state.read = Model.parseReadState(text);
@@ -326,7 +330,7 @@ QtObject {
     else sync();
   }
   function saveRead() {
-    if (!fixtures && readReady && readPath !== "") saveTimer.restart();
+    if (!fixtures && readReady && readPath !== "" && !readUnusable) saveTimer.restart();
   }
   property Timer saveTimer: Timer {
     interval: 300
@@ -340,7 +344,7 @@ QtObject {
     onLoadFailed: function(failure) {
       // No file yet: nothing read. Anything else: start empty, and don't
       // overwrite a file we couldn't read.
-      if (failure !== FileViewError.FileNotFound) store.readPath = "";
+      if (failure !== FileViewError.FileNotFound) store.readUnusable = true;
       store.readLoaded("");
     }
   }
@@ -355,7 +359,7 @@ QtObject {
     state = Model.empty();
     pending = null; pendingChanges = 0; lastBatch = []; waitingSnapshot = null; seen = Model.notices();
     error = ""; notice = ""; loaded = false; lastUpdated = 0; failures = 0; retryAt = 0;
-    readPath = ""; readReady = false;
+    readPath = ""; readReady = false; readUnusable = false;
     sync();
     if (active) refresh();
   }
