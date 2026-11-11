@@ -311,7 +311,7 @@ function serializeReadState(state) {
 function host(address) {
   var value = String(address || "").trim().toLowerCase().replace(/^https:\/\//, "").replace(/\/$/, "");
   if (!/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.zendesk\.com)?$/.test(value)) return "";
-  return /\.zendesk\.com$/.test(value) ? value : value + ".zendesk.com";
+  return value.endsWith(".zendesk.com") ? value : value + ".zendesk.com";
 }
 
 function ticketUrl(address, id) {
