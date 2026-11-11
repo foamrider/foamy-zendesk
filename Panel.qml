@@ -4,7 +4,7 @@ import qs.Commons as Commons
 import qs.Ui as Ui
 import "kit"
 import "Preferences.js" as Schema
-import "Schedule.js" as Schedule
+import "kit/FoamySchedule.js" as Schedule
 
 // One bar instance (4.5 draws one per monitor). The inbox lives in the
 // TicketStore singleton; every instance pushes the saved settings into it

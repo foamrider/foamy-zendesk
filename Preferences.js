@@ -1,5 +1,5 @@
 // Inline settings schema for foamy.zendesk (mirrors manifest.json barWidget.schema).
-// Validation and saving live in kit/FoamyPrefs.js. The schedule matches foamy-train.
+// Validation and saving live in kit/FoamyPrefs.js; the schedule keys are kit/FoamySchedule.js's.
 var schedulePattern = "^$|^(?:[01][0-9]|2[0-3]):[0-5][0-9]-(?:(?:[01][0-9]|2[0-3]):[0-5][0-9]|24:00)$"
 var dayKeys = ["scheduleMonday", "scheduleTuesday", "scheduleWednesday", "scheduleThursday", "scheduleFriday", "scheduleSaturday", "scheduleSunday"]
 // `acme`, `acme.zendesk.com` or `https://acme.zendesk.com/`; the helper normalizes it.

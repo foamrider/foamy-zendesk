@@ -5,7 +5,7 @@ import Quickshell.Io
 import "kit"
 import "kit/FoamyNative.js" as FoamyNative
 import "Model.js" as Model
-import "Schedule.js" as Schedule
+import "kit/FoamySchedule.js" as Schedule
 
 // The inbox, shared by every bar instance: one fetch loop and one read-state
 // file per shell. foamy-zendesk-helper `fetch` does the Zendesk requests;

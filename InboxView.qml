@@ -536,12 +536,13 @@ PanelKeyCatcher {
       }
       Repeater {
         model: settingsPage.scheduleOn ? Schema.dayKeys : []
-        ScheduleDay {
+        FoamyScheduleDay {
           required property string modelData
           required property int index
           width: parent.width
           objectName: modelData
           label: FoamyI18n.t(Schema.dayLabels[index])
+          labelComponent: Component { PlainText { } }
           fromLabel: FoamyI18n.t("From")
           toLabel: FoamyI18n.t("To")
           value: root.pref(modelData)

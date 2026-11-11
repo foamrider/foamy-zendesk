@@ -2,7 +2,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const Model = require('../Model.js');
 const Fixtures = require('../preview/Fixtures.js');
-const Schedule = require('../Schedule.js');
+// The kit's schedule, with this plugin's settings and cases.
+const Schedule = require('../kit/node-loader.cjs').load('FoamySchedule');
+// Its objects come from the loader's own realm; compare them as plain data.
+const plain = value => JSON.parse(JSON.stringify(value));
 const Schema = require('../Preferences.js');
 
 function seeded(list) {
@@ -375,25 +378,25 @@ test('schedule: snoozing and resuming override the schedule until the next day',
   const week = ['08:00-16:00', '22:00-06:00', '', '', '', '', '']; // Monday, Tuesday night
   // Within the hours: a snooze lasts until they end, then the schedule rules again.
   const snooze = Schedule.toggled(at(2, 10), true, week, null);
-  assert.deepEqual(snooze, { on: false, until: at(2, 16).getTime() });
+  assert.deepEqual(plain(snooze), { on: false, until: at(2, 16).getTime() });
   assert.equal(Schedule.effective(at(2, 15, 59), true, week, snooze), false);
   assert.equal(Schedule.effective(at(3, 8), true, week, snooze), false);
   // Pressing again goes back to the schedule: no override.
   assert.equal(Schedule.toggled(at(2, 11), true, week, snooze), null);
   // Outside the hours: resuming lasts until midnight...
   const evening = Schedule.toggled(at(2, 19), true, week, null);
-  assert.deepEqual(evening, { on: true, until: at(3, 0).getTime() });
+  assert.deepEqual(plain(evening), { on: true, until: at(3, 0).getTime() });
   assert.equal(Schedule.effective(at(2, 23, 59), true, week, evening), true);
   assert.equal(Schedule.effective(at(3, 0), true, week, evening), false);
   // ...or until the schedule starts, if that is sooner.
-  assert.deepEqual(Schedule.toggled(at(2, 6), true, week, null), { on: true, until: at(2, 8).getTime() });
+  assert.deepEqual(plain(Schedule.toggled(at(2, 6), true, week, null)), { on: true, until: at(2, 8).getTime() });
   // An overnight range: the snooze runs on past midnight to its end.
-  assert.deepEqual(Schedule.toggled(at(3, 23), true, week, null), { on: false, until: at(4, 6).getTime() });
+  assert.deepEqual(plain(Schedule.toggled(at(3, 23), true, week, null)), { on: false, until: at(4, 6).getTime() });
   // No schedule: snoozed until midnight.
-  assert.deepEqual(Schedule.toggled(at(4, 12), false, [], null), { on: false, until: at(5, 0).getTime() });
+  assert.deepEqual(plain(Schedule.toggled(at(4, 12), false, [], null)), { on: false, until: at(5, 0).getTime() });
   // The state file: expired or malformed overrides are dropped.
   const text = Schedule.serializeOverride(snooze);
-  assert.deepEqual(Schedule.parseOverride(text, at(2, 12).getTime()), snooze);
+  assert.deepEqual(plain(Schedule.parseOverride(text, at(2, 12).getTime())), plain(snooze));
   assert.equal(Schedule.parseOverride(text, at(2, 16).getTime()), null);
   assert.equal(Schedule.parseOverride('{"version":1,"override":{"on":"no","until":1}}', 0), null);
   assert.equal(Schedule.parseOverride('not json', 0), null);
