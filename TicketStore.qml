@@ -266,17 +266,32 @@ QtObject {
   // newest). Only a launch that worked marks it; one that failed says so.
   // Opens wait in `launches`, one wrapper at a time, each with the generation
   // it was asked in: one that ends after restart() (another account, or
-  // signed out) marks nothing in the inbox that replaced it.
+  // signed out) marks nothing in the inbox that replaced it. An open of a
+  // ticket already on its way joins it, reading up to the further of the two
+  // (null, the newest, wins); beyond `maxLaunches` waiting, opens are dropped.
   property var launches: []
+  readonly property int maxLaunches: 8
   // The launch under way, or null.
   property var launching: null
   function openTicket(id, revision) {
     var url = Model.ticketUrl(ZendeskAccount.address, id)
     if (!url)
       return
+    var wanted = revision === undefined ? null : revision
+    var same = [launching].concat(launches).find(function (entry) {
+      return entry && entry.url === url && entry.generation === generation
+    })
+    if (same) {
+      same.revision = same.revision === null || wanted === null ? null : Math.max(same.revision, wanted)
+      return
+    }
+    if (launches.length >= maxLaunches) {
+      console.warn("foamy-zendesk: " + launches.length + " tickets are waiting to open; dropped ticket " + id)
+      return
+    }
     var entry = {
       id: String(id),
-      revision: revision === undefined ? null : revision,
+      revision: wanted,
       generation: generation,
       url: url
     }

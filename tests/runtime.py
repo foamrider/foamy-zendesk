@@ -158,13 +158,15 @@ ShellRoot {
     case 39: return [shell.launchedOne, 10000, "the popup's View in Zendesk ended"];
     case 40:
     case 41: return [shell.launchedOne, 10000, "the notification's View in Zendesk ended"];
-    case 42: return [function() { return store.loaded && store.host === "lockable.zendesk.com" && shell.saves > shell.saveBase && !store.saveTimer.running; }, 10000, "the lockable inbox arrived and was saved"];
-    case 43: return [function() { return shell.launchedOne() && shell.saves > shell.saveBase && !store.saveTimer.running; }, 10000, "the open was launched and its mark saved"];
-    case 44: return [shell.launchedOne, 10000, "the read ticket's open ended"];
-    case 45: return [function() { return shell.saves > shell.saveBase && !store.saveTimer.running; }, 10000, "Mark as unread was saved"];
-    case 46: return [function() { return shell.launchesDone() && shell.footer().status === "Can't save read markers"; }, 10000, "the open's failed save is shown"];
-    case 47: return [function() { return store.loaded && store.host === "fresh.zendesk.com" && store.readReady; }, 10000, "the next account's inbox arrived"];
-    case 48: return [shell.launchedOne, 10000, "the previous account's open ended"];
+    case 42: return [function() { return shell.opened().length >= shell.openBase + 3 && shell.launchesDone(); }, 10000, "the joined opens ended"];
+    case 43: return [function() { return shell.opened().length >= shell.openBase + 9 && shell.launchesDone(); }, 20000, "the capped opens ended"];
+    case 44: return [function() { return store.loaded && store.host === "lockable.zendesk.com" && shell.saves > shell.saveBase && !store.saveTimer.running; }, 10000, "the lockable inbox arrived and was saved"];
+    case 45: return [function() { return shell.launchedOne() && shell.saves > shell.saveBase && !store.saveTimer.running; }, 10000, "the open was launched and its mark saved"];
+    case 46: return [shell.launchedOne, 10000, "the read ticket's open ended"];
+    case 47: return [function() { return shell.saves > shell.saveBase && !store.saveTimer.running; }, 10000, "Mark as unread was saved"];
+    case 48: return [function() { return shell.launchesDone() && shell.footer().status === "Can't save read markers"; }, 10000, "the open's failed save is shown"];
+    case 49: return [function() { return store.loaded && store.host === "fresh.zendesk.com" && store.readReady; }, 10000, "the next account's inbox arrived"];
+    case 50: return [shell.launchedOne, 10000, "the previous account's open ended"];
     }
     return null;
   }
@@ -853,6 +855,35 @@ ShellRoot {
       if (!check(!store.ticketById("4818").ticket.read && store.unreadCount === 3 && store.notice === "Can't open the browser",
                  "a notification's View in Zendesk that can't launch marks nothing read")) return;
       openerMode.setText("");
+      // Opens of a ticket already on its way join it: one launch each, read up
+      // to the further revision; "up to the newest" (the popup's) wins.
+      store.loadFixtures(shell.many());
+      var high = Model.newestFromOthers(store.state.tickets["4818"]);
+      shell.openBase = shell.opened().length;
+      store.openTicket("4821");
+      for (var j = 0; j < 4; j++) store.viewInZendesk(store.host + "/4821:1");
+      store.viewInZendesk(store.host + "/4818:" + (high - 1));
+      store.viewInZendesk(store.host + "/4818:" + high);
+      store.viewInZendesk(store.host + "/4818:" + (high - 1));
+      for (var k = 0; k < 10; k++) store.openTicket("4824");
+      if (!check(store.launching && store.launching.id === "4821" && store.launches.length === 2, "ten opens of one ticket wait as one")) return;
+      shell.savedBody = String(high);
+      break;
+    case 42:
+      var joined = shell.opened().slice(shell.openBase);
+      if (!check(joined.length === 3 && joined.join() === ["4821", "4818", "4824"].map(function(id) { return "https://big.zendesk.com/agent/tickets/" + id; }).join(),
+                 "each ticket opened once (" + joined.join() + ")")) return;
+      if (!check(store.ticketById("4821").ticket.read && store.ticketById("4824").ticket.read && store.state.read["4818"].revision === Number(shell.savedBody)
+                 && store.ticketById("4818").ticket.read, "joined opens read up to the further comment, or the newest")) return;
+      // Ten different tickets at once: one opens, eight wait, the last is dropped.
+      shell.openBase = shell.opened().length;
+      for (var t = 4901; t <= 4910; t++) store.openTicket(String(t));
+      if (!check(store.launches.length === 8, "at most eight opens wait")) return;
+      break;
+    case 43:
+      var capped = shell.opened().slice(shell.openBase);
+      if (!check(capped.length === 9 && capped.indexOf("https://big.zendesk.com/agent/tickets/4910") < 0
+                 && store.ticketById("4909").ticket.read && !store.ticketById("4910").ticket.read, "the dropped open opens and marks nothing")) return;
       // A real account whose read file can be written until the opener locks its folder.
       store.helperCommand = function(args) {
         var address = args[args.indexOf("--address") + 1];
@@ -864,14 +895,14 @@ ShellRoot {
       store.fixtures = false;
       account.address = "lockable";
       break;
-    case 42:
+    case 44:
       if (!check(store.unreadCount === 1 && !shell.footer().statusError, "the inbox is saved and unread")) return;
       shell.saveBase = shell.saves;
       shell.openBase = shell.opened().length;
       var lockable = shell.find(view, "ticket-9401");
       ev.mouseClick(lockable.openButton, lockable.openButton.width / 2, lockable.openButton.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
       break;
-    case 43:
+    case 45:
       if (!check(store.ticketById("9401").ticket.read && store.unreadCount === 0 && !one.barContent.countLabel.visible && !shell.footer().statusError,
                  "the open's read mark is saved like Mark as read")) return;
       // Already read: opening it again writes nothing.
@@ -880,19 +911,19 @@ ShellRoot {
       var again = shell.find(view, "ticket-9401");
       ev.mouseClick(again.openButton, again.openButton.width / 2, again.openButton.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
       break;
-    case 44:
+    case 46:
       if (!check(!store.saveTimer.running && shell.saves === shell.saveBase && store.ticketById("9401").ticket.read, "opening a read ticket changes and saves nothing")) return;
       shell.saveBase = shell.saves;
       store.markUnread("9401");
       break;
-    case 45:
+    case 47:
       // The opener makes the read file's folder read-only, so the open's save fails.
       openerMode.setText("lock\n");
       shell.openBase = shell.opened().length;
       var locking = shell.find(view, "ticket-9401");
       ev.mouseClick(locking.openButton, locking.openButton.width / 2, locking.openButton.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
       break;
-    case 46:
+    case 48:
       var failed = shell.footer();
       if (!check(failed.statusError && failed.statusTooltip === "Kept only until the shell restarts." && store.ticketById("9401").ticket.read && store.unreadCount === 0,
                  "an open whose read mark can't be saved shows the footer's save failure; the ticket stays read")) return;
@@ -903,11 +934,11 @@ ShellRoot {
       store.viewInZendesk("lockable.zendesk.com/9401:94010");
       account.address = "fresh";
       break;
-    case 47:
+    case 49:
       if (!check(store.unreadCount === 1, "the next account's inbox is in, unread")) return;
       openerRelease.setText("go\n");
       break;
-    case 48:
+    case 50:
       if (!check(!store.ticketById("9401").ticket.read && store.unreadCount === 1 && one.barContent.countLabel.text === "1" && store.notice === "",
                  "the previous account's open marks nothing read in this one")) return;
       openerMode.setText("");
@@ -955,6 +986,9 @@ try:
     refused = run.host_commands()
     if refused:
         print("FAIL: the plugin ran host commands:", *refused, sep="\n  ")
+        sys.exit(1)
+    if run.ok and "tickets are waiting to open; dropped ticket 4910" not in run.log:
+        print("FAIL: the dropped open was not logged")
         sys.exit(1)
     print(run.log if not run.ok else "PASS: real plugin runtime interactions")
     sys.exit(0 if run.ok else 1)
