@@ -60,13 +60,17 @@
 //!   `token.lock` can't be created or opened, say on a full filesystem) is
 //!   `LOCK_UNAVAILABLE`. Either way Zendesk isn't asked, so the stored pair
 //!   stays valid, and `fetch` fails with that code (`auth-status` answers
-//!   `signed_in` with `verified` false and the error).
+//!   `signed_in` with `verified` false and the error). When the keyring
+//!   doesn't store the new pair, it is revoked and the refresh is `EXPIRED`
+//!   (`auth-status`: `expired`): Zendesk already invalidated the stored one.
 //! - `auth-status` saves the user's name under the lock the same way, skips
 //!   the save without it, and answers `signed_out` when the sign-in went
 //!   meanwhile.
 //! - `auth-login` checks the lock before opening the browser
 //!   (`LOCK_UNAVAILABLE`), and exchanges the code and stores the new pair
-//!   holding it, so a refresh of an older pair can't overwrite it.
+//!   holding it, so a refresh of an older pair can't overwrite it. When
+//!   the keyring doesn't store it, the new pair is revoked and the keyring's
+//!   error is the answer.
 //! - `auth-logout` waits up to 30 seconds for the lock, then reads, clears
 //!   and revokes whatever is stored (a refresh that just finished: its new
 //!   pair). Without the lock, still held by then (a refresh hung on Zendesk

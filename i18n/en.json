@@ -52,6 +52,8 @@
   "No keyring is available to store the Zendesk sign-in (%1).": "No keyring is available to store the Zendesk sign-in (%1).",
   "No keyring is available to store the Zendesk sign-in.": "No keyring is available to store the Zendesk sign-in.",
   "The keyring that holds the Zendesk sign-in is locked. Unlock it and try again.": "The keyring that holds the Zendesk sign-in is locked. Unlock it and try again.",
+  "The renewed Zendesk sign-in couldn't be saved in the keyring (%1). Sign in again.": "The renewed Zendesk sign-in couldn't be saved in the keyring (%1). Sign in again.",
+  "The renewed Zendesk sign-in couldn't be saved in the keyring. Sign in again.": "The renewed Zendesk sign-in couldn't be saved in the keyring. Sign in again.",
   "No randomness available (%1).": "No randomness available (%1).",
   "Normal": "Normal",
   "Not connected": "Not connected",

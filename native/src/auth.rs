@@ -69,6 +69,25 @@ fn not_signed_in() -> Failure {
     Failure::coded("SIGNED_OUT", "Sign in to Zendesk in the settings.")
 }
 
+/// A renewed pair the keyring didn't take (`why`). Zendesk has invalidated
+/// the stored one, so the user must sign in again: `EXPIRED`, with the
+/// keyring's detail when it gave one.
+fn renewal_not_saved(why: &Failure) -> Failure {
+    match why.message.split(crate::text::SEPARATOR).nth(1) {
+        Some(detail) => Failure::coded(
+            "EXPIRED",
+            crate::text::message(
+                "The renewed Zendesk sign-in couldn't be saved in the keyring (%1). Sign in again.",
+                &[&detail],
+            ),
+        ),
+        None => Failure::coded(
+            "EXPIRED",
+            "The renewed Zendesk sign-in couldn't be saved in the keyring. Sign in again.",
+        ),
+    }
+}
+
 /// A sign-out the locked keyring stopped: the pair is still stored.
 fn still_stored(failure: Failure) -> Failure {
     if failure.code == "KEYRING_LOCKED" {
@@ -203,6 +222,7 @@ impl Account<'_> {
     /// only while the keyring still holds `old`: `SIGNED_OUT` once sign-out
     /// has cleared it. Never without the token lock (`BUSY`,
     /// `LOCK_UNAVAILABLE`): Zendesk isn't asked, so the stored pair stays valid.
+    /// A new pair the keyring doesn't take is revoked: `EXPIRED`.
     fn refresh(&self, old: &Value) -> Result<Value, Failure> {
         let refresh = text(old, "refresh_token").ok_or_else(expired)?;
         let _lock = self.token_lock(REFRESH_WAIT).map_err(|no| match no {
@@ -243,7 +263,12 @@ impl Account<'_> {
         // either, so it is revoked too.
         match self.stored() {
             Ok(Some(current)) if same_pair(&current, old) => {
-                self.vault.put(&record.to_string())?;
+                // Not stored, the new pair is lost: revoke it. The stored one
+                // was spent at Zendesk, so this is an expired sign-in.
+                if let Err(failure) = self.vault.put(&record.to_string()) {
+                    self.revoke(&record);
+                    return Err(renewal_not_saved(&failure));
+                }
                 Ok(record)
             }
             Ok(current) => {
@@ -470,7 +495,12 @@ impl Account<'_> {
         let mut record = tokens_from(&reply.body, None)?;
         let user = self.me(&text(&record, "access_token").unwrap_or_default())?;
         record["user"] = user.clone();
-        self.vault.put(&record.to_string())?;
+        // Not stored, the new pair would be left valid at Zendesk: revoke it.
+        // Nothing changed in the keyring, so the keyring's error says why.
+        if let Err(failure) = self.vault.put(&record.to_string()) {
+            self.revoke(&record);
+            return Err(failure);
+        }
         Ok(json!({"ok": true, "state": "signed_in", "user": user, "verified": true}))
     }
 }
@@ -763,6 +793,38 @@ mod tests {
             (Some("A1"), Some("R1"))
         );
         assert!(stored["expires_at"].as_u64().unwrap() > now());
+    }
+
+    /// The keyring takes no new sign-in: the exchanged pair would stay valid
+    /// at Zendesk with nobody holding it, so it is revoked, and the
+    /// keyring's error is the answer.
+    #[test]
+    fn a_login_the_keyring_does_not_store_is_revoked() {
+        let (base, seen) = fake(Box::new(|method, path, _| match (method, path) {
+            ("POST", "/oauth/tokens") => (
+                200,
+                json!({"access_token": "A1", "refresh_token": "R1", "expires_in": 1800}),
+            ),
+            ("GET", "/api/v2/users/me.json") => (
+                200,
+                json!({"user": {"name": "Alex", "email": "alex@acme.com"}}),
+            ),
+            _ => (204, Value::Null),
+        }));
+        let vault = Memory::default();
+        vault.read_only.store(true, Ordering::SeqCst);
+        let port = free_port();
+        let failure = account(&base, &vault)
+            .login(port, Duration::from_secs(10), |url| {
+                let state = query(url, "state");
+                std::thread::spawn(move || {
+                    browser(port, format!("/callback?code=C1&state={state}"))
+                });
+            })
+            .unwrap_err();
+        assert_eq!(failure.code, "KEYRING_UNAVAILABLE");
+        assert_eq!(revoked(&seen), ["Bearer A1"]);
+        assert!(vault.held().is_none());
     }
 
     #[test]
@@ -1245,6 +1307,36 @@ mod tests {
         assert_eq!(helper.logout().unwrap()["state"], "signed_out");
         assert!(vault.held().is_none());
         assert_eq!(revoked(&seen), ["Bearer A1"]);
+    }
+
+    /// The keyring doesn't take a renewed pair: Zendesk has spent the stored
+    /// one, so the new one is revoked and the sign-in has expired.
+    #[test]
+    fn a_renewal_the_keyring_does_not_store_is_revoked_and_expires() {
+        let (base, seen) = fake(Box::new(|method, path, body| match (method, path) {
+            ("POST", "/oauth/tokens") => (
+                200,
+                json!({"access_token": format!("new-{}", body["refresh_token"].as_str().unwrap_or("")),
+                       "refresh_token": "R2", "expires_in": 1800}),
+            ),
+            _ => (204, Value::Null),
+        }));
+        let vault = Memory::default();
+        vault.put(&expiring("A1", "R1")).unwrap();
+        vault.read_only.store(true, Ordering::SeqCst);
+        let helper = account(&base, &vault);
+        let failure = helper.access_token().unwrap_err();
+        assert_eq!(failure.code, "EXPIRED");
+        assert_eq!(
+            failure.message,
+            "The renewed Zendesk sign-in couldn't be saved in the keyring (%1). Sign in again.\u{1f}No space left on device"
+        );
+        assert_eq!(revoked(&seen), ["Bearer new-R1"]);
+        let stored: Value = serde_json::from_str(&vault.held().unwrap()).unwrap();
+        assert_eq!(stored["refresh_token"], "R1");
+        // A check renewing the same way says so too.
+        assert_eq!(helper.status().unwrap()["state"], "expired");
+        assert_eq!(revoked(&seen), ["Bearer new-R1", "Bearer new-R1"]);
     }
 
     /// Locked while Zendesk answered a renewal: the new pair can't be

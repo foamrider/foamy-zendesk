@@ -189,6 +189,8 @@ pub struct Memory {
     /// A locked keyring whose unlock prompt is dismissed: its item can't be
     /// read, removed or replaced.
     pub locked: AtomicBool,
+    /// Reads work, but storing fails (say, the keyring can't write).
+    pub read_only: AtomicBool,
 }
 
 #[cfg(test)]
@@ -214,6 +216,9 @@ impl Vault for Memory {
     fn put(&self, secret: &str) -> Result<(), Failure> {
         if self.is_locked() {
             return Err(unavailable("Cannot create an item in a locked collection"));
+        }
+        if self.read_only.load(Ordering::SeqCst) {
+            return Err(unavailable("No space left on device"));
         }
         *self.secret.lock().unwrap() = Some(secret.into());
         Ok(())

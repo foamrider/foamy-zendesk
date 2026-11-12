@@ -117,7 +117,10 @@ once and shows who is signed in. Tokens are stored in the Secret Service
 keyring (through `secret-tool`), never in the plugin settings, a file or a
 log; the panel only learns the outcome. Access tokens are refreshed when they
 expire, and the new pair is stored before it is used (Zendesk invalidates the
-old one). An expired refresh token shows "Sign-in expired". **Sign out**
+old one). An expired refresh token shows "Sign-in expired". A new pair the
+keyring can't store, at sign-in or on a refresh, is revoked at once: sign-in
+then says why, and a refresh shows "Sign-in expired", since the stored pair
+was already spent. **Sign out**
 removes the token from the keyring and revokes it; a refresh still running
 finishes first (up to 30 seconds), so the pair it stores is the one removed.
 If it takes longer, sign-out still clears the keyring but says it didn't

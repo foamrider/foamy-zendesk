@@ -52,6 +52,8 @@
   "No keyring is available to store the Zendesk sign-in (%1).": "Ingen nøkkelring er tilgjengelig for å lagre Zendesk-påloggingen (%1).",
   "No keyring is available to store the Zendesk sign-in.": "Ingen nøkkelring er tilgjengelig for å lagre Zendesk-påloggingen.",
   "The keyring that holds the Zendesk sign-in is locked. Unlock it and try again.": "Nøkkelringen med Zendesk-påloggingen er låst. Lås den opp og prøv igjen.",
+  "The renewed Zendesk sign-in couldn't be saved in the keyring (%1). Sign in again.": "Den fornyede Zendesk-påloggingen kunne ikke lagres i nøkkelringen (%1). Logg på igjen.",
+  "The renewed Zendesk sign-in couldn't be saved in the keyring. Sign in again.": "Den fornyede Zendesk-påloggingen kunne ikke lagres i nøkkelringen. Logg på igjen.",
   "No randomness available (%1).": "Ingen tilfeldighetskilde er tilgjengelig (%1).",
   "Normal": "Normal",
   "Not connected": "Ikke tilkoblet",
