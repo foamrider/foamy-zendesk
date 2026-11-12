@@ -31,9 +31,9 @@
 //!   (`verified` false plus `error` when Zendesk can't be reached right now),
 //! - `{"ok":true,"state":"signed_out"}`, `{"ok":true,"state":"expired"}`,
 //! - `{"ok":false,"code":…,"error":…}` with code `INVALID_ARGUMENT`,
-//!   `KEYRING_UNAVAILABLE`, `PORT_IN_USE`, `BUSY`, `LOCK_UNAVAILABLE`, `TIMEOUT`,
-//!   `ACCESS_DENIED`, `EXPIRED`, `SIGNED_OUT`, `NETWORK`, `HTTP`,
-//!   `TLS_UNSUPPORTED` or `INTERNAL`.
+//!   `KEYRING_UNAVAILABLE`, `KEYRING_LOCKED`, `PORT_IN_USE`, `BUSY`,
+//!   `LOCK_UNAVAILABLE`, `TIMEOUT`, `ACCESS_DENIED`, `EXPIRED`, `SIGNED_OUT`,
+//!   `NETWORK`, `HTTP`, `TLS_UNSUPPORTED` or `INTERNAL`.
 //!
 //! Every `error` is a catalog key of the plugin's `i18n/en.json`; varying
 //! details follow it after U+001F separators and fill its `%1`, `%2`… (see
@@ -75,6 +75,10 @@
 //!   since a refresh could still store; signing out again finishes once the
 //!   lock can be taken. `KEYRING_UNAVAILABLE` when the keyring can't be read
 //!   or cleared (the token is still revoked when it was read).
+//! - A sign-in in a locked keyring (its unlock prompt dismissed or not
+//!   shown) is `KEYRING_LOCKED` for every command, never `signed_out`:
+//!   `auth-logout` then removes and revokes nothing, and the sign-in works
+//!   again once the keyring is unlocked. No item at all is `signed_out`.
 //! - There is no fallback lock directory: helpers that disagree on where
 //!   the lock lives wouldn't exclude each other.
 

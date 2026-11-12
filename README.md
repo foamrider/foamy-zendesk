@@ -121,7 +121,11 @@ old one). An expired refresh token shows "Sign-in expired". **Sign out**
 removes the token from the keyring and revokes it; a refresh still running
 finishes first (up to 30 seconds), so the pair it stores is the one removed.
 If it takes longer, sign-out still clears the keyring but says it didn't
-finish: try again.
+finish: try again. When the sign-in is in a locked keyring and its unlock
+prompt is dismissed, sign-out removes and revokes nothing and says so; the
+account stays signed in until you unlock the keyring and sign out again. A
+locked keyring is never taken for "Not signed in": a check says it is
+locked, and the sign-in works again once it is unlocked.
 
 Refreshes, sign-in and sign-out take a lock in `$XDG_RUNTIME_DIR/foamy-zendesk/`
 (owner-only) and never write the keyring without it. When that lock can't be

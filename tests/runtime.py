@@ -58,6 +58,8 @@ ShellRoot {
   property bool probeWindow: false
   property var windowResult: null
   property var cut: undefined
+  readonly property string lockedSignOut: "Sign-out didn't finish: the keyring is locked, so the Zendesk sign-in is still stored. Unlock the keyring and sign out again."
+  readonly property string lockedKeyring: "The keyring that holds the Zendesk sign-in is locked. Unlock it and try again."
   // The shell reflects saved settings back to every instance, like the host.
   property var entry: ({})
   TestEvent { id: ev }
@@ -167,6 +169,8 @@ ShellRoot {
     case 48: return [function() { return shell.launchesDone() && shell.footer().status === "Can't save read markers"; }, 10000, "the open's failed save is shown"];
     case 49: return [function() { return store.loaded && store.host === "fresh.zendesk.com" && store.readReady; }, 10000, "the next account's inbox arrived"];
     case 50: return [shell.launchedOne, 10000, "the previous account's open ended"];
+    case 52: return [function() { return !account.busy && account.error !== ""; }, 10000, "the sign-out finished"];
+    case 53: return [checked, 10000, "the first check finished"];
     }
     return null;
   }
@@ -942,6 +946,39 @@ ShellRoot {
       if (!check(!store.ticketById("9401").ticket.read && store.unreadCount === 1 && one.barContent.countLabel.text === "1" && store.notice === "",
                  "the previous account's open marks nothing read in this one")) return;
       openerMode.setText("");
+      // The sign-in is in a locked keyring whose unlock prompt is dismissed:
+      // the helper can't read or remove it, and says so.
+      account.helperCommand = function(args) {
+        return shell.fake("now", { ok: false, code: "KEYRING_LOCKED", error: args[0] === "auth-logout" ? shell.lockedSignOut : shell.lockedKeyring });
+      };
+      account.state = "signed_in";
+      account.user = { name: "Alex", email: "alex@acme.example" };
+      account.error = "";
+      view.band.settingsClicked();
+      break;
+    case 51:
+      // The settings page has laid out: a real click on Sign out.
+      var signOut = shell.find(view.settingsPage, "accountButton");
+      if (!check(view.editingSettings && signOut.text === "Sign out", "signed in, the settings show Sign out")) return;
+      ev.mouseClick(signOut, signOut.width / 2, signOut.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
+      if (!check(account.logoutProcess.running, "Sign out runs the helper")) return;
+      break;
+    case 52:
+      var page = view.settingsPage;
+      if (!check(account.state === "signed_in" && account.signedIn && account.error === shell.lockedSignOut,
+                 "a sign-out the locked keyring stopped stays signed in (" + account.state + ": " + account.error + ")")) return;
+      if (!check(shell.find(page, "accountTitle").text === "Signed in as Alex" && shell.find(page, "accountDetail").text === "alex@acme.example · " + shell.lockedSignOut
+                 && shell.find(page, "accountButton").text === "Sign out", "the settings say why, with Sign out to try again")) return;
+      // A first check that finds the keyring locked: an error, not "Not signed in".
+      account.state = "signed_out";
+      account.user = null;
+      account.check();
+      break;
+    case 53:
+      var first = view.settingsPage;
+      if (!check(account.state === "error" && account.error === shell.lockedKeyring && shell.find(first, "accountTitle").text === "Can't sign in"
+                 && shell.find(first, "accountDetail").text === shell.lockedKeyring, "a locked keyring at the first check says so (" + account.state + ": " + account.error + ")")) return;
+      view.settingsPage.back();
       one.close();
       shell.finished = true;
       console.log("FOAMY DONE runtime interactions passed"); Qt.quit();

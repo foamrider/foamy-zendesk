@@ -10,6 +10,10 @@
 //! is written: a refresh fails (`LOCK_UNAVAILABLE`, `BUSY`) before it asks
 //! Zendesk, and sign-out still clears and revokes but doesn't answer
 //! `signed_out`.
+//!
+//! A sign-in in a locked keyring is still there (`KEYRING_LOCKED`, see
+//! `vault.rs`): never "signed out". Sign-out then removes and revokes
+//! nothing it can't read and says it didn't finish.
 
 use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -63,6 +67,18 @@ fn signed_out() -> Value {
 
 fn not_signed_in() -> Failure {
     Failure::coded("SIGNED_OUT", "Sign in to Zendesk in the settings.")
+}
+
+/// A sign-out the locked keyring stopped: the pair is still stored.
+fn still_stored(failure: Failure) -> Failure {
+    if failure.code == "KEYRING_LOCKED" {
+        Failure::coded(
+            "KEYRING_LOCKED",
+            "Sign-out didn't finish: the keyring is locked, so the Zendesk sign-in is still stored. Unlock the keyring and sign out again.",
+        )
+    } else {
+        failure
+    }
 }
 
 /// Why the token lock wasn't taken.
@@ -222,15 +238,21 @@ impl Account<'_> {
         }
         let record = tokens_from(&reply.body, old.get("user"))?;
         // Compare again before storing: a sign-out that gave up waiting for
-        // this lock may have cleared the keyring meanwhile.
-        match self.stored()? {
-            Some(current) if same_pair(&current, old) => {
+        // this lock may have cleared the keyring meanwhile. A keyring that
+        // can't be read now (locked meanwhile) doesn't get the new pair
+        // either, so it is revoked too.
+        match self.stored() {
+            Ok(Some(current)) if same_pair(&current, old) => {
                 self.vault.put(&record.to_string())?;
                 Ok(record)
             }
-            current => {
+            Ok(current) => {
                 self.revoke(&record);
                 current.ok_or_else(not_signed_in)
+            }
+            Err(failure) => {
+                self.revoke(&record);
+                Err(failure)
             }
         }
     }
@@ -340,11 +362,13 @@ impl Account<'_> {
     /// the keyring is cleared anyway (and a refresh, comparing before it
     /// stores, revokes its pair instead), but sign-out answers `BUSY` or
     /// `LOCK_UNAVAILABLE`, never `signed_out`: it can't promise nothing survives.
+    /// A locked keyring (`KEYRING_LOCKED`) keeps the pair: unread, it is
+    /// neither removed nor revoked.
     fn logout_within(&self, wait: Duration) -> Result<Value, Failure> {
         let lock = self.token_lock(wait);
         // Read under the lock: what a refresh just stored is what goes.
-        let record = self.stored()?;
-        let cleared = self.vault.delete();
+        let record = self.stored().map_err(still_stored)?;
+        let cleared = self.vault.delete().map_err(still_stored);
         let held = lock.map(drop);
         if let Some(record) = &record {
             self.revoke(record);
@@ -581,6 +605,7 @@ mod tests {
     use crate::vault::Memory;
     use std::io::BufRead;
     use std::path::Path;
+    use std::sync::atomic::Ordering;
     use std::sync::{Arc, Barrier, Mutex};
 
     type Route = Box<dyn Fn(&str, &str, &Value) -> (u16, Value) + Send + Sync>;
@@ -1186,6 +1211,64 @@ mod tests {
             (seen[0].0.as_str(), seen[0].1.as_str(), seen[0].2.as_str()),
             ("DELETE", "/api/v2/oauth/tokens/current.json", "Bearer A1")
         );
+    }
+
+    /// The reported case: the sign-in is in a locked keyring and its unlock
+    /// prompt is dismissed. It is still stored, so nothing says signed out.
+    #[test]
+    fn a_locked_keyring_is_not_a_sign_out() {
+        let (base, seen) = fake(Box::new(|_, _, _| (204, Value::Null)));
+        let vault = Memory::default();
+        vault
+            .put(&json!({"access_token": "A1"}).to_string())
+            .unwrap();
+        vault.locked.store(true, Ordering::SeqCst);
+        let helper = account(&base, &vault);
+        let failure = helper.logout().unwrap_err();
+        assert_eq!(failure.code, "KEYRING_LOCKED");
+        assert!(
+            failure
+                .message
+                .starts_with("Sign-out didn't finish: the keyring is locked"),
+            "{}",
+            failure.message
+        );
+        assert_eq!(helper.status().unwrap_err().code, "KEYRING_LOCKED");
+        assert_eq!(helper.access_token().unwrap_err().code, "KEYRING_LOCKED");
+        assert!(vault.held().is_some(), "the pair is still stored");
+        assert!(
+            seen.lock().unwrap().is_empty(),
+            "nothing is revoked or asked"
+        );
+        // Unlocked, sign-out finishes.
+        vault.locked.store(false, Ordering::SeqCst);
+        assert_eq!(helper.logout().unwrap()["state"], "signed_out");
+        assert!(vault.held().is_none());
+        assert_eq!(revoked(&seen), ["Bearer A1"]);
+    }
+
+    /// Locked while Zendesk answered a renewal: the new pair can't be
+    /// stored, so it is revoked, and the keyring keeps the old one.
+    #[test]
+    fn a_keyring_locked_during_a_renewal_revokes_the_new_pair() {
+        let vault = Arc::new(Memory::default());
+        vault.put(&expiring("A1", "R1")).unwrap();
+        let locking = Arc::clone(&vault);
+        let (base, seen) = fake(Box::new(move |method, path, _| match (method, path) {
+            ("POST", "/oauth/tokens") => {
+                locking.locked.store(true, Ordering::SeqCst);
+                (
+                    200,
+                    json!({"access_token": "A2", "refresh_token": "R2", "expires_in": 1800}),
+                )
+            }
+            _ => (204, Value::Null),
+        }));
+        let failure = account(&base, &vault).access_token().unwrap_err();
+        assert_eq!(failure.code, "KEYRING_LOCKED");
+        assert_eq!(revoked(&seen), ["Bearer A2"]);
+        let stored: Value = serde_json::from_str(&vault.held().unwrap()).unwrap();
+        assert_eq!(stored["access_token"], "A1");
     }
     /// A reply the test holds: the route calls `pause`, which returns once
     /// the test has seen the request arrive (`entered`) and let it go
