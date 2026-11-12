@@ -12,9 +12,9 @@ How the lists are made:
 
 ## `foamy-zendesk-helper`
 
-- `bin/aarch64/foamy-zendesk-helper`: sha256 `7043926aebcceed59c0a382ffe86a80d4db77185fe2e6d9dbc369810216b3524`
-- `bin/x86_64/foamy-zendesk-helper`: sha256 `82ac08bf7cce4370187d06c45358d6e17de730bfaac1c378b03da08a97381d3b`
-- `native/native.pin`: source `c46875c80e7146e2dff741ab865e01b393867b46b00c1ff51e23b11edf9f3059`, toolchain 1.99.1
+- `bin/aarch64/foamy-zendesk-helper`: sha256 `64af294f5c72ca00501fa03ded8cad8c38606449b44291f227ec02122a68c5f7`
+- `bin/x86_64/foamy-zendesk-helper`: sha256 `f92ed19302068923e5aedab443ae3f0f74a65cdda26ba8e8e6f9b5d359336fcf`
+- `native/native.pin`: source `7f61404f8a0d8b67b41aad96c3a1dd4aa4b7d404e60d3abce0f7abf9be145a1a`, toolchain 1.99.1
 
 ### Crates linked into `foamy-zendesk-helper`
 
