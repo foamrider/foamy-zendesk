@@ -14,8 +14,21 @@ function empty() {
 }
 
 function text(value, limit) {
-  return typeof value === "string" ? value.slice(0, limit || 16384) : "";
+  return typeof value === "string" ? value.slice(0, limit) : "";
 }
+
+// Text the panel shows, at most `limit` UTF-16 units: cut short, it ends in
+// "…" (never half a surrogate pair), so a clipped value never looks complete.
+function shown(value, limit) {
+  if (typeof value !== "string") return "";
+  if (value.length <= limit) return value;
+  var cut = value.slice(0, limit - 1);
+  if (/[\uD800-\uDBFF]$/.test(cut)) cut = cut.slice(0, -1);
+  return cut + "\u2026";
+}
+// The helper clips a comment at 16384 characters (code points, up to two
+// UTF-16 units each) plus its own "…": such a body fits whole.
+var MAX_BODY = 2 * 16384 + 1
 
 // One ticket from the helper's `fetch` reply, merged with what we had:
 // "unchanged"/"deferred" tickets keep their earlier comments.
@@ -27,7 +40,7 @@ function ticketFrom(raw, previous) {
       return comment && Number.isSafeInteger(comment.id) && Number.isSafeInteger(comment.created);
     }).slice(0, MAX_HISTORY).map(function(comment) {
       return { eventId: raw.id + ":" + comment.id, revision: comment.id, received: comment.created,
-               sender: text(comment.author, 256) || "?", body: text(comment.body),
+               sender: shown(comment.author, 256) || "?", body: shown(comment.body, MAX_BODY),
                mine: comment.mine === true, internal: comment.public === false };
     });
   }
@@ -35,20 +48,24 @@ function ticketFrom(raw, previous) {
   var updated = Date.parse(raw.updated_at);
   return {
     id: String(raw.id),
-    subject: text(raw.subject, 512) || "(no subject)",
+    subject: shown(raw.subject, 512) || "(no subject)",
     status: text(raw.status, 32) || "Open",
     priority: text(raw.priority, 32) || "Normal",
-    assignee: text(raw.assignee, 256) || "Unassigned",
+    // `unassigned` from the helper, not a name: an agent may be called "Unassigned".
+    assignee: shown(raw.assignee, 256),
+    unassigned: raw.unassigned === true,
     mine: raw.mine === true,
-    group: text(raw.group, 256),
-    requester: text(raw.requester, 256),
+    group: shown(raw.group, 256),
+    requester: shown(raw.requester, 256),
     updatedAt: text(raw.updated_at, 64),
-    // Comments not fetched yet: ask for them again next time.
-    loaded: Array.isArray(raw.comments) || (!!previous && previous.loaded),
+    // Whether `history` holds the comments of this `updatedAt`. A "deferred"
+    // ticket keeps its earlier comments but is not loaded, so `known` leaves it
+    // out and the next fetch asks for its comments again.
+    loaded: Array.isArray(raw.comments) || (raw.unchanged === true && !!previous && previous.loaded),
     history: history,
     revision: latest ? latest.revision : 0,
     received: latest ? latest.received : (isNaN(updated) ? 0 : updated),
-    sender: latest ? latest.sender : text(raw.requester, 256),
+    sender: latest ? latest.sender : shown(raw.requester, 256),
     // The latest comment is the agent's own reply.
     senderMine: latest ? latest.mine : false,
     body: latest ? latest.body : ""
@@ -270,16 +287,21 @@ function restore(state, batch) {
 }
 
 // The read-state file: { version: 1, read: { id: { revision, at } } }.
+// At most MAX_MARKERS are kept, the most recently marked: numeric keys
+// enumerate in ascending order, so cutting by key order would drop the newest
+// tickets, the ones most likely still in the inbox.
+var MAX_MARKERS = 2000
 function parseReadState(text) {
   var doc = null;
   try { doc = JSON.parse(text || "{}"); } catch (e) { return {}; }
-  var read = {};
   var source = doc && doc.read && typeof doc.read === "object" ? doc.read : {};
-  for (var id of Object.keys(source).slice(0, 2000)) {
+  var valid = Object.keys(source).filter(function(id) {
     var entry = source[id];
-    if (/^[0-9]{1,15}$/.test(id) && entry && Number.isSafeInteger(entry.revision) && Number.isFinite(entry.at))
-      read[id] = { revision: entry.revision, at: entry.at };
-  }
+    return /^[0-9]{1,15}$/.test(id) && entry && Number.isSafeInteger(entry.revision) && Number.isFinite(entry.at);
+  });
+  valid.sort(function(a, b) { return source[b].at - source[a].at; });
+  var read = {};
+  for (var id of valid.slice(0, MAX_MARKERS)) read[id] = { revision: source[id].revision, at: source[id].at };
   return read;
 }
 
@@ -291,7 +313,7 @@ function serializeReadState(state) {
 function host(address) {
   var value = String(address || "").trim().toLowerCase().replace(/^https:\/\//, "").replace(/\/$/, "");
   if (!/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.zendesk\.com)?$/.test(value)) return "";
-  return /\.zendesk\.com$/.test(value) ? value : value + ".zendesk.com";
+  return value.endsWith(".zendesk.com") ? value : value + ".zendesk.com";
 }
 
 function ticketUrl(address, id) {
@@ -304,13 +326,17 @@ function ticketUrl(address, id) {
 // (another account, or signed out) moves it on, and an older fetch's exit,
 // stopped (143) or with a full reply that was already on its way, belongs to
 // an inbox that is gone. Otherwise the helper's last line: the tickets (and
-// the read-state file they go with), or the failed reply (null if none).
+// the read-state file they go with, and whether the helper's bounds left
+// tickets or groups out), or the failed reply (null if none).
 function fetchOutcome(started, current, text) {
   if (started !== current) return { stale: true };
   var reply = null;
   try { reply = JSON.parse(String(text).trim().split("\n").pop()); } catch (e) {}
-  if (reply && reply.ok && Array.isArray(reply.tickets))
-    return { ok: true, tickets: reply.tickets, statePath: typeof reply.state_path === "string" ? reply.state_path : null };
+  if (reply && reply.ok && Array.isArray(reply.tickets)) {
+    var cut = reply.truncated && typeof reply.truncated === "object" ? reply.truncated : {};
+    return { ok: true, tickets: reply.tickets, statePath: typeof reply.state_path === "string" ? reply.state_path : null,
+             truncated: { tickets: cut.tickets === true, groups: cut.groups === true } };
+  }
   return { ok: false, reply: reply };
 }
 

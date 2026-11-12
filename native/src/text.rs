@@ -17,9 +17,29 @@ pub fn message(key: &str, values: &[&dyn Display]) -> String {
     out
 }
 
+/// External text shown inside a message: its first line, trimmed, at most
+/// `max` characters, ending in "…" when cut.
+pub fn short(value: &str, max: usize) -> String {
+    let line = value.lines().next().unwrap_or("").trim();
+    if line.chars().count() <= max && line.len() == value.trim().len() {
+        return line.to_string();
+    }
+    let mut out: String = line.chars().take(max).collect();
+    out.push('…');
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn external_text_is_one_short_line() {
+        assert_eq!(short("  invalid_client ", 80), "invalid_client");
+        assert_eq!(short(&"é".repeat(200), 80), format!("{}…", "é".repeat(80)));
+        assert_eq!(short("first\nsecond", 80), "first…");
+        assert_eq!(short("", 80), "");
+    }
 
     #[test]
     fn values_follow_the_key() {

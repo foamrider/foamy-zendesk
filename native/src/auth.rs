@@ -10,6 +10,10 @@
 //! is written: a refresh fails (`LOCK_UNAVAILABLE`, `BUSY`) before it asks
 //! Zendesk, and sign-out still clears and revokes but doesn't answer
 //! `signed_out`.
+//!
+//! A sign-in in a locked keyring is still there (`KEYRING_LOCKED`, see
+//! `vault.rs`): never "signed out". Sign-out then removes and revokes
+//! nothing it can't read and says it didn't finish.
 
 use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -63,6 +67,37 @@ fn signed_out() -> Value {
 
 fn not_signed_in() -> Failure {
     Failure::coded("SIGNED_OUT", "Sign in to Zendesk in the settings.")
+}
+
+/// A renewed pair the keyring didn't take (`why`). Zendesk has invalidated
+/// the stored one, so the user must sign in again: `EXPIRED`, with the
+/// keyring's detail when it gave one.
+fn renewal_not_saved(why: &Failure) -> Failure {
+    match why.message.split(crate::text::SEPARATOR).nth(1) {
+        Some(detail) => Failure::coded(
+            "EXPIRED",
+            crate::text::message(
+                "The renewed Zendesk sign-in couldn't be saved in the keyring (%1). Sign in again.",
+                &[&detail],
+            ),
+        ),
+        None => Failure::coded(
+            "EXPIRED",
+            "The renewed Zendesk sign-in couldn't be saved in the keyring. Sign in again.",
+        ),
+    }
+}
+
+/// A sign-out the locked keyring stopped: the pair is still stored.
+fn still_stored(failure: Failure) -> Failure {
+    if failure.code == "KEYRING_LOCKED" {
+        Failure::coded(
+            "KEYRING_LOCKED",
+            "Sign-out didn't finish: the keyring is locked, so the Zendesk sign-in is still stored. Unlock the keyring and sign out again.",
+        )
+    } else {
+        failure
+    }
 }
 
 /// Why the token lock wasn't taken.
@@ -125,6 +160,10 @@ fn parse_record(raw: &str) -> Option<Value> {
     text(&record, "access_token").map(|_| record)
 }
 
+/// The most of Zendesk's `error` a refusal shows (one line): OAuth error
+/// codes are short, and the settings page shows the message whole.
+const MAX_REFUSAL: usize = 80;
+
 /// Why Zendesk refused a token request (`error`, never a token).
 fn refused(reply: &crate::http::Reply) -> Failure {
     let error = text(&reply.body, "error").unwrap_or_else(|| format!("HTTP {}", reply.status));
@@ -133,7 +172,10 @@ fn refused(reply: &crate::http::Reply) -> Failure {
     } else {
         Failure::coded(
             "HTTP",
-            crate::text::message("Zendesk refused the sign-in (%1).", &[&error]),
+            crate::text::message(
+                "Zendesk refused the sign-in (%1).",
+                &[&crate::text::short(&error, MAX_REFUSAL)],
+            ),
         )
     }
 }
@@ -180,6 +222,7 @@ impl Account<'_> {
     /// only while the keyring still holds `old`: `SIGNED_OUT` once sign-out
     /// has cleared it. Never without the token lock (`BUSY`,
     /// `LOCK_UNAVAILABLE`): Zendesk isn't asked, so the stored pair stays valid.
+    /// A new pair the keyring doesn't take is revoked: `EXPIRED`.
     fn refresh(&self, old: &Value) -> Result<Value, Failure> {
         let refresh = text(old, "refresh_token").ok_or_else(expired)?;
         let _lock = self.token_lock(REFRESH_WAIT).map_err(|no| match no {
@@ -215,15 +258,26 @@ impl Account<'_> {
         }
         let record = tokens_from(&reply.body, old.get("user"))?;
         // Compare again before storing: a sign-out that gave up waiting for
-        // this lock may have cleared the keyring meanwhile.
-        match self.stored()? {
-            Some(current) if same_pair(&current, old) => {
-                self.vault.put(&record.to_string())?;
+        // this lock may have cleared the keyring meanwhile. A keyring that
+        // can't be read now (locked meanwhile) doesn't get the new pair
+        // either, so it is revoked too.
+        match self.stored() {
+            Ok(Some(current)) if same_pair(&current, old) => {
+                // Not stored, the new pair is lost: revoke it. The stored one
+                // was spent at Zendesk, so this is an expired sign-in.
+                if let Err(failure) = self.vault.put(&record.to_string()) {
+                    self.revoke(&record);
+                    return Err(renewal_not_saved(&failure));
+                }
                 Ok(record)
             }
-            current => {
+            Ok(current) => {
                 self.revoke(&record);
                 current.ok_or_else(not_signed_in)
+            }
+            Err(failure) => {
+                self.revoke(&record);
+                Err(failure)
             }
         }
     }
@@ -333,11 +387,13 @@ impl Account<'_> {
     /// the keyring is cleared anyway (and a refresh, comparing before it
     /// stores, revokes its pair instead), but sign-out answers `BUSY` or
     /// `LOCK_UNAVAILABLE`, never `signed_out`: it can't promise nothing survives.
+    /// A locked keyring (`KEYRING_LOCKED`) keeps the pair: unread, it is
+    /// neither removed nor revoked.
     fn logout_within(&self, wait: Duration) -> Result<Value, Failure> {
         let lock = self.token_lock(wait);
         // Read under the lock: what a refresh just stored is what goes.
-        let record = self.stored()?;
-        let cleared = self.vault.delete();
+        let record = self.stored().map_err(still_stored)?;
+        let cleared = self.vault.delete().map_err(still_stored);
         let held = lock.map(drop);
         if let Some(record) = &record {
             self.revoke(record);
@@ -439,7 +495,12 @@ impl Account<'_> {
         let mut record = tokens_from(&reply.body, None)?;
         let user = self.me(&text(&record, "access_token").unwrap_or_default())?;
         record["user"] = user.clone();
-        self.vault.put(&record.to_string())?;
+        // Not stored, the new pair would be left valid at Zendesk: revoke it.
+        // Nothing changed in the keyring, so the keyring's error says why.
+        if let Err(failure) = self.vault.put(&record.to_string()) {
+            self.revoke(&record);
+            return Err(failure);
+        }
         Ok(json!({"ok": true, "state": "signed_in", "user": user, "verified": true}))
     }
 }
@@ -574,6 +635,7 @@ mod tests {
     use crate::vault::Memory;
     use std::io::BufRead;
     use std::path::Path;
+    use std::sync::atomic::Ordering;
     use std::sync::{Arc, Barrier, Mutex};
 
     type Route = Box<dyn Fn(&str, &str, &Value) -> (u16, Value) + Send + Sync>;
@@ -731,6 +793,38 @@ mod tests {
             (Some("A1"), Some("R1"))
         );
         assert!(stored["expires_at"].as_u64().unwrap() > now());
+    }
+
+    /// The keyring takes no new sign-in: the exchanged pair would stay valid
+    /// at Zendesk with nobody holding it, so it is revoked, and the
+    /// keyring's error is the answer.
+    #[test]
+    fn a_login_the_keyring_does_not_store_is_revoked() {
+        let (base, seen) = fake(Box::new(|method, path, _| match (method, path) {
+            ("POST", "/oauth/tokens") => (
+                200,
+                json!({"access_token": "A1", "refresh_token": "R1", "expires_in": 1800}),
+            ),
+            ("GET", "/api/v2/users/me.json") => (
+                200,
+                json!({"user": {"name": "Alex", "email": "alex@acme.com"}}),
+            ),
+            _ => (204, Value::Null),
+        }));
+        let vault = Memory::default();
+        vault.read_only.store(true, Ordering::SeqCst);
+        let port = free_port();
+        let failure = account(&base, &vault)
+            .login(port, Duration::from_secs(10), |url| {
+                let state = query(url, "state");
+                std::thread::spawn(move || {
+                    browser(port, format!("/callback?code=C1&state={state}"))
+                });
+            })
+            .unwrap_err();
+        assert_eq!(failure.code, "KEYRING_UNAVAILABLE");
+        assert_eq!(revoked(&seen), ["Bearer A1"]);
+        assert!(vault.held().is_none());
     }
 
     #[test]
@@ -940,7 +1034,14 @@ mod tests {
                 display["assignee"].as_str(),
                 display["requester"].as_str()
             ),
-            (Some("On-hold"), Some("Unassigned"), Some("Maria"))
+            (Some("On-hold"), Some(""), Some("Maria"))
+        );
+        assert_eq!(
+            (
+                tickets[0]["unassigned"].as_bool(),
+                display["unassigned"].as_bool()
+            ),
+            (Some(false), Some(true))
         );
         let comments = display["comments"].as_array().unwrap();
         assert_eq!(
@@ -948,6 +1049,10 @@ mod tests {
             json!({"id": 502, "author": "Alex", "mine": true, "public": false, "created": 1_793_957_280_000_i64, "body": "Checking"})
         );
         assert_eq!(comments[1]["author"], "Maria");
+        assert_eq!(
+            reply["truncated"],
+            json!({"tickets": false, "groups": false})
+        );
         let seen = seen.lock().unwrap();
         assert!(seen.iter().all(|request| request.2 == "Bearer A1"));
         assert!(
@@ -955,6 +1060,188 @@ mod tests {
                 .iter()
                 .any(|request| request.1.starts_with("/api/v2/tickets/1/")),
             "no comments for an unchanged ticket"
+        );
+    }
+
+    /// An agent in 25 groups whose own search has more than one page.
+    fn crowded(more_mine: bool, groups: usize) -> (String, Log) {
+        fake(Box::new(move |_, path, _| {
+            let path = path.to_string();
+            let ticket = |id: u64| {
+                json!({"id": id, "result_type": "ticket", "subject": "T", "status": "open",
+                                         "assignee_id": 7, "requester_id": 7, "updated_at": format!("2026-11-06T09:{:02}:00Z", id % 60)})
+            };
+            if path == "/api/v2/users/me.json" {
+                (200, json!({"user": {"id": 7, "name": "Alex"}}))
+            } else if path == "/api/v2/users/7/groups.json" {
+                let list: Vec<Value> = (0..groups as u64)
+                    .map(|id| json!({"id": 100 + id, "name": format!("G{id}")}))
+                    .collect();
+                (200, json!({"groups": list}))
+            } else if path.starts_with("/api/v2/groups.json") {
+                (200, json!({"groups": []}))
+            } else if path.contains("assignee%3Ame") {
+                let page: Vec<Value> = (1..=100).map(ticket).collect();
+                if more_mine {
+                    (
+                        200,
+                        json!({"results": page, "count": 130, "next_page": "https://acme.zendesk.com/api/v2/search.json?page=2"}),
+                    )
+                } else {
+                    (
+                        200,
+                        json!({"results": page, "count": 100, "next_page": null}),
+                    )
+                }
+            } else if path.contains("assignee%3Anone") {
+                (200, json!({"results": [], "count": 0, "next_page": null}))
+            } else if path.contains("/comments.json") {
+                (200, json!({"comments": []}))
+            } else if path.starts_with("/api/v2/users/show_many.json") {
+                (200, json!({"users": [{"id": 7, "name": "Alex"}]}))
+            } else {
+                (404, json!({"error": path}))
+            }
+        }))
+    }
+
+    #[test]
+    fn fetch_says_when_the_inbox_is_cut_short() {
+        let vault = Memory::default();
+        vault
+            .put(&json!({"access_token": "A1"}).to_string())
+            .unwrap();
+        let none = serde_json::Map::new();
+        for (more_mine, groups, expected) in [
+            (false, 20, json!({"tickets": false, "groups": false})),
+            (true, 20, json!({"tickets": true, "groups": false})),
+            (false, 25, json!({"tickets": false, "groups": true})),
+        ] {
+            let (base, seen) = crowded(more_mine, groups);
+            let reply = crate::tickets::fetch(&account(&base, &vault), &none).unwrap();
+            assert_eq!(reply["tickets"].as_array().unwrap().len(), 100);
+            assert_eq!(reply["truncated"], expected, "{more_mine} {groups}");
+            let searches = seen
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|request| request.1.contains("assignee%3Anone"))
+                .count();
+            assert_eq!(searches, 20, "at most 20 group searches");
+        }
+    }
+
+    #[test]
+    fn one_run_sends_about_8_mb_of_comments_and_defers_the_rest() {
+        // Ten changed tickets with 20 comments of 16384 four-byte characters
+        // each: about 1.3 MB of comments per ticket, 13 MB in all.
+        let (base, _) = fake(Box::new(|_, path, _| {
+            let path = path.to_string();
+            if path == "/api/v2/users/me.json" {
+                (200, json!({"user": {"id": 7, "name": "Alex"}}))
+            } else if path.contains("groups.json") {
+                (200, json!({"groups": []}))
+            } else if path.contains("assignee%3Ame") {
+                let page: Vec<Value> = (1..=10u64)
+                    .map(|id| json!({"id": id, "result_type": "ticket", "subject": "T", "status": "open", "assignee_id": 7,
+                                     "requester_id": 7, "updated_at": format!("2026-11-06T09:{:02}:00Z", 60 - id)}))
+                    .collect();
+                (200, json!({"results": page, "count": 10}))
+            } else if path.contains("/comments.json") {
+                let list: Vec<Value> = (0..20)
+                    .map(|n| json!({"id": n, "author_id": 7, "public": true, "plain_body": "😀".repeat(16 * 1024),
+                                    "created_at": "2026-11-06T09:00:00Z"}))
+                    .collect();
+                (200, json!({"comments": list}))
+            } else if path.starts_with("/api/v2/users/show_many.json") {
+                (200, json!({"users": [{"id": 7, "name": "Alex"}]}))
+            } else {
+                (404, json!({"error": path}))
+            }
+        }));
+        let vault = Memory::default();
+        vault
+            .put(&json!({"access_token": "A1"}).to_string())
+            .unwrap();
+        let reply =
+            crate::tickets::fetch(&account(&base, &vault), &serde_json::Map::new()).unwrap();
+        let tickets = reply["tickets"].as_array().unwrap();
+        let with: Vec<&str> = tickets
+            .iter()
+            .filter(|t| t["comments"].is_array())
+            .map(|t| t["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(with, ["1", "2", "3", "4", "5", "6"], "the newest first");
+        assert!(tickets[6..].iter().all(|t| t["deferred"] == true));
+        let size = reply.to_string().len();
+        assert!(
+            size <= 8 * 1024 * 1024 + 64 * 1024,
+            "{size} bytes in one reply"
+        );
+        assert_eq!(tickets[0]["comments"].as_array().unwrap().len(), 20);
+    }
+
+    #[test]
+    fn an_agent_named_unassigned_is_an_assignee() {
+        let (base, _) = fake(Box::new(|_, path, _| {
+            let path = path.to_string();
+            if path == "/api/v2/users/me.json" {
+                (200, json!({"user": {"id": 7, "name": "Alex"}}))
+            } else if path.contains("groups.json") {
+                (200, json!({"groups": []}))
+            } else if path.contains("assignee%3Ame") {
+                (
+                    200,
+                    json!({"results": [
+                    {"id": 1, "result_type": "ticket", "status": "open", "assignee_id": 8, "requester_id": 9, "updated_at": "2026-11-06T09:40:00Z"},
+                    {"id": 2, "result_type": "ticket", "status": "open", "assignee_id": null, "requester_id": 9, "updated_at": "2026-11-06T09:30:00Z"}]}),
+                )
+            } else if path.contains("/comments.json") {
+                (200, json!({"comments": []}))
+            } else if path.starts_with("/api/v2/users/show_many.json") {
+                (
+                    200,
+                    json!({"users": [{"id": 8, "name": "Unassigned"}, {"id": 9, "name": "Maria"}]}),
+                )
+            } else {
+                (404, json!({"error": path}))
+            }
+        }));
+        let vault = Memory::default();
+        vault
+            .put(&json!({"access_token": "A1"}).to_string())
+            .unwrap();
+        let reply =
+            crate::tickets::fetch(&account(&base, &vault), &serde_json::Map::new()).unwrap();
+        let tickets = reply["tickets"].as_array().unwrap();
+        let who = |t: &Value| (t["assignee"].clone(), t["unassigned"].clone());
+        assert_eq!(who(&tickets[0]), (json!("Unassigned"), json!(false)));
+        assert_eq!(who(&tickets[1]), (json!(""), json!(true)));
+    }
+
+    #[test]
+    fn a_refusal_shows_one_short_line_of_zendesk_s_error() {
+        let refusal = |error: Value| {
+            refused(&crate::http::Reply {
+                status: 400,
+                body: json!({ "error": error }),
+            })
+            .message
+        };
+        assert_eq!(
+            refusal(json!("invalid_client")),
+            "Zendesk refused the sign-in (%1).\u{1f}invalid_client"
+        );
+        let long = refusal(json!(format!("{}\nmore", "x".repeat(10_000))));
+        let value = long.split('\u{1f}').nth(1).unwrap();
+        assert_eq!(value, format!("{}…", "x".repeat(80)));
+        assert_eq!(
+            refused(&crate::http::Reply {
+                status: 400,
+                body: json!({"error": "invalid_grant"})
+            })
+            .code,
+            "EXPIRED"
         );
     }
 
@@ -986,6 +1273,94 @@ mod tests {
             (seen[0].0.as_str(), seen[0].1.as_str(), seen[0].2.as_str()),
             ("DELETE", "/api/v2/oauth/tokens/current.json", "Bearer A1")
         );
+    }
+
+    /// The reported case: the sign-in is in a locked keyring and its unlock
+    /// prompt is dismissed. It is still stored, so nothing says signed out.
+    #[test]
+    fn a_locked_keyring_is_not_a_sign_out() {
+        let (base, seen) = fake(Box::new(|_, _, _| (204, Value::Null)));
+        let vault = Memory::default();
+        vault
+            .put(&json!({"access_token": "A1"}).to_string())
+            .unwrap();
+        vault.locked.store(true, Ordering::SeqCst);
+        let helper = account(&base, &vault);
+        let failure = helper.logout().unwrap_err();
+        assert_eq!(failure.code, "KEYRING_LOCKED");
+        assert!(
+            failure
+                .message
+                .starts_with("Sign-out didn't finish: the keyring is locked"),
+            "{}",
+            failure.message
+        );
+        assert_eq!(helper.status().unwrap_err().code, "KEYRING_LOCKED");
+        assert_eq!(helper.access_token().unwrap_err().code, "KEYRING_LOCKED");
+        assert!(vault.held().is_some(), "the pair is still stored");
+        assert!(
+            seen.lock().unwrap().is_empty(),
+            "nothing is revoked or asked"
+        );
+        // Unlocked, sign-out finishes.
+        vault.locked.store(false, Ordering::SeqCst);
+        assert_eq!(helper.logout().unwrap()["state"], "signed_out");
+        assert!(vault.held().is_none());
+        assert_eq!(revoked(&seen), ["Bearer A1"]);
+    }
+
+    /// The keyring doesn't take a renewed pair: Zendesk has spent the stored
+    /// one, so the new one is revoked and the sign-in has expired.
+    #[test]
+    fn a_renewal_the_keyring_does_not_store_is_revoked_and_expires() {
+        let (base, seen) = fake(Box::new(|method, path, body| match (method, path) {
+            ("POST", "/oauth/tokens") => (
+                200,
+                json!({"access_token": format!("new-{}", body["refresh_token"].as_str().unwrap_or("")),
+                       "refresh_token": "R2", "expires_in": 1800}),
+            ),
+            _ => (204, Value::Null),
+        }));
+        let vault = Memory::default();
+        vault.put(&expiring("A1", "R1")).unwrap();
+        vault.read_only.store(true, Ordering::SeqCst);
+        let helper = account(&base, &vault);
+        let failure = helper.access_token().unwrap_err();
+        assert_eq!(failure.code, "EXPIRED");
+        assert_eq!(
+            failure.message,
+            "The renewed Zendesk sign-in couldn't be saved in the keyring (%1). Sign in again.\u{1f}No space left on device"
+        );
+        assert_eq!(revoked(&seen), ["Bearer new-R1"]);
+        let stored: Value = serde_json::from_str(&vault.held().unwrap()).unwrap();
+        assert_eq!(stored["refresh_token"], "R1");
+        // A check renewing the same way says so too.
+        assert_eq!(helper.status().unwrap()["state"], "expired");
+        assert_eq!(revoked(&seen), ["Bearer new-R1", "Bearer new-R1"]);
+    }
+
+    /// Locked while Zendesk answered a renewal: the new pair can't be
+    /// stored, so it is revoked, and the keyring keeps the old one.
+    #[test]
+    fn a_keyring_locked_during_a_renewal_revokes_the_new_pair() {
+        let vault = Arc::new(Memory::default());
+        vault.put(&expiring("A1", "R1")).unwrap();
+        let locking = Arc::clone(&vault);
+        let (base, seen) = fake(Box::new(move |method, path, _| match (method, path) {
+            ("POST", "/oauth/tokens") => {
+                locking.locked.store(true, Ordering::SeqCst);
+                (
+                    200,
+                    json!({"access_token": "A2", "refresh_token": "R2", "expires_in": 1800}),
+                )
+            }
+            _ => (204, Value::Null),
+        }));
+        let failure = account(&base, &vault).access_token().unwrap_err();
+        assert_eq!(failure.code, "KEYRING_LOCKED");
+        assert_eq!(revoked(&seen), ["Bearer A2"]);
+        let stored: Value = serde_json::from_str(&vault.held().unwrap()).unwrap();
+        assert_eq!(stored["access_token"], "A1");
     }
     /// A reply the test holds: the route calls `pause`, which returns once
     /// the test has seen the request arrive (`entered`) and let it go

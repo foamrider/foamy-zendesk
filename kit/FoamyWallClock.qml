@@ -1,4 +1,4 @@
-// foamy-kit 0.8.1 18f9db090554dd0efeb47c94c10d52815cbfc1817e02477ab424d84a610b9256 — do not edit; change foamy-kit and run sync
+// foamy-kit 0.9.0 a28be39b8b93167cebdaee410234eb50e625bd96621175c67fb8152649e38619 — do not edit; change foamy-kit and run sync
 import QtQuick
 
 // Epoch-aligned ticks avoid SystemClock's negative delays in the repeated
@@ -16,7 +16,8 @@ Timer {
 
   function refresh() {
     stop()
-    if (!enabled) return
+    if (!enabled)
+      return
     date = new Date()
     interval = msUntilNextTick(Date.now())
     start()

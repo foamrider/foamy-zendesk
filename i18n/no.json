@@ -51,6 +51,9 @@
   "No home directory for the read state.": "Fant ingen hjemmemappe for lesestatusen.",
   "No keyring is available to store the Zendesk sign-in (%1).": "Ingen nøkkelring er tilgjengelig for å lagre Zendesk-påloggingen (%1).",
   "No keyring is available to store the Zendesk sign-in.": "Ingen nøkkelring er tilgjengelig for å lagre Zendesk-påloggingen.",
+  "The keyring that holds the Zendesk sign-in is locked. Unlock it and try again.": "Nøkkelringen med Zendesk-påloggingen er låst. Lås den opp og prøv igjen.",
+  "The renewed Zendesk sign-in couldn't be saved in the keyring (%1). Sign in again.": "Den fornyede Zendesk-påloggingen kunne ikke lagres i nøkkelringen (%1). Logg på igjen.",
+  "The renewed Zendesk sign-in couldn't be saved in the keyring. Sign in again.": "Den fornyede Zendesk-påloggingen kunne ikke lagres i nøkkelringen. Logg på igjen.",
   "No randomness available (%1).": "Ingen tilfeldighetskilde er tilgjengelig (%1).",
   "Normal": "Normal",
   "Not connected": "Ikke tilkoblet",
@@ -92,6 +95,7 @@
   "Sign-in wasn't finished in the browser in time.": "Påloggingen ble ikke fullført i nettleseren i tide.",
   "Sign-out didn't finish: another Zendesk request is still renewing the sign-in. Try again.": "Utloggingen ble ikke fullført: en annen Zendesk-forespørsel fornyer fortsatt påloggingen. Prøv igjen.",
   "Sign-out didn't finish: the Zendesk sign-in's lock file can't be used (%1). Try again.": "Utloggingen ble ikke fullført: låsefilen for Zendesk-påloggingen kan ikke brukes (%1). Prøv igjen.",
+  "Sign-out didn't finish: the keyring is locked, so the Zendesk sign-in is still stored. Unlock the keyring and sign out again.": "Utloggingen ble ikke fullført: nøkkelringen er låst, så Zendesk-påloggingen er fortsatt lagret. Lås opp nøkkelringen og logg ut igjen.",
   "Signed in": "Pålogget",
   "Signed in as %1": "Pålogget som %1",
   "Solved": "Løst",
@@ -196,5 +200,12 @@
   "and %1 more": {
     "one": "og %1 til",
     "other": "og %1 til"
-  }
+  },
+  "The saved list in shell.json isn't valid, so it wasn't replaced.": "Den lagrede listen i shell.json er ugyldig, så den ble ikke erstattet.",
+  "Can't save read markers": "Kan ikke lagre lesestatusen",
+  "Can't save snooze or resume": "Kan ikke lagre slumring eller gjenopptakelse",
+  "Kept only until the shell restarts.": "Beholdes bare til skallet startes på nytt.",
+  "Showing the 100 most recently updated tickets": "Viser de 100 sist oppdaterte sakene",
+  "Showing unassigned tickets from your first 20 groups": "Viser ikke tildelte saker fra de 20 første gruppene dine",
+  "Can't open the browser": "Kan ikke åpne nettleseren"
 }

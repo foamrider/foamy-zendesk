@@ -1,7 +1,26 @@
-// Copied from foamy-train/Schedule.js; keep the two in step until it moves into foamy-kit.
+.pragma library
+// foamy-kit 0.9.0 a193e7309a38d468c199253d7ffa05aa630070decdf27f641b51d47d907f804e — do not edit; change foamy-kit and run sync
+
+// A weekly on/off schedule with a snooze/resume override (from foamy-train,
+// shared with foamy-zendesk). Times are local; a day's range is "HH:MM-HH:MM"
+// ("24:00" may end it, a range that ends before it starts runs overnight into
+// the next day) or "" for a day off. The settings keys are dayKeys
+// (scheduleMonday … scheduleSunday), one string each.
+//
+//   import "kit/FoamySchedule.js" as Schedule
+//   readonly property var week: Schedule.week(prefs.effectiveSettings)
+//   readonly property bool on: Schedule.effective(clock.date, scheduleEnabled, week, override)
+//   override = Schedule.toggled(new Date(), scheduleEnabled, week, override)   // the snooze button
+//   file.setText(Schedule.serializeOverride(override))                         // a state file, never shell.json
+//
+// FoamyScheduleDay.qml is the settings row for one day.
+//
+// Node unit tests: require("../kit/node-loader.cjs").load("FoamySchedule").
+
 var dayKeys = ["scheduleMonday", "scheduleTuesday", "scheduleWednesday",
   "scheduleThursday", "scheduleFriday", "scheduleSaturday", "scheduleSunday"]
 
+// Minutes since midnight for "HH:MM" (and "24:00" with allowMidnightEnd), or -1.
 function minutes(time, allowMidnightEnd) {
   if (allowMidnightEnd && time === "24:00") return 1440
   if (typeof time !== "string" || !/^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/.test(time)) return -1
@@ -15,10 +34,14 @@ function validRange(value) {
   return parts.length === 2 && minutes(parts[0], false) >= 0 && minutes(parts[1], true) >= 0
 }
 
-function dayRange(settings,index) { var value=settings[dayKeys[index]];return validRange(value)?value:"" }
+function dayRange(settings, index) {
+  var value = settings[dayKeys[index]]
+  return validRange(value) ? value : ""
+}
 
+// The seven day ranges, Monday first; an invalid stored range is a day off.
 function week(settings) {
-  return dayKeys.map(function(key, index) { return dayRange(settings, index) })
+  return dayKeys.map(function(key, index) { return dayRange(settings || {}, index) })
 }
 
 function withinWeek(date, enabled, ranges) {
@@ -96,4 +119,8 @@ function serializeOverride(override) {
   return JSON.stringify({ version: 1, override: validOverride(override) ? override : null }) + "\n"
 }
 
-if(typeof module!=="undefined")module.exports={validRange:validRange,week:week,withinWeek:withinWeek,effective:effective,toggled:toggled,parseOverride:parseOverride,serializeOverride:serializeOverride}
+if (typeof module !== "undefined") module.exports = {
+  dayKeys: dayKeys, minutes: minutes, validRange: validRange, week: week, withinWeek: withinWeek,
+  validOverride: validOverride, effective: effective, nextScheduled: nextScheduled, toggled: toggled,
+  parseOverride: parseOverride, serializeOverride: serializeOverride
+}

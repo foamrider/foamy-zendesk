@@ -14,12 +14,16 @@
 //! foamy-zendesk-helper fetch       --address <…> --client-id <id>   < {"known":{"<id>":"<updated_at>"}}
 //! ```
 //!
-//! `fetch` replies `{"ok":true,"me":{…},"tickets":[…],"state_path":…}`: unsolved
-//! tickets assigned to the agent and unassigned ones in the agent's groups,
-//! each with its latest comments (newest first) unless `known` already has
-//! that `updated_at` (`"unchanged":true`) or the run's comment budget is spent
-//! (`"deferred":true`). `state_path` is the plugin's read-state file in a
-//! private `$XDG_STATE_HOME/foamy-zendesk/` (created here; the panel writes it).
+//! `fetch` replies `{"ok":true,"me":{…},"tickets":[…],"truncated":{…},"state_path":…}`:
+//! unsolved tickets assigned to the agent and unassigned ones in the agent's
+//! groups, each with its latest comments (newest first) unless `known` already
+//! has that `updated_at` (`"unchanged":true`) or the run's comment budget (25
+//! tickets, about 8 MB) is spent (`"deferred":true`: they follow next run). `truncated` is `{"tickets":bool,"groups":bool}`:
+//! true when the 100 most recently updated tickets (one search page each) or
+//! the first 20 groups left some out. `state_path` is the plugin's read-state
+//! file in a private `$XDG_STATE_HOME/foamy-zendesk/` (created here; the panel
+//! writes it). A ticket's `assignee` is the assignee's name ("" for none or
+//! unknown) and `unassigned` says whether it has one.
 //!
 //! Every command prints one JSON reply as its last line:
 //!
@@ -27,9 +31,9 @@
 //!   (`verified` false plus `error` when Zendesk can't be reached right now),
 //! - `{"ok":true,"state":"signed_out"}`, `{"ok":true,"state":"expired"}`,
 //! - `{"ok":false,"code":…,"error":…}` with code `INVALID_ARGUMENT`,
-//!   `KEYRING_UNAVAILABLE`, `PORT_IN_USE`, `BUSY`, `LOCK_UNAVAILABLE`, `TIMEOUT`,
-//!   `ACCESS_DENIED`, `EXPIRED`, `SIGNED_OUT`, `NETWORK`, `HTTP`,
-//!   `TLS_UNSUPPORTED` or `INTERNAL`.
+//!   `KEYRING_UNAVAILABLE`, `KEYRING_LOCKED`, `PORT_IN_USE`, `BUSY`,
+//!   `LOCK_UNAVAILABLE`, `TIMEOUT`, `ACCESS_DENIED`, `EXPIRED`, `SIGNED_OUT`,
+//!   `NETWORK`, `HTTP`, `TLS_UNSUPPORTED` or `INTERNAL`.
 //!
 //! Every `error` is a catalog key of the plugin's `i18n/en.json`; varying
 //! details follow it after U+001F separators and fill its `%1`, `%2`… (see
@@ -56,13 +60,17 @@
 //!   `token.lock` can't be created or opened, say on a full filesystem) is
 //!   `LOCK_UNAVAILABLE`. Either way Zendesk isn't asked, so the stored pair
 //!   stays valid, and `fetch` fails with that code (`auth-status` answers
-//!   `signed_in` with `verified` false and the error).
+//!   `signed_in` with `verified` false and the error). When the keyring
+//!   doesn't store the new pair, it is revoked and the refresh is `EXPIRED`
+//!   (`auth-status`: `expired`): Zendesk already invalidated the stored one.
 //! - `auth-status` saves the user's name under the lock the same way, skips
 //!   the save without it, and answers `signed_out` when the sign-in went
 //!   meanwhile.
 //! - `auth-login` checks the lock before opening the browser
 //!   (`LOCK_UNAVAILABLE`), and exchanges the code and stores the new pair
-//!   holding it, so a refresh of an older pair can't overwrite it.
+//!   holding it, so a refresh of an older pair can't overwrite it. When
+//!   the keyring doesn't store it, the new pair is revoked and the keyring's
+//!   error is the answer.
 //! - `auth-logout` waits up to 30 seconds for the lock, then reads, clears
 //!   and revokes whatever is stored (a refresh that just finished: its new
 //!   pair). Without the lock, still held by then (a refresh hung on Zendesk
@@ -71,6 +79,10 @@
 //!   since a refresh could still store; signing out again finishes once the
 //!   lock can be taken. `KEYRING_UNAVAILABLE` when the keyring can't be read
 //!   or cleared (the token is still revoked when it was read).
+//! - A sign-in in a locked keyring (its unlock prompt dismissed or not
+//!   shown) is `KEYRING_LOCKED` for every command, never `signed_out`:
+//!   `auth-logout` then removes and revokes nothing, and the sign-in works
+//!   again once the keyring is unlocked. No item at all is `signed_out`.
 //! - There is no fallback lock directory: helpers that disagree on where
 //!   the lock lives wouldn't exclude each other.
 

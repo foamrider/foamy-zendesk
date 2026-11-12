@@ -3,5 +3,4 @@ Panel 1.0 Panel.qml
 InboxView 1.0 InboxView.qml
 TicketRow 1.0 TicketRow.qml
 PlainText 1.0 PlainText.qml
-ScheduleDay 1.0 ScheduleDay.qml
 singleton ZendeskAccount 1.0 ZendeskAccount.qml

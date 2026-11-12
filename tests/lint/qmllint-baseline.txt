@@ -1,0 +1,132 @@
+# qmllint findings accepted when the check was adopted. tests/validate.sh fails on any
+# finding not listed here. Regenerate with `tests/validate.sh --update-baseline qmllint`
+# only to drop fixed entries or after reviewing every added one; never to pass a check.
+InboxView.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var email = ZendeskAccount.user && ZendeskAccount.user.email ? ZendeskAccount.user.email : ""
+InboxView.qml: id-shadows-member: Id for object Flickable shadows property "list". Rename one or the other. | var y = row.mapToItem(list.contentItem, 0, 0).y + (row.sectionHeader.visible ? row.sectionHeader.height : 0)
+InboxView.qml: id-shadows-member: Id for object FoamyCursor shadows property "cursor". Rename one or the other. | readonly property int refreshStop: cursor.count - 1
+InboxView.qml: id-shadows-member: Id for object FoamyHeroBand shadows property "band". Rename one or the other. | implicitHeight: editingSettings ? settingsPage.implicitHeight : band.implicitHeight + body.implicitHeight + (footer.visible ? footer.implicitHeight : 0)
+InboxView.qml: id-shadows-member: Id for object FoamySettingsPage shadows property "settingsPage". Rename one or the other. | implicitHeight: editingSettings ? settingsPage.implicitHeight : band.implicitHeight + body.implicitHeight + (footer.visible ? footer.implicitHeight : 0)
+InboxView.qml: id-shadows-member: Note: Id defined here | id: band
+InboxView.qml: id-shadows-member: Note: Id defined here | id: cursor
+InboxView.qml: id-shadows-member: Note: Id defined here | id: list
+InboxView.qml: id-shadows-member: Note: Id defined here | id: settingsPage
+InboxView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+InboxView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+InboxView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+InboxView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+InboxView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+InboxView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+InboxView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+InboxView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+InboxView.qml: missing-property: Member "expanded" not found on type "QQuickItem" | if (!row.expanded)
+InboxView.qml: missing-property: Member "openButton" not found on type "QQuickItem" | var item = (cursor.index - firstTicketStop) % 3 === 0 ? ticket : ticket.openButton
+InboxView.qml: missing-property: Member "sectionHeader" not found on type "QQuickItem" | var y = row.mapToItem(list.contentItem, 0, 0).y + (row.sectionHeader.visible ? row.sectionHeader.height : 0)
+InboxView.qml: missing-property: Member "sectionHeader" not found on type "QQuickItem" | var y = row.mapToItem(list.contentItem, 0, 0).y + (row.sectionHeader.visible ? row.sectionHeader.height : 0)
+InboxView.qml: missing-property: Member "showMore" not found on type "QQuickItem" | row.showMore()
+InboxView.qml: missing-property: Member "subtitle" not found on type "QObject" | font.pixelSize: FoamyStyle.font.subtitle
+InboxView.qml: missing-property: Member "ticket" not found on type "QQuickItem" | toggleTicket(row.ticket.id)
+InboxView.qml: unqualified: Unqualified access | cursor.hover(firstStop + part)
+InboxView.qml: unqualified: Unqualified access | cursorPart: cursor.index >= firstStop && cursor.index < firstStop + 3 ? cursor.index - firstStop : -1
+InboxView.qml: unqualified: Unqualified access | cursorPart: cursor.index >= firstStop && cursor.index < firstStop + 3 ? cursor.index - firstStop : -1
+InboxView.qml: unqualified: Unqualified access | cursorPart: cursor.index >= firstStop && cursor.index < firstStop + 3 ? cursor.index - firstStop : -1
+InboxView.qml: unqualified: Unqualified access | enabled: !root.saving
+InboxView.qml: unqualified: Unqualified access | expanded: root.expandedIds.indexOf(model.id) >= 0
+InboxView.qml: unqualified: Unqualified access | now: root.fixedNow > 0 ? root.fixedNow : clock.date.getTime()
+InboxView.qml: unqualified: Unqualified access | now: root.fixedNow > 0 ? root.fixedNow : clock.date.getTime()
+InboxView.qml: unqualified: Unqualified access | now: root.fixedNow > 0 ? root.fixedNow : clock.date.getTime()
+InboxView.qml: unqualified: Unqualified access | onInvalid: root.saveRequested(modelData, "invalid")
+InboxView.qml: unqualified: Unqualified access | onReadToggleRequested: root.toggleRead(model.id, index)
+InboxView.qml: unqualified: Unqualified access | onToggleRequested: root.toggleTicket(model.id)
+InboxView.qml: unqualified: Unqualified access | readonly property int firstStop: root.firstTicketStop + index * 3
+InboxView.qml: unqualified: Unqualified access | root.saveRequested(modelData, range)
+InboxView.qml: unqualified: Unqualified access | sectionTitle: model.sectionHead ? root.sectionTitles[model.sectionHead] : ""
+InboxView.qml: unqualified: Unqualified access | value: root.pref(modelData)
+InboxView.qml: unqualified: Unqualified access | width: body.width - FoamyStyle.gapLarge * 2
+Panel.qml: id-shadows-member: Id for object FoamyPopup shadows property "popup". Rename one or the other. | var view = popup.ensureBody()
+Panel.qml: id-shadows-member: Id for object FoamyPrefsQueue shadows property "prefs". Rename one or the other. | visible: opened || TicketStore.withinSchedule || prefs.value("scheduleOutsideMode") !== "hide"
+Panel.qml: id-shadows-member: Note: Id defined here | id: popup
+Panel.qml: id-shadows-member: Note: Id defined here | id: prefs
+Panel.qml: missing-property: Member "body" not found on type "QObject" | font.pixelSize: Style.font.body
+Panel.qml: missing-property: Member "iconCanvas" not found on type "QObject" | fixedWidth: root.bar && root.bar.vertical ? -1 : Math.max(Style.bar.iconSlot, barContent.implicitWidth + Style.bar.iconSlot - Style.bar.iconCanvas)
+Panel.qml: missing-property: Member "iconCanvas" not found on type "QObject" | width: Style.bar.iconCanvas
+Panel.qml: missing-property: Member "iconSize" not found on type "QObject" | width: Style.bar.iconSize
+Panel.qml: missing-property: Member "iconSlot" not found on type "QObject" | fixedWidth: root.bar && root.bar.vertical ? -1 : Math.max(Style.bar.iconSlot, barContent.implicitWidth + Style.bar.iconSlot - Style.bar.iconCanvas)
+Panel.qml: missing-property: Member "iconSlot" not found on type "QObject" | fixedWidth: root.bar && root.bar.vertical ? -1 : Math.max(Style.bar.iconSlot, barContent.implicitWidth + Style.bar.iconSlot - Style.bar.iconCanvas)
+Panel.qml: missing-property: Member "urgent" not found on type "QObject" | color: root.bar ? root.bar.urgent : Commons.Color.urgent
+Panel.qml: missing-property: Member "vertical" not found on type "QObject" | fixedWidth: root.bar && root.bar.vertical ? -1 : Math.max(Style.bar.iconSlot, barContent.implicitWidth + Style.bar.iconSlot - Style.bar.iconCanvas)
+Panel.qml: missing-property: Member "vertical" not found on type "QObject" | visible: TicketStore.unreadCount > 0 && TicketStore.withinSchedule && !(root.bar && root.bar.vertical)
+Panel.qml: unqualified: Unqualified access | active: root.opened
+Panel.qml: unqualified: Unqualified access | onCloseView: root.close()
+Panel.qml: unqualified: Unqualified access | onRetryRequested: prefs.retry()
+Panel.qml: unqualified: Unqualified access | preferences: prefs.effectiveSettings
+Panel.qml: unqualified: Unqualified access | prefs.save(key, value)
+Panel.qml: unqualified: Unqualified access | retryable: prefs.canRetry
+Panel.qml: unqualified: Unqualified access | root.switchPanel(direction)
+Panel.qml: unqualified: Unqualified access | saving: prefs.busy
+Panel.qml: unqualified: Unqualified access | settingsError: prefs.error !== "" ? FoamyI18n.t(prefs.error) : ""
+Panel.qml: unqualified: Unqualified access | settingsError: prefs.error !== "" ? FoamyI18n.t(prefs.error) : ""
+PlainText.qml: missing-property: Member "body" not found on type "QObject" | font.pixelSize: FoamyStyle.font.body
+TicketRow.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < shownCount; i++) {
+TicketRow.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var item = history.itemAt(i)
+TicketRow.qml: id-shadows-member: Id for object FoamyAction shadows property "openButton". Rename one or the other. | readonly property bool pointerOver: rowHover.hovered || readButton.hovered || openButton.hovered
+TicketRow.qml: id-shadows-member: Id for object FoamyAction shadows property "readButton". Rename one or the other. | readonly property bool pointerOver: rowHover.hovered || readButton.hovered || openButton.hovered
+TicketRow.qml: id-shadows-member: Note: Id defined here | id: openButton
+TicketRow.qml: id-shadows-member: Note: Id defined here | id: readButton
+TicketRow.qml: missing-property: Member "body" not found on type "QObject" | font.pixelSize: ticketRow.oneLine ? FoamyStyle.font.body : FoamyStyle.font.subtitle
+TicketRow.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+TicketRow.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+TicketRow.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+TicketRow.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+TicketRow.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+TicketRow.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+TicketRow.qml: missing-property: Member "caption" not found on type "QObject" | font.pixelSize: FoamyStyle.font.caption
+TicketRow.qml: missing-property: Member "caption" not found on type "QObject" | font.pixelSize: FoamyStyle.font.caption
+TicketRow.qml: missing-property: Member "clipped" not found on type "QQuickItem" | if (item && item.clipped) {
+TicketRow.qml: missing-property: Member "full" not found on type call to method itemAt, returning QQuickItem | item.full = true
+TicketRow.qml: missing-property: Member "subtitle" not found on type "QObject" | font.pixelSize: ticketRow.oneLine ? FoamyStyle.font.body : FoamyStyle.font.subtitle
+TicketRow.qml: unqualified: Unqualified access | color: Qt.alpha(ticketRow.cardColor, 0)
+TicketRow.qml: unqualified: Unqualified access | color: entryItem.fresh ? FoamyPalette.accent : ticketRow.cardColor
+TicketRow.qml: unqualified: Unqualified access | color: ticketRow.cardColor
+TicketRow.qml: unqualified: Unqualified access | maximumLineCount: entryItem.full ? 100000 : ticketRow.clipLines
+TicketRow.qml: unqualified: Unqualified access | readonly property bool foldable: clipped || (full && entryBody.lineCount > ticketRow.clipLines)
+TicketRow.qml: unqualified: Unqualified access | readonly property bool fresh: !model.mine && model.revision > ticketRow.openedSince
+TicketRow.qml: unqualified: Unqualified access | text: model.body
+TicketRow.qml: unqualified: Unqualified access | text: ticketRow.author(model.sender, model.mine) + " · " + ticketRow.stamp(model.received) + (model.internal ? " · " + FoamyI18n.t("internal note") : "") + (ent
+TicketRow.qml: unqualified: Unqualified access | text: ticketRow.author(model.sender, model.mine) + " · " + ticketRow.stamp(model.received) + (model.internal ? " · " + FoamyI18n.t("internal note") : "") + (ent
+TicketRow.qml: unqualified: Unqualified access | text: ticketRow.author(model.sender, model.mine) + " · " + ticketRow.stamp(model.received) + (model.internal ? " · " + FoamyI18n.t("internal note") : "") + (ent
+TicketRow.qml: unqualified: Unqualified access | text: ticketRow.author(model.sender, model.mine) + " · " + ticketRow.stamp(model.received) + (model.internal ? " · " + FoamyI18n.t("internal note") : "") + (ent
+TicketRow.qml: unqualified: Unqualified access | text: ticketRow.author(model.sender, model.mine) + " · " + ticketRow.stamp(model.received) + (model.internal ? " · " + FoamyI18n.t("internal note") : "") + (ent
+TicketRow.qml: unqualified: Unqualified access | text: ticketRow.author(model.sender, model.mine) + " · " + ticketRow.stamp(model.received) + (model.internal ? " · " + FoamyI18n.t("internal note") : "") + (ent
+TicketRow.qml: unqualified: Unqualified access | visible: index < ticketRow.shownCount
+TicketRow.qml: unqualified: Unqualified access | visible: index < ticketRow.shownCount - 1
+TicketRow.qml: unqualified: Unqualified access | visible: index < ticketRow.shownCount - 1
+TicketRow.qml: unqualified: Unqualified access | width: timeline.width
+TicketRow.qml: unqualified: Unqualified access | x: ticketRow.indent - timeline.x
+TicketRow.qml: unqualified: Unqualified access | x: ticketRow.indent - timeline.x
+TicketStore.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < tickets.count; i++)
+TicketStore.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < wanted.length; i++) {
+TicketStore.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var item of list)
+TicketStore.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var j = i; j < tickets.count; j++)
+TicketStore.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var key of Object.keys(holds))
+TicketStore.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var at = -1
+TicketStore.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var latest = ticket.history.find(function (item) {
+TicketStore.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var list = waitingSnapshot
+TicketStore.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var shown = list.slice(0, 4)
+TicketStore.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var ticket = list[0]
+TicketStore.qml: import: Type TicketStore not declared as singleton in qmldir but using pragma Singleton
+TicketStore.qml: missing-property: Member "generation" not found on type TicketStore::fetchProcess with type Process | fetchProcess.generation = generation
+TicketStore.qml: missing-property: Member "input" not found on type TicketStore::fetchProcess with type Process | fetchProcess.input = JSON.stringify({
+TicketStore.qml: unqualified: Unqualified access | onTriggered: readFile.setText(Model.serializeReadState(store.state))
+TicketStore.qml: unqualified: Unqualified access | store.fetched(fetchOutput.text, code, fetchProcess.generation)
+ZendeskAccount.qml: import: Type ZendeskAccount not declared as singleton in qmldir but using pragma Singleton
+ZendeskAccount.qml: missing-property: Member "lastLine" not found on type ZendeskAccount::loginProcess with type Process | loginProcess.lastLine = ""
+ZendeskAccount.qml: missing-property: Member "signOuts" not found on type ZendeskAccount::statusProcess with type Process | statusProcess.signOuts = signOuts
+ZendeskAccount.qml: unqualified: Unqualified access | account.apply(loginProcess.lastLine, code)
+ZendeskAccount.qml: unqualified: Unqualified access | if (loginProcess.configuration !== account.configurations) {
+ZendeskAccount.qml: unqualified: Unqualified access | if (loginProcess.configuration === account.configurations)
+ZendeskAccount.qml: unqualified: Unqualified access | if (loginProcess.lastLine === "" && code !== 0 && !FoamyNative.unavailable(code)) {
+ZendeskAccount.qml: unqualified: Unqualified access | if (logoutProcess.configuration !== account.configurations) {
+ZendeskAccount.qml: unqualified: Unqualified access | if (statusProcess.signOuts === account.signOuts && statusProcess.configuration === account.configurations)
+ZendeskAccount.qml: unqualified: Unqualified access | if (statusProcess.signOuts === account.signOuts && statusProcess.configuration === account.configurations)
+ZendeskAccount.qml: unqualified: Unqualified access | loginProcess.lastLine = line
+preview/Preview.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 1; i <= 10; i++)

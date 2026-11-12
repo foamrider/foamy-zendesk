@@ -5,7 +5,7 @@ import Quickshell.Io
 import "kit"
 import "kit/FoamyNative.js" as FoamyNative
 import "Model.js" as Model
-import "Schedule.js" as Schedule
+import "kit/FoamySchedule.js" as Schedule
 
 // The inbox, shared by every bar instance: one fetch loop and one read-state
 // file per shell. foamy-zendesk-helper `fetch` does the Zendesk requests;
@@ -24,11 +24,21 @@ QtObject {
   // Why the last fetch failed (the tickets shown are the last good ones).
   property string error: ""
   property string notice: ""
+  // A read-marker or snooze file that can't be written: what was marked or
+  // snoozed is kept only in memory, until the shell restarts. The footer
+  // says so; the next save that works clears it.
+  property bool readSaveFailed: false
+  property bool snoozeSaveFailed: false
+  readonly property string saveError: readSaveFailed || readUnusable ? FoamyI18n.t("Can't save read markers") : snoozeSaveFailed ? FoamyI18n.t("Can't save snooze or resume") : ""
   property double lastUpdated: 0
   // When the next check after a failure runs (0 when none is due).
   property double retryAt: 0
   // The inbox has been filled at least once for this account.
   property bool loaded: false
+  // The helper's bounds left tickets out (it sends the 100 most recently
+  // updated) or groups (it searches the first 20): the list says so.
+  property bool ticketsTruncated: false
+  property bool groupsTruncated: false
   readonly property bool loading: fetchProcess.running
   property int failures: 0
   property bool helperMissing: false
@@ -51,7 +61,9 @@ QtObject {
   property var week: []
   property var scheduleOverride: null
   readonly property bool overriding: !!scheduleOverride && clock.date.getTime() < scheduleOverride.until
-  property FoamyWallClock clock: FoamyWallClock { enabled: store.scheduleEnabled || store.overriding }
+  property FoamyWallClock clock: FoamyWallClock {
+    enabled: store.scheduleEnabled || store.overriding
+  }
   readonly property bool withinSchedule: Schedule.effective(clock.date, scheduleEnabled, week, scheduleOverride)
   // Snoozed from the popup (not just outside the scheduled hours).
   readonly property bool snoozed: overriding && !scheduleOverride.on
@@ -64,17 +76,17 @@ QtObject {
     atomicWrites: true
     printErrors: false
     onLoaded: store.scheduleOverride = Schedule.parseOverride(text(), Date.now())
+    onSaved: store.snoozeSaveFailed = false
+    onSaveFailed: store.snoozeSaveFailed = true
   }
   function toggleSnooze() {
-    scheduleOverride = Schedule.toggled(new Date(), scheduleEnabled, week, scheduleOverride);
-    clock.refresh();
-    overrideFile.setText(Schedule.serializeOverride(scheduleOverride));
+    scheduleOverride = Schedule.toggled(new Date(), scheduleEnabled, week, scheduleOverride)
+    clock.refresh()
+    overrideFile.setText(Schedule.serializeOverride(scheduleOverride))
   }
 
   // Preview and tests: sample tickets, no helper, no file.
   property bool fixtures: false
-  // Opens a ticket in the browser; tests replace it.
-  property var openUrl: function(url) { Qt.openUrlExternally(url); }
 
   readonly property string account: ZendeskAccount.signedIn ? Model.host(ZendeskAccount.address) + " " + ZendeskAccount.clientId : ""
   // The Zendesk host the inbox and its read markers belong to ("" signed out):
@@ -84,110 +96,251 @@ QtObject {
   readonly property bool connected: !fixtures && account !== "" && !helperMissing
   // Also within the schedule: the inbox is checked in the background.
   readonly property bool active: connected && withinSchedule
-  onAccountChanged: if (!fixtures) restart()
-  onActiveChanged: if (active) refresh()
+  onAccountChanged: if (!fixtures)
+    restart()
+  onActiveChanged: if (active)
+    refresh()
 
   // Index of the first ticket in the "Waiting on others" section, or -1.
   property int firstWaitingIndex: -1
   property int waitingCount: 0
   property int unreadCount: 0
-  signal resetting()
+  signal resetting
   // Listed tickets; unreadCount is what the bar shows.
   readonly property int count: tickets.count
   readonly property bool reading: FoamyShared.demandCount("zendesk-reading") > 0
   property ListModel tickets: ListModel {}
 
   function sync() {
-    var held = {};
-    for (var key of Object.keys(holds)) held[holds[key].id] = holds[key].read;
-    var wanted = Model.visible(state, { hideRead: hideRead, unreadFirst: unreadFirst, groupWaiting: groupWaiting, held: held });
-    var waitingAt = wanted.findIndex(function(ticket) { return ticket.section === "waiting"; });
-    waitingCount = waitingAt < 0 ? 0 : wanted[waitingAt].sectionSize;
-    unreadCount = wanted.filter(function(ticket) { return !ticket.read; }).length;
+    var held = {}
+    for (var key of Object.keys(holds))
+      held[holds[key].id] = holds[key].read
+    var wanted = Model.visible(state, {
+      hideRead: hideRead,
+      unreadFirst: unreadFirst,
+      groupWaiting: groupWaiting,
+      held: held
+    })
+    var waitingAt = wanted.findIndex(function (ticket) {
+      return ticket.section === "waiting"
+    })
+    waitingCount = waitingAt < 0 ? 0 : wanted[waitingAt].sectionSize
+    unreadCount = wanted.filter(function (ticket) {
+      return !ticket.read
+    }).length
     for (var i = 0; i < wanted.length; i++) {
-      var at = -1;
-      for (var j = i; j < tickets.count; j++) if (tickets.get(j).id === wanted[i].id) { at = j; break; }
-      if (at < 0) tickets.insert(i, wanted[i]);
-      else { if (at !== i) tickets.move(at, i, 1); tickets.set(i, wanted[i]); }
+      var at = -1
+      for (var j = i; j < tickets.count; j++)
+        if (tickets.get(j).id === wanted[i].id) {
+          at = j
+          break
+        }
+      if (at < 0)
+        tickets.insert(i, wanted[i])
+      else {
+        if (at !== i)
+          tickets.move(at, i, 1)
+        tickets.set(i, wanted[i])
+      }
     }
-    if (tickets.count > wanted.length) tickets.remove(wanted.length, tickets.count - wanted.length);
-    firstWaitingIndex = waitingAt;
+    if (tickets.count > wanted.length)
+      tickets.remove(wanted.length, tickets.count - wanted.length)
+    firstWaitingIndex = waitingAt
   }
 
   // A new inbox from Zendesk (or the tests). Frozen while anyone is reading.
   function receive(list) {
     if (reading) {
-      pending = list;
-      pendingChanges = list.filter(function(raw) {
-        var current = state.tickets[String(raw.id)];
-        return !current || current.updatedAt !== raw.updated_at;
-      }).length;
-      return;
+      pending = list
+      pendingChanges = list.filter(function (raw) {
+        var current = state.tickets[String(raw.id)]
+        return !current || current.updatedAt !== raw.updated_at
+      }).length
+      return
     }
-    pending = null;
-    pendingChanges = 0;
+    pending = null
+    pendingChanges = 0
     try {
-      Model.applySnapshot(state, list);
-      loaded = true;
-      sync();
-      saveRead();
-    } catch (failure) { error = FoamyI18n.t("Zendesk sent an unexpected reply."); return; }
-    announce();
+      Model.applySnapshot(state, list)
+      loaded = true
+      sync()
+      saveRead()
+    } catch (failure) {
+      error = FoamyI18n.t("Zendesk sent an unexpected reply.")
+      return
+    }
+    announce()
   }
-  function flush() { if (!reading && pending) receive(pending); }
-  onReadingChanged: if (!reading) Qt.callLater(flush)
+  function flush() {
+    if (!reading && pending)
+      receive(pending)
+  }
+  onReadingChanged: if (!reading)
+    Qt.callLater(flush)
 
-  function changed() { lastBatch = []; notice = ""; sync(); saveRead(); }
-  function markRead(id) { if (Model.markRead(state, id)) changed(); }
+  function changed() {
+    lastBatch = []
+    notice = ""
+    sync()
+    saveRead()
+  }
+  function markRead(id) {
+    if (Model.markRead(state, id))
+      changed()
+  }
   // The ticket each popup is reading stays where it was (`read`: whether it was
   // read when opened) until it is closed. `id` "" releases the popup's hold.
   property var holds: ({})
   function hold(key, id, read) {
-    var next = Object.assign({}, holds);
-    if (id) next[key] = { id: String(id), read: read === true };
-    else if (next[key]) delete next[key];
-    else return;
-    holds = next;
-    sync();
+    var next = Object.assign({}, holds)
+    if (id)
+      next[key] = {
+        id: String(id),
+        read: read === true
+      }
+    else if (next[key])
+      delete next[key]
+    else
+      return
+    holds = next
+    sync()
   }
   function ticketById(id) {
-    for (var i = 0; i < tickets.count; i++) if (tickets.get(i).id === id) return { index: i, ticket: tickets.get(i) };
-    return null;
+    for (var i = 0; i < tickets.count; i++)
+      if (tickets.get(i).id === id)
+        return {
+          index: i,
+          ticket: tickets.get(i)
+        }
+    return null
   }
-  function markUnread(id) { if (Model.markUnread(state, id)) changed(); }
+  function markUnread(id) {
+    if (Model.markUnread(state, id))
+      changed()
+  }
   // A notification's buttons: "host/id:revision,…", each read up to that
   // comment. From another account (or without a host) they do nothing.
   function markReadUpTo(payload) {
-    var list = Model.parseAction(payload, host, true) || [];
-    var any = false;
-    for (var item of list) if (Model.markReadUpTo(state, item.id, item.revision)) any = true;
-    if (any) changed();
+    var list = Model.parseAction(payload, host, true) || []
+    var any = false
+    for (var item of list)
+      if (Model.markReadUpTo(state, item.id, item.revision))
+        any = true
+    if (any)
+      changed()
   }
   function viewInZendesk(payload) {
-    var list = Model.parseAction(payload, host, true);
-    if (!list || list.length !== 1) return;
-    markReadUpTo(payload);
-    openTicket(list[0].id);
+    var list = Model.parseAction(payload, host, true)
+    if (!list || list.length !== 1)
+      return
+    openTicket(list[0].id, list[0].revision)
   }
   // A notification's click: the ticket in "host/id", or "" when it came from
   // another account (the inbox then opens without it).
   function shownTicket(payload) {
-    var list = Model.parseAction(payload, host, false);
-    return list && list.length === 1 ? list[0].id : "";
+    var list = Model.parseAction(payload, host, false)
+    return list && list.length === 1 ? list[0].id : ""
   }
-  function toggleRead(id) { if (!Model.markRead(state, id)) Model.markUnread(state, id); changed(); }
+  function toggleRead(id) {
+    if (!Model.markRead(state, id))
+      Model.markUnread(state, id)
+    changed()
+  }
   function markAllRead() {
-    var batch = Model.markAllRead(state);
-    if (!batch.length) return;
-    sync();
-    saveRead();
-    lastBatch = batch;
-    notice = FoamyI18n.tn("%1 marked as read", batch.length);
+    var batch = Model.markAllRead(state)
+    if (!batch.length)
+      return
+    sync()
+    saveRead()
+    lastBatch = batch
+    notice = FoamyI18n.tn("%1 marked as read", batch.length)
   }
-  function undoMarkAll() { Model.restore(state, lastBatch); changed(); }
-  function openTicket(id) {
-    var url = Model.ticketUrl(ZendeskAccount.address, id);
-    if (url) openUrl(url);
+  function undoMarkAll() {
+    Model.restore(state, lastBatch)
+    changed()
+  }
+  // ---- View in Zendesk -------------------------------------------------------
+  // The popup's button and a notification's open the ticket in the browser,
+  // then mark it read like Mark as read (a notification's only up to the
+  // comment it showed: `revision`; the popup's, `revision` null, up to the
+  // newest). Only a launch that worked marks it; one that failed says so.
+  // Opens wait in `launches`, one wrapper at a time, each with the generation
+  // it was asked in: one that ends after restart() (another account, or
+  // signed out) marks nothing in the inbox that replaced it. An open of a
+  // ticket already on its way joins it, reading up to the further of the two
+  // (null, the newest, wins); beyond `maxLaunches` waiting, opens are dropped.
+  property var launches: []
+  readonly property int maxLaunches: 8
+  // The launch under way, or null.
+  property var launching: null
+  function openTicket(id, revision) {
+    var url = Model.ticketUrl(ZendeskAccount.address, id)
+    if (!url)
+      return
+    var wanted = revision === undefined ? null : revision
+    var same = [launching].concat(launches).find(function (entry) {
+      return entry && entry.url === url && entry.generation === generation
+    })
+    if (same) {
+      same.revision = same.revision === null || wanted === null ? null : Math.max(same.revision, wanted)
+      return
+    }
+    if (launches.length >= maxLaunches) {
+      console.warn("foamy-zendesk: " + launches.length + " tickets are waiting to open; dropped ticket " + id)
+      return
+    }
+    var entry = {
+      id: String(id),
+      revision: wanted,
+      generation: generation,
+      url: url
+    }
+    launches = launches.concat([entry])
+    launchNext()
+  }
+  // xdg-open runs in its own session, so it and the browser it starts outlive
+  // the shell. The wrapper waits up to 2 s for it: its exit status when it
+  // ends by then (Omarchy's browser launcher hands off and ends at once),
+  // otherwise 0, as a browser can hold xdg-open open while it runs. 127: no
+  // xdg-open or setsid.
+  readonly property string launchScript: ['setsid -w xdg-open "$1" </dev/null >/dev/null 2>&1 &', 'opener=$!', 'for _ in {1..20}; do', '  kill -0 "$opener" 2>/dev/null || { wait "$opener"; exit; }', '  sleep 0.1', 'done', 'exit 0'].join("\n")
+  function launchNext() {
+    if (launching || !launches.length)
+      return
+    launching = launches[0]
+    launches = launches.slice(1)
+    launchProcess.command = ["timeout", "--kill-after=1s", "10s", "bash", "-c", launchScript, "bash", launching.url]
+    launchProcess.running = true
+  }
+  // Every launch ends here once: its exit code, or -1 when the wrapper never started.
+  function launched(code) {
+    var entry = launching
+    launching = null
+    Qt.callLater(launchNext)
+    if (!entry)
+      return
+    if (code !== 0)
+      console.warn("foamy-zendesk: xdg-open could not open ticket " + entry.id + " (exit " + code + ")")
+    if (entry.generation !== generation)
+      return
+    if (code !== 0) {
+      lastBatch = []
+      notice = openFailedText
+      return
+    }
+    if (entry.revision === null ? Model.markRead(state, entry.id) : Model.markReadUpTo(state, entry.id, entry.revision))
+      changed()
+    else if (notice === openFailedText)
+      notice = ""
+  }
+  readonly property string openFailedText: FoamyI18n.t("Can't open the browser")
+  property Process launchProcess: Process {
+    onExited: function (code) {
+      store.launched(code)
+    }
+    // A wrapper that fails to start ends without `exited`.
+    onRunningChanged: if (!running && store.launching)
+      store.launched(-1)
   }
 
   // ---- desktop notifications ------------------------------------------------
@@ -199,12 +352,15 @@ QtObject {
   // A popup is open on some monitor: its inbox shows what came in.
   readonly property bool watching: FoamyShared.demandCount("zendesk") > 0
   // Sends a notification (an argv); tests replace it.
-  property var sendNotification: function(argv) { Quickshell.execDetached(argv); }
+  property var sendNotification: function (argv) {
+    Quickshell.execDetached(argv)
+  }
   function announce() {
     // When this inbox came from Zendesk (it may wait while a ticket is open).
-    var fresh = Model.arrivals(state, seen, notify === "all" ? "all" : "mine", lastUpdated || Date.now());
-    if (notify === "off" || watching || !withinSchedule || !fresh.length) return;
-    sendNotification(notificationCommand(fresh));
+    var fresh = Model.arrivals(state, seen, notify === "all" ? "all" : "mine", lastUpdated || Date.now())
+    if (notify === "off" || watching || !withinSchedule || !fresh.length)
+      return
+    sendNotification(notificationCommand(fresh))
   }
   // One ticket: its subject and the newest comment from someone else; a click
   // opens it in the inbox, and the buttons view it in Zendesk or mark it read.
@@ -213,31 +369,53 @@ QtObject {
   // announced (`id:revision`). The click and the buttons name the account's
   // host, so a notification left from another account changes nothing and
   // opens nothing on it. They use Omarchy's notification hints; the icon is a
-  // PNG path (the glyph is for hosts that drop it).
+  // PNG path (the glyph is for hosts that drop it). It goes out twice:
+  // notify-send's --icon is the image-path hint (a picture: stock 4.5 shows it
+  // and keeps no file app icon), --app-icon is app_icon, which Foamy
+  // Notifications and the notification center use as the app's own icon.
   function notificationCommand(list) {
-    var ipc = ["omarchy-shell", "-q", "foamy.zendesk"];
-    var through = function(item) { return item.id + ":" + Model.newestFromOthers(item); };
-    var from = function(tickets) { return host + "/" + tickets; };
-    var summary, body, click, actions;
-    if (list.length === 1) {
-      var ticket = list[0];
-      var latest = ticket.history.find(function(item) { return !item.mine; });
-      summary = ticket.subject;
-      body = Model.notificationText(latest.sender + ": " + latest.body, 280);
-      click = ipc.concat(["show", from(ticket.id)]);
-      actions = [{ label: FoamyI18n.t("View in Zendesk"), argv: ipc.concat(["viewInZendesk", from(through(ticket))]) },
-                 { label: FoamyI18n.t("Mark as read"), argv: ipc.concat(["markRead", from(through(ticket))]) }];
-    } else {
-      var shown = list.slice(0, 4);
-      summary = FoamyI18n.tn("%1 updated Zendesk tickets", list.length);
-      body = shown.map(function(item) { return Model.notificationText(item.subject, 80); })
-        .concat(list.length > shown.length ? [FoamyI18n.tn("and %1 more", list.length - shown.length)] : []).join("\n");
-      click = ipc.concat(["open"]);
-      actions = [{ label: FoamyI18n.t("Mark all as read"), argv: ipc.concat(["markRead", from(list.slice(0, 100).map(through).join(","))]) }];
+    var ipc = ["omarchy-shell", "-q", "foamy.zendesk"]
+    var through = function (item) {
+      return item.id + ":" + Model.newestFromOthers(item)
     }
-    return ["notify-send", "--app-name=Zendesk", "--urgency=normal", "--icon=" + pluginDir + "/icons/zendesk.png",
-      "--hint=string:omarchy-glyph:\u{f0516}", "--hint=string:omarchy-exec-argv:" + JSON.stringify(click),
-      "--hint=string:omarchy-actions:" + JSON.stringify(actions), "--", summary, body];
+    var from = function (tickets) {
+      return host + "/" + tickets
+    }
+    var summary, body, click, actions
+    if (list.length === 1) {
+      var ticket = list[0]
+      var latest = ticket.history.find(function (item) {
+        return !item.mine
+      })
+      summary = ticket.subject
+      body = Model.notificationText(latest.sender + ": " + latest.body, 280)
+      click = ipc.concat(["show", from(ticket.id)])
+      actions = [
+        {
+          label: FoamyI18n.t("View in Zendesk"),
+          argv: ipc.concat(["viewInZendesk", from(through(ticket))])
+        },
+        {
+          label: FoamyI18n.t("Mark as read"),
+          argv: ipc.concat(["markRead", from(through(ticket))])
+        }
+      ]
+    } else {
+      var shown = list.slice(0, 4)
+      summary = FoamyI18n.tn("%1 updated Zendesk tickets", list.length)
+      body = shown.map(function (item) {
+        return Model.notificationText(item.subject, 80)
+      }).concat(list.length > shown.length ? [FoamyI18n.tn("and %1 more", list.length - shown.length)] : []).join("\n")
+      click = ipc.concat(["open"])
+      actions = [
+        {
+          label: FoamyI18n.t("Mark all as read"),
+          argv: ipc.concat(["markRead", from(list.slice(0, 100).map(through).join(","))])
+        }
+      ]
+    }
+    var icon = pluginDir + "/icons/zendesk.png";
+    return ["notify-send", "--app-name=Zendesk", "--urgency=normal", "--icon=" + icon, "--app-icon=" + icon, "--hint=string:omarchy-glyph:\u{f0516}", "--hint=string:omarchy-exec-argv:" + JSON.stringify(click), "--hint=string:omarchy-actions:" + JSON.stringify(actions), "--", summary, body]
   }
 
   // ---- fetching -------------------------------------------------------------
@@ -246,63 +424,89 @@ QtObject {
   // is gone (see Model.fetchOutcome).
   property int generation: 0
   // The helper's argv (after the timeout); tests replace it.
-  property var helperCommand: function(args) { return FoamyNative.command(store.pluginDir, "foamy-zendesk-helper", args); }
+  property var helperCommand: function (args) {
+    return FoamyNative.command(store.pluginDir, "foamy-zendesk-helper", args)
+  }
   function refresh() {
-    if (!connected) return;
-    if (fetchProcess.running) { refreshAgain = true; return; }
-    fetchProcess.input = JSON.stringify({ known: Model.known(state) }) + "\n";
-    fetchProcess.command = ["timeout", "--kill-after=2s", "150s"].concat(helperCommand(
-      ["fetch", "--address", ZendeskAccount.address, "--client-id", ZendeskAccount.clientId]));
-    fetchProcess.generation = generation;
-    fetchProcess.stdinEnabled = true;
-    fetchProcess.running = true;
+    if (!connected)
+      return
+    if (fetchProcess.running) {
+      refreshAgain = true
+      return
+    }
+    fetchProcess.input = JSON.stringify({
+      known: Model.known(state)
+    }) + "\n"
+    fetchProcess.command = ["timeout", "--kill-after=2s", "150s"].concat(helperCommand(["fetch", "--address", ZendeskAccount.address, "--client-id", ZendeskAccount.clientId]))
+    fetchProcess.generation = generation
+    fetchProcess.stdinEnabled = true
+    fetchProcess.running = true
   }
   // Opening the popup refreshes an inbox older than this.
   function refreshIfStale(maxAgeMs) {
-    if (connected && !loading && Date.now() - lastUpdated > maxAgeMs) refresh();
+    if (connected && !loading && Date.now() - lastUpdated > maxAgeMs)
+      refresh()
   }
   function fetched(text, code, started) {
-    var outcome = Model.fetchOutcome(started, generation, text);
+    var outcome = Model.fetchOutcome(started, generation, text)
     // From before restart(): no error, no backoff, no tickets.
-    if (outcome.stale) return;
+    if (outcome.stale)
+      return
     if (FoamyNative.unavailable(code)) {
-      helperMissing = true;
-      error = FoamyI18n.t(FoamyNative.UNAVAILABLE_TEXT);
-      return;
+      helperMissing = true
+      error = FoamyI18n.t(FoamyNative.UNAVAILABLE_TEXT)
+      return
     }
     if (outcome.ok) {
-      error = "";
-      failures = 0;
-      retryAt = 0;
-      lastUpdated = Date.now();
+      error = ""
+      failures = 0
+      retryAt = 0
+      lastUpdated = Date.now()
+      ticketsTruncated = outcome.truncated.tickets
+      groupsTruncated = outcome.truncated.groups
       if (outcome.statePath !== null && outcome.statePath !== readPath) {
         // The read markers come first, or every ticket would flash unread.
-        waitingSnapshot = outcome.tickets;
-        readPath = outcome.statePath;
-        return;
+        waitingSnapshot = outcome.tickets
+        readPath = outcome.statePath
+        return
       }
-      if (!readReady) { waitingSnapshot = outcome.tickets; return; }
-      receive(outcome.tickets);
-      return;
+      if (!readReady) {
+        waitingSnapshot = outcome.tickets
+        return
+      }
+      receive(outcome.tickets)
+      return
     }
-    var reply = outcome.reply;
-    failures++;
-    error = reply && reply.error ? ZendeskAccount.helperText(reply.error)
-      : code === 124 ? FoamyI18n.t("Zendesk didn't answer in time.") : FoamyI18n.t("Can't reach Zendesk. Check your connection.");
+    var reply = outcome.reply
+    failures++
+    error = reply && reply.error ? ZendeskAccount.helperText(reply.error) : code === 124 ? FoamyI18n.t("Zendesk didn't answer in time.") : FoamyI18n.t("Can't reach Zendesk. Check your connection.")
     // The sign-in itself went bad: let the account say so.
-    if (reply && (reply.code === "EXPIRED" || reply.code === "SIGNED_OUT")) ZendeskAccount.check();
+    if (reply && (reply.code === "EXPIRED" || reply.code === "SIGNED_OUT"))
+      ZendeskAccount.check()
     // Count the backed-off wait from this failure.
-    if (pollTimer.running) { pollTimer.restart(); retryAt = Date.now() + pollTimer.interval; }
+    if (pollTimer.running) {
+      pollTimer.restart()
+      retryAt = Date.now() + pollTimer.interval
+    }
   }
 
   property Process fetchProcess: Process {
     property string input: ""
     property int generation: 0
-    onStarted: { write(input); stdinEnabled = false; }
-    stdout: StdioCollector { id: fetchOutput; waitForEnd: true }
-    onExited: function(code) {
-      store.fetched(fetchOutput.text, code, fetchProcess.generation);
-      if (store.refreshAgain) { store.refreshAgain = false; Qt.callLater(store.refresh); }
+    onStarted: {
+      write(input)
+      stdinEnabled = false
+    }
+    stdout: StdioCollector {
+      id: fetchOutput
+      waitForEnd: true
+    }
+    onExited: function (code) {
+      store.fetched(fetchOutput.text, code, fetchProcess.generation)
+      if (store.refreshAgain) {
+        store.refreshAgain = false
+        Qt.callLater(store.refresh)
+      }
     }
   }
 
@@ -318,15 +522,24 @@ QtObject {
   // ---- read state -------------------------------------------------------------
   property string readPath: ""
   property bool readReady: false
+  // The read file exists but can't be read: markers stay in memory for this
+  // account and nothing is written over the file. The path is kept, so the
+  // next fetch (same path) doesn't load it again and wipe them.
+  property bool readUnusable: false
   property var waitingSnapshot: null
   function readLoaded(text) {
-    state.read = Model.parseReadState(text);
-    readReady = true;
-    if (waitingSnapshot) { var list = waitingSnapshot; waitingSnapshot = null; receive(list); }
-    else sync();
+    state.read = Model.parseReadState(text)
+    readReady = true
+    if (waitingSnapshot) {
+      var list = waitingSnapshot
+      waitingSnapshot = null
+      receive(list)
+    } else
+      sync()
   }
   function saveRead() {
-    if (!fixtures && readReady && readPath !== "") saveTimer.restart();
+    if (!fixtures && readReady && readPath !== "" && !readUnusable)
+      saveTimer.restart()
   }
   property Timer saveTimer: Timer {
     interval: 300
@@ -337,40 +550,72 @@ QtObject {
     atomicWrites: true
     printErrors: false
     onLoaded: store.readLoaded(text())
-    onLoadFailed: function(failure) {
+    onSaved: store.readSaveFailed = false
+    onSaveFailed: store.readSaveFailed = true
+    onLoadFailed: function (failure) {
       // No file yet: nothing read. Anything else: start empty, and don't
       // overwrite a file we couldn't read.
-      if (failure !== FileViewError.FileNotFound) store.readPath = "";
-      store.readLoaded("");
+      if (failure !== FileViewError.FileNotFound)
+        store.readUnusable = true
+      store.readLoaded("")
     }
   }
 
   // A different account (or signed out): forget the inbox, keep the files.
   // A fetch still running is stopped, and its exit (whatever it brings) ignored.
   function restart() {
-    resetting();
-    if (saveTimer.running) { saveTimer.stop(); readFile.setText(Model.serializeReadState(state)); }
-    generation++;
-    fetchProcess.running = false;
-    state = Model.empty();
-    pending = null; pendingChanges = 0; lastBatch = []; waitingSnapshot = null; seen = Model.notices();
-    error = ""; notice = ""; loaded = false; lastUpdated = 0; failures = 0; retryAt = 0;
-    readPath = ""; readReady = false;
-    sync();
-    if (active) refresh();
+    resetting()
+    if (saveTimer.running) {
+      saveTimer.stop()
+      readFile.setText(Model.serializeReadState(state))
+    }
+    generation++
+    fetchProcess.running = false
+    state = Model.empty()
+    pending = null
+    pendingChanges = 0
+    lastBatch = []
+    waitingSnapshot = null
+    seen = Model.notices()
+    error = ""
+    notice = ""
+    loaded = false
+    lastUpdated = 0
+    failures = 0
+    retryAt = 0
+    ticketsTruncated = false
+    groupsTruncated = false
+    readPath = ""
+    readReady = false
+    readUnusable = false
+    readSaveFailed = false
+    sync()
+    if (active)
+      refresh()
   }
 
   // Preview and tests only.
   function loadFixtures(list) {
-    fixtures = true;
-    resetting();
-    state = Model.empty();
-    pending = null; pendingChanges = 0; lastBatch = []; error = ""; notice = "";
-    readReady = true;
-    if (list) { Model.applySnapshot(state, list); loaded = true; lastUpdated = Date.now(); }
-    else loaded = false;
-    seen = Model.notices();
-    if (list) announce();
-    sync();
+    fixtures = true
+    resetting()
+    state = Model.empty()
+    pending = null
+    pendingChanges = 0
+    lastBatch = []
+    error = ""
+    notice = ""
+    ticketsTruncated = false
+    groupsTruncated = false
+    readReady = true
+    if (list) {
+      Model.applySnapshot(state, list)
+      loaded = true
+      lastUpdated = Date.now()
+    } else
+      loaded = false
+    seen = Model.notices()
+    if (list)
+      announce()
+    sync()
   }
 }

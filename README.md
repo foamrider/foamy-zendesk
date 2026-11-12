@@ -21,8 +21,8 @@ comments never do). Its comments show newest first: those that were unread
 and the one before them, and **Show earlier comments** for the rest
 (internal notes labelled). Long comments are clipped at six lines and fade
 out, each with its own **Show more** and **Show less**. Icon buttons in each title row offer **Mark as read** and
-**View in Zendesk** (opens the ticket in the browser). Notices (Undo,
-waiting updates) float in a bar above the footer, so they never move the
+**View in Zendesk** (opens the ticket in the browser and marks it read).
+Notices (Undo, waiting updates) float in a bar above the footer, so they never move the
 ticket being read. The footer shows the account, when the inbox was last
 updated (or why it couldn't be, or when it tries again), and **Refresh**.
 
@@ -34,7 +34,10 @@ place and its "new" marks until it closes (then it moves, or hides with
 **Hide read tickets**). Read tickets stay listed, dimmed; their **Mark as
 unread** button shows while the pointer or the keyboard cursor is on the
 ticket. The header's **Mark all as read** marks every unread ticket; an
-Undo link restores that batch. Viewing a ticket in Zendesk changes nothing.
+Undo link restores that batch. **View in Zendesk** marks the ticket read
+too, once `xdg-open` has handed it to your default browser; when that fails
+the ticket stays unread and the notice bar says **Can't open the browser**.
+Nothing in Zendesk changes either way.
 
 Settings (in the ⋯ menu, `s`, or right-click the bar icon):
 
@@ -46,9 +49,9 @@ Settings (in the ⋯ menu, `s`, or right-click the bar icon):
   fetch finds a ticket new to the inbox or a new comment from someone else
   on one that is still unread, with the Zendesk icon. Click it to open the
   inbox with that ticket open (which marks it read); its buttons are **View
-  in Zendesk** (opens it in the browser and marks it read) and **Mark as
-  read**. Several at once make one notification listing them, with **Mark
-  all as read**. The buttons read only up to the comments announced, so a
+  in Zendesk** (opens it in the browser and, once that worked, marks it
+  read) and **Mark as read**. Several at once make one notification listing
+  them, with **Mark all as read**. The buttons read only up to the comments announced, so a
   reply that came in since stays unread. Nothing is announced while an inbox
   popup is open, outside the schedule or while snoozed, and the first inbox
   after the shell starts or you sign in only sets what counts as new (also
@@ -72,7 +75,9 @@ Settings (in the ⋯ menu, `s`, or right-click the bar icon):
   outside the schedule it reads **Resume now** and turns the widget on until
   midnight (or until the schedule starts, if sooner). Either goes back to
   the schedule when pressed again. Snoozing is kept in
-  `$XDG_STATE_HOME/foamy-zendesk/schedule-override.json`, never in `shell.json`.
+  `$XDG_STATE_HOME/foamy-zendesk/schedule-override.json`, never in `shell.json`;
+  when that file can't be written the footer says **Can't save snooze or
+  resume**, and the snooze lasts until the shell restarts.
 - **Zendesk** (at the bottom): the account, and **Check every** (1 to 15
   minutes, default 1). Signed out, it also holds the connection fields below.
 
@@ -112,11 +117,18 @@ once and shows who is signed in. Tokens are stored in the Secret Service
 keyring (through `secret-tool`), never in the plugin settings, a file or a
 log; the panel only learns the outcome. Access tokens are refreshed when they
 expire, and the new pair is stored before it is used (Zendesk invalidates the
-old one). An expired refresh token shows "Sign-in expired". **Sign out**
+old one). An expired refresh token shows "Sign-in expired". A new pair the
+keyring can't store, at sign-in or on a refresh, is revoked at once: sign-in
+then says why, and a refresh shows "Sign-in expired", since the stored pair
+was already spent. **Sign out**
 removes the token from the keyring and revokes it; a refresh still running
 finishes first (up to 30 seconds), so the pair it stores is the one removed.
 If it takes longer, sign-out still clears the keyring but says it didn't
-finish: try again.
+finish: try again. When the sign-in is in a locked keyring and its unlock
+prompt is dismissed, sign-out removes and revokes nothing and says so; the
+account stays signed in until you unlock the keyring and sign out again. A
+locked keyring is never taken for "Not signed in": a check says it is
+locked, and the sign-in works again once it is unlocked.
 
 Refreshes, sign-in and sign-out take a lock in `$XDG_RUNTIME_DIR/foamy-zendesk/`
 (owner-only) and never write the keyring without it. When that lock can't be
@@ -134,17 +146,24 @@ and, in or outside the schedule, when the popup opens on an inbox older than
 
 - searches `type:ticket status<solved assignee:me`, and
   `type:ticket status<solved assignee:none group:<id>` for each of your groups
-  (up to 20 groups and 100 tickets; Zendesk's search can lag a few minutes
-  behind);
+  (up to 20 groups and the 100 most recently updated tickets, and the list
+  says so below its last ticket when either left some out; Zendesk's search
+  can lag a few minutes behind);
 - fetches the latest 20 comments only for tickets whose `updated_at` changed
-  (at most 25 per run; the rest follow next run) and shows their plain text,
+  (at most 25 tickets and about 8 MB of comments per run, the most recently
+  updated first; the rest follow next run) and shows their plain text,
   with the HTML entities Zendesk leaves in it (`&nbsp;`, `&amp;`, …) decoded
   and blank lines collapsed;
 - looks up the names of assignees, requesters and comment authors in one call.
 
 Failures back off (2×, 4×, … up to 15 minutes) and keep the last inbox. Read
-markers live in `$XDG_STATE_HOME/foamy-zendesk/read-<account>.json` (private
-directory); markers of tickets that left the inbox are kept 30 days.
+markers live in `$XDG_STATE_HOME/foamy-zendesk/read-<host>.json`, such as
+`read-acme.zendesk.com.json` (private directory); markers of tickets that left
+the inbox are kept 30 days, and at most the 2000 most recently marked are
+loaded. A read file that exists but can't be read is left alone, and one
+that can't be written (a full or read-only disk) isn't saved: either way the
+footer says **Can't save read markers**, and markers last until the shell
+restarts or the account changes.
 
 Requirements: `secret-tool` (libsecret) with a running keyring (Omarchy's
 gnome-keyring). HTTPS needs AES, carry-less multiply, AVX2, BMI2 and ADX on
@@ -251,13 +270,16 @@ Uses the existing Quickshell, Node.js, Python and foamy-kit tools. The
 runtime test isolates HOME, XDG paths and D-Bus, loads the real Panel, stores
 and view offscreen, and runs the real helper (which finds no keyring there);
 the inbox comes from `preview/Fixtures.js` (fictional tickets, used only by
-the preview and tests) and ticket links go to a stub; switching accounts mid
-fetch and mid sign-in uses a stand-in helper. The helper's own tests
+the preview and tests) and tickets open in a fake `xdg-open` (which can also
+fail); switching accounts mid fetch and mid sign-in uses a stand-in helper. The helper's own tests
 use a fake Zendesk on loopback and an in-memory keyring; nothing touches a
 real account.
 
 ```sh
-bash tests/run.sh
+mise install            # once: the linters and node that mise.toml pins
+tests/validate.sh       # kit-check, omarchy-plugin-validate, linters, formatters,
+                        # the helper's tests and tests/suite.sh (node, i18n, runtime)
+tests/validate.sh --ci  # what GitHub's runner can do: no Quickshell or Omarchy host
 KIT=../foamy-kit   # a foamy-kit checkout at the version in foamy-kit.lock
 kit/native/build-native.sh . --test     # fmt, clippy, cargo test
 kit/native/build-native.sh .            # rebuild bin/<arch>/ and native/native.pin
@@ -278,9 +300,6 @@ Shared components are copied from foamy-kit and pinned by `foamy-kit.lock`.
 Change the kit source and sync; never edit its stamped copies here.
 
 The tests run on Omarchy 4.5, the installed `/usr/share/omarchy/shell`
-(`FOAMY_HOST_45` picks another 4.5 tree); `python3 tests/runtime.py 4.0` runs
-only when `FOAMY_HOST_40` names a 4.0 shell tree and otherwise prints a SKIP
-line. The installed Qt formatter
-cannot process typed `void` IPC methods in `Panel.qml` (also true for existing
-Foamy plugins); the runtime test loads and exercises that file without removing
-its types.
+(`FOAMY_HOST_45` picks another 4.5 tree). QML is formatted with Qt 6.12's
+`qmlformat` and the kit's `.qmlformat.ini`, which keeps `Panel.qml`'s typed
+`void` IPC methods; the runtime test loads and exercises that file.

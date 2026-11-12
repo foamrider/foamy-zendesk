@@ -1,6 +1,5 @@
 pragma Singleton
 import QtQuick
-import Quickshell
 import Quickshell.Io
 import "kit"
 import "kit/FoamyNative.js" as FoamyNative
@@ -27,7 +26,14 @@ QtObject {
   // false while Zendesk can't be reached: the user shown is the saved one.
   property bool verified: false
   property string error: ""
-  readonly property bool busy: statusProcess.running || loginProcess.running || logoutProcess.running
+  // Quickshell drops a finished Process (running turns false) and ends its
+  // output stream before it emits exited, so the check's reply is still to
+  // be applied for a moment after the process is gone. Until onExited has
+  // applied it, the check is busy: another check waits for it (checkAgain)
+  // instead of starting a second process. Set from the stream's end, which
+  // a process that never started has none of, so it can't stick.
+  property bool statusReplyPending: false
+  readonly property bool busy: statusProcess.running || statusReplyPending || loginProcess.running || logoutProcess.running
   readonly property bool signedIn: state === "signed_in"
   property bool checkAgain: false
   // Bumped by sign-out: a check that started before it answers for a sign-in
@@ -37,106 +43,136 @@ QtObject {
   // being stopped, a sign-out) answers for another address or client.
   property int configurations: 0
   // The helper's argv (after the timeout); tests replace it.
-  property var helperCommand: function(args) { return FoamyNative.command(account.pluginDir, account.helper, args); }
+  property var helperCommand: function (args) {
+    return FoamyNative.command(account.pluginDir, account.helper, args)
+  }
 
   function configure(next) {
-    if (next.address === address && next.clientId === clientId && next.port === port) return;
-    configurations++;
-    if (loginProcess.running) loginProcess.running = false;
-    address = next.address;
-    clientId = next.clientId;
-    port = next.port;
-    user = null;
-    error = "";
-    Qt.callLater(check);
+    if (next.address === address && next.clientId === clientId && next.port === port)
+      return
+    configurations++
+    if (loginProcess.running)
+      loginProcess.running = false
+    address = next.address
+    clientId = next.clientId
+    port = next.port
+    user = null
+    error = ""
+    Qt.callLater(check)
   }
 
   function args(command, extra) {
-    return [command, "--address", address, "--client-id", clientId].concat(extra || []);
+    return [command, "--address", address, "--client-id", clientId].concat(extra || [])
   }
   function start(process, command, extra, limit) {
-    process.command = ["timeout", "--kill-after=2s", limit].concat(helperCommand(args(command, extra)));
-    process.configuration = configurations;
-    process.running = true;
+    process.command = ["timeout", "--kill-after=2s", limit].concat(helperCommand(args(command, extra)))
+    process.configuration = configurations
+    process.running = true
   }
 
   function check() {
-    if (!configured) { state = "not_configured"; user = null; error = ""; return; }
-    if (state === "unavailable" || loginProcess.running || logoutProcess.running) return;
-    if (statusProcess.running) { checkAgain = true; return; }
-    if (!signedIn) state = "checking";
-    statusProcess.signOuts = signOuts;
+    if (!configured) {
+      state = "not_configured"
+      user = null
+      error = ""
+      return
+    }
+    if (state === "unavailable" || loginProcess.running || logoutProcess.running)
+      return
+    if (statusProcess.running || statusReplyPending) {
+      checkAgain = true
+      return
+    }
+    if (!signedIn)
+      state = "checking"
+    statusProcess.signOuts = signOuts
     // Up to a minute for a keyring unlock prompt, then the Zendesk requests.
-    start(statusProcess, "auth-status", [], "120s");
+    start(statusProcess, "auth-status", [], "120s")
   }
   function signIn() {
-    if (!configured || loginProcess.running || state === "unavailable") return;
-    error = "";
-    state = "waiting";
-    loginProcess.lastLine = "";
+    if (!configured || loginProcess.running || state === "unavailable")
+      return
+    error = ""
+    state = "waiting"
+    loginProcess.lastLine = ""
     // The helper waits five minutes for the browser.
-    start(loginProcess, "auth-login", ["--port", String(port)], "330s");
+    start(loginProcess, "auth-login", ["--port", String(port)], "330s")
   }
   function cancelSignIn() {
-    loginProcess.running = false;
+    loginProcess.running = false
   }
   function signOut() {
-    if (!configured || logoutProcess.running) return;
-    if (loginProcess.running) loginProcess.running = false;
-    signOuts++;
+    if (!configured || logoutProcess.running)
+      return
+    if (loginProcess.running)
+      loginProcess.running = false
+    signOuts++
     // Up to 30 seconds for a token refresh in flight to finish first.
-    start(logoutProcess, "auth-logout", [], "120s");
+    start(logoutProcess, "auth-logout", [], "120s")
   }
 
   // A helper `error`, translated: a catalog key, then the values for its
   // %1, %2… after U+001F separators.
   function helperText(message) {
-    var parts = String(message || "").split("\u001f");
-    return FoamyI18n.t(parts[0], parts.slice(1));
+    var parts = String(message || "").split("\u001f")
+    return FoamyI18n.t(parts[0], parts.slice(1))
   }
 
   // One JSON reply from the helper.
   function apply(text, code) {
     if (FoamyNative.unavailable(code)) {
-      state = "unavailable";
-      error = FoamyI18n.t(FoamyNative.UNAVAILABLE_TEXT);
-      return;
+      state = "unavailable"
+      error = FoamyI18n.t(FoamyNative.UNAVAILABLE_TEXT)
+      return
     }
-    var reply = null;
-    try { reply = JSON.parse(text.trim().split("\n").pop()); } catch (e) {}
+    var reply = null
+    try {
+      reply = JSON.parse(text.trim().split("\n").pop())
+    } catch (e) {}
     if (!reply) {
-      state = signedIn ? state : "error";
-      error = code === 124 ? FoamyI18n.t("Zendesk didn't answer in time.") : FoamyI18n.t("The Zendesk helper failed.");
-      return;
+      state = signedIn ? state : "error"
+      error = code === 124 ? FoamyI18n.t("Zendesk didn't answer in time.") : FoamyI18n.t("The Zendesk helper failed.")
+      return
     }
     if (reply.ok) {
-      state = reply.state;
-      user = reply.user || null;
-      verified = reply.verified === true;
-      error = reply.error ? helperText(reply.error) : "";
-      return;
+      state = reply.state
+      user = reply.user || null
+      verified = reply.verified === true
+      error = reply.error ? helperText(reply.error) : ""
+      return
     }
-    error = reply.error ? helperText(reply.error) : FoamyI18n.t("The Zendesk helper failed.");
+    error = reply.error ? helperText(reply.error) : FoamyI18n.t("The Zendesk helper failed.")
     // A failed sign-in, or a sign-out that didn't finish (BUSY, LOCK_UNAVAILABLE:
     // the keyring is cleared but it can't promise nothing is stored again), leaves
-    // the previous state, so Sign out stays there to try again; anything else is
-    // an error state.
-    if (reply.code === "ACCESS_DENIED" || reply.code === "TIMEOUT" || reply.code === "PORT_IN_USE" || reply.code === "BUSY"
-        || reply.code === "LOCK_UNAVAILABLE")
-      state = user ? "signed_in" : "signed_out";
+    // the previous state, so Sign out stays there to try again. A locked keyring
+    // (KEYRING_LOCKED) still holds the sign-in, so it is never shown as signed
+    // out: signed in stays signed in, and a first check is an error that says
+    // why. Anything else is an error state.
+    if (reply.code === "ACCESS_DENIED" || reply.code === "TIMEOUT" || reply.code === "PORT_IN_USE" || reply.code === "BUSY" || reply.code === "LOCK_UNAVAILABLE")
+      state = user ? "signed_in" : "signed_out"
+    else if (reply.code === "KEYRING_LOCKED" && user)
+      state = "signed_in"
     else
-      state = "error";
+      state = "error"
   }
 
   property Process statusProcess: Process {
     property int signOuts: 0
     property int configuration: 0
-    stdout: StdioCollector { id: statusOutput; waitForEnd: true }
-    onExited: function(code) {
+    stdout: StdioCollector {
+      id: statusOutput
+      waitForEnd: true
+      onStreamFinished: account.statusReplyPending = true
+    }
+    onExited: function (code) {
+      account.statusReplyPending = false
       // From before configure(): the check it asked for follows.
       if (statusProcess.signOuts === account.signOuts && statusProcess.configuration === account.configurations)
-        account.apply(statusOutput.text, code);
-      if (account.checkAgain) { account.checkAgain = false; Qt.callLater(account.check); }
+        account.apply(statusOutput.text, code)
+      if (account.checkAgain) {
+        account.checkAgain = false
+        Qt.callLater(account.check)
+      }
     }
   }
 
@@ -144,37 +180,49 @@ QtObject {
     property string lastLine: ""
     property int configuration: 0
     stdout: SplitParser {
-      onRead: function(line) {
-        var message = null;
-        try { message = JSON.parse(line); } catch (e) {}
+      onRead: function (line) {
+        var message = null
+        try {
+          message = JSON.parse(line)
+        } catch (e) {}
         // The helper is listening: hand the authorize URL to the browser
         // (not one for an address or client configure() replaced).
         if (message && message.event === "authorize" && /^https?:\/\//.test(message.url)) {
-          if (loginProcess.configuration === account.configurations) Qt.openUrlExternally(message.url);
-        }
-        else loginProcess.lastLine = line;
+          if (loginProcess.configuration === account.configurations)
+            Qt.openUrlExternally(message.url)
+        } else
+          loginProcess.lastLine = line
       }
     }
-    onExited: function(code) {
+    onExited: function (code) {
       // Stopped by configure(): whatever it brings is for the old address or
       // client, and the check configure() asked for waited for this exit.
-      if (loginProcess.configuration !== account.configurations) { Qt.callLater(account.check); return; }
+      if (loginProcess.configuration !== account.configurations) {
+        Qt.callLater(account.check)
+        return
+      }
       if (loginProcess.lastLine === "" && code !== 0 && !FoamyNative.unavailable(code)) {
         // Cancelled (stopped by us) or killed: back to where it was.
-        account.state = account.user ? "signed_in" : "signed_out";
-        return;
+        account.state = account.user ? "signed_in" : "signed_out"
+        return
       }
-      account.apply(loginProcess.lastLine, code);
+      account.apply(loginProcess.lastLine, code)
     }
   }
 
   property Process logoutProcess: Process {
     property int configuration: 0
-    stdout: StdioCollector { id: logoutOutput; waitForEnd: true }
-    onExited: function(code) {
+    stdout: StdioCollector {
+      id: logoutOutput
+      waitForEnd: true
+    }
+    onExited: function (code) {
       // As for a sign-in: the new address or client gets its own check.
-      if (logoutProcess.configuration !== account.configurations) { Qt.callLater(account.check); return; }
-      account.apply(logoutOutput.text, code);
+      if (logoutProcess.configuration !== account.configurations) {
+        Qt.callLater(account.check)
+        return
+      }
+      account.apply(logoutOutput.text, code)
     }
   }
 }

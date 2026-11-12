@@ -2,7 +2,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const Model = require('../Model.js');
 const Fixtures = require('../preview/Fixtures.js');
-const Schedule = require('../Schedule.js');
+// The kit's schedule, with this plugin's settings and cases.
+const Schedule = require('../kit/node-loader.cjs').load('FoamySchedule');
+// Its objects come from the loader's own realm; compare them as plain data.
+const plain = value => JSON.parse(JSON.stringify(value));
 const Schema = require('../Preferences.js');
 
 function seeded(list) {
@@ -51,6 +54,24 @@ test('unchanged tickets keep their comments; known lists what we have', () => {
   assert.deepEqual(Object.keys(Model.known(state)).sort(), ['4818', '4821', '4824']);
   const fresh = Model.applySnapshot(Model.empty(), [{ ...Fixtures.tickets()[0], comments: undefined, deferred: true }]);
   assert.deepEqual(Model.known(fresh), {}, 'deferred comments are asked for again');
+});
+
+test('a loaded ticket whose new comments are deferred asks for them on the next fetch', () => {
+  const state = seeded();
+  Model.markRead(state, '4821');
+  // #4821 changed, but the run's comment budget was spent: no comments, a new updated_at.
+  const changed = Fixtures.update(1, false)[0];
+  Model.applySnapshot(state, [{ ...changed, comments: undefined, deferred: true }]);
+  assert.equal(Model.visible(state)[0].history.length, 4, 'the earlier comments stay shown meanwhile');
+  assert.deepEqual(Model.known(state), {}, 'the new revision is not reported as fetched');
+  // The next run brings them: the reply is unread.
+  Model.applySnapshot(state, [changed]);
+  assert.equal(Model.known(state)['4821'], changed.updated_at);
+  assert.equal(Model.visible(state)[0].updates, 1);
+  // An unchanged ticket after that keeps its comments and stays known.
+  Model.applySnapshot(state, [{ ...changed, comments: undefined, unchanged: true }]);
+  assert.equal(Model.known(state)['4821'], changed.updated_at);
+  assert.equal(Model.visible(state)[0].updates, 1);
 });
 
 test('mark as unread brings back the newest comment from someone else', () => {
@@ -148,6 +169,19 @@ test('the read-state file round-trips and ignores junk', () => {
   assert.deepEqual(Model.parseReadState(JSON.stringify({ read: { x: { revision: 1, at: 1 }, 7: { revision: 'a', at: 1 } } })), {});
 });
 
+test('a read-state file over the limit keeps the most recently marked tickets', () => {
+  // Numeric keys enumerate in ascending order, so the newest tickets (the
+  // highest ids, most likely in the inbox) come last.
+  const read = {};
+  for (let i = 1; i <= 2001; i++) read[String(1000 + i)] = { revision: i, at: i };
+  read['1001'].at = 5000;
+  const kept = Model.parseReadState(JSON.stringify({ version: 1, read }));
+  assert.equal(Object.keys(kept).length, 2000);
+  assert.deepEqual(kept['3001'], { revision: 2001, at: 2001 }, 'the newest marker stays');
+  assert.deepEqual(kept['1001'], { revision: 1, at: 5000 }, 'an old ticket marked recently stays');
+  assert.equal(kept['1002'], undefined, 'the least recently marked goes');
+});
+
 test('invalid replies are refused; text stays plain data', () => {
   assert.throws(() => Model.applySnapshot(Model.empty(), 'nope'));
   assert.throws(() => Model.applySnapshot(Model.empty(), [{ id: '__proto__' }]));
@@ -155,6 +189,25 @@ test('invalid replies are refused; text stays plain data', () => {
   const list = Fixtures.tickets();
   list[0].comments[0].body = body;
   assert.equal(Model.visible(seeded(list))[0].body, body);
+});
+
+test('text cut to its limit says so; a comment the helper clipped keeps its mark', () => {
+  // The helper clips a comment at 16384 characters (code points) and adds "…".
+  const clipped = 'x'.repeat(16384) + '…';
+  const emoji = '😀'.repeat(16384) + '…';
+  const list = Fixtures.tickets();
+  list[0].comments[0].body = clipped;
+  list[1].comments[0].body = emoji;
+  list[2].subject = 's'.repeat(600);
+  const state = seeded(list);
+  assert.equal(state.tickets[list[0].id].body, clipped);
+  assert.equal(state.tickets[list[1].id].body, emoji);
+  const subject = state.tickets[list[2].id].subject;
+  assert.equal(subject.length, 512);
+  assert.ok(subject.endsWith('…'), 'a subject cut short ends in an ellipsis');
+  // Never half a surrogate pair.
+  const cut = Model.ticketFrom({ id: '1', subject: 'a' + '😀'.repeat(300) }).subject;
+  assert.ok(cut.endsWith('…') && !/[\uD800-\uDBFF]…$/.test(cut));
 });
 
 test('a fetch from before an account switch is ignored, even a full reply that arrives late', () => {
@@ -171,6 +224,23 @@ test('a fetch from before an account switch is ignored, even a full reply that a
   assert.equal(failed.reply.code, 'EXPIRED');
   assert.equal(Model.fetchOutcome(3, 3, JSON.stringify({ ok: true, tickets: [] })).statePath, null);
   assert.equal(Model.fetchOutcome(3, 3, JSON.stringify({ ok: true, tickets: 'nope' })).ok, false);
+});
+
+test('unassigned comes from the flag, not the name: an agent may be called "Unassigned"', () => {
+  const named = Model.ticketFrom({ id: '1', assignee: 'Unassigned', unassigned: false });
+  assert.equal(named.unassigned, false);
+  assert.equal(named.assignee, 'Unassigned');
+  const none = Model.ticketFrom({ id: '2', assignee: '', unassigned: true });
+  assert.equal(none.unassigned, true);
+  assert.equal(none.assignee, '');
+  assert.equal(Model.ticketFrom({ id: '3', assignee: 'Alex', unassigned: 'yes' }).unassigned, false);
+});
+
+test("the helper's truncated flags reach the inbox; anything else is not cut", () => {
+  const outcome = truncated => Model.fetchOutcome(1, 1, JSON.stringify({ ok: true, tickets: [], truncated })).truncated;
+  assert.deepEqual(outcome({ tickets: true, groups: false }), { tickets: true, groups: false });
+  assert.deepEqual(outcome({ tickets: false, groups: true }), { tickets: false, groups: true });
+  for (const odd of [undefined, null, 'yes', { tickets: 'true', groups: 1 }]) assert.deepEqual(outcome(odd), { tickets: false, groups: false });
 });
 
 test('ticket links use the configured account only', () => {
@@ -225,7 +295,7 @@ function deferredInbox(count, withComments, created) {
   const list = [];
   for (let i = 0; i < count; i++) {
     const id = String(5000 + i);
-    const raw = { id, subject: 'Ticket ' + id, status: 'Open', priority: 'Normal', assignee: i % 2 ? 'Unassigned' : 'Alex',
+    const raw = { id, subject: 'Ticket ' + id, status: 'Open', priority: 'Normal', assignee: i % 2 ? '' : 'Alex', unassigned: i % 2 === 1,
                   mine: i % 2 === 0, group: 'IT support', requester: 'Jonas', updated_at: '2026-11-06T10:00:00Z' };
     if (withComments(i)) raw.comments = [{ id: 50000 + i * 10, author: 'Jonas', mine: false, public: true, created: created, body: 'Old.' }];
     else raw.deferred = true;
@@ -343,25 +413,25 @@ test('schedule: snoozing and resuming override the schedule until the next day',
   const week = ['08:00-16:00', '22:00-06:00', '', '', '', '', '']; // Monday, Tuesday night
   // Within the hours: a snooze lasts until they end, then the schedule rules again.
   const snooze = Schedule.toggled(at(2, 10), true, week, null);
-  assert.deepEqual(snooze, { on: false, until: at(2, 16).getTime() });
+  assert.deepEqual(plain(snooze), { on: false, until: at(2, 16).getTime() });
   assert.equal(Schedule.effective(at(2, 15, 59), true, week, snooze), false);
   assert.equal(Schedule.effective(at(3, 8), true, week, snooze), false);
   // Pressing again goes back to the schedule: no override.
   assert.equal(Schedule.toggled(at(2, 11), true, week, snooze), null);
   // Outside the hours: resuming lasts until midnight...
   const evening = Schedule.toggled(at(2, 19), true, week, null);
-  assert.deepEqual(evening, { on: true, until: at(3, 0).getTime() });
+  assert.deepEqual(plain(evening), { on: true, until: at(3, 0).getTime() });
   assert.equal(Schedule.effective(at(2, 23, 59), true, week, evening), true);
   assert.equal(Schedule.effective(at(3, 0), true, week, evening), false);
   // ...or until the schedule starts, if that is sooner.
-  assert.deepEqual(Schedule.toggled(at(2, 6), true, week, null), { on: true, until: at(2, 8).getTime() });
+  assert.deepEqual(plain(Schedule.toggled(at(2, 6), true, week, null)), { on: true, until: at(2, 8).getTime() });
   // An overnight range: the snooze runs on past midnight to its end.
-  assert.deepEqual(Schedule.toggled(at(3, 23), true, week, null), { on: false, until: at(4, 6).getTime() });
+  assert.deepEqual(plain(Schedule.toggled(at(3, 23), true, week, null)), { on: false, until: at(4, 6).getTime() });
   // No schedule: snoozed until midnight.
-  assert.deepEqual(Schedule.toggled(at(4, 12), false, [], null), { on: false, until: at(5, 0).getTime() });
+  assert.deepEqual(plain(Schedule.toggled(at(4, 12), false, [], null)), { on: false, until: at(5, 0).getTime() });
   // The state file: expired or malformed overrides are dropped.
   const text = Schedule.serializeOverride(snooze);
-  assert.deepEqual(Schedule.parseOverride(text, at(2, 12).getTime()), snooze);
+  assert.deepEqual(plain(Schedule.parseOverride(text, at(2, 12).getTime())), plain(snooze));
   assert.equal(Schedule.parseOverride(text, at(2, 16).getTime()), null);
   assert.equal(Schedule.parseOverride('{"version":1,"override":{"on":"no","until":1}}', 0), null);
   assert.equal(Schedule.parseOverride('not json', 0), null);

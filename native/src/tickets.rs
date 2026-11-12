@@ -1,7 +1,8 @@
 //! The inbox: unsolved tickets assigned to the signed-in agent, and
 //! unassigned unsolved tickets in the agent's groups, with their latest
 //! comments. Comments are fetched only for tickets whose `updated_at` the
-//! caller doesn't already have.
+//! caller doesn't already have. `truncated` says when the bounds below left
+//! tickets or groups out, so the panel never shows a cut inbox as complete.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -22,6 +23,14 @@ const MAX_COMMENT_FETCHES: usize = 25;
 const MAX_BODY: usize = 16 * 1024;
 /// Group searches (one per group).
 const MAX_GROUPS: usize = 20;
+/// Bytes of comments one run sends (the panel keeps what it gets). Once the
+/// next ticket's comments would pass it, they and the rest are deferred to
+/// later runs, like past MAX_COMMENT_FETCHES. One ticket's comments take at
+/// most about 2 MB (COMMENTS × MAX_BODY characters, escaped), so the first
+/// changed ticket always fits and every run makes progress.
+const OUTPUT_BUDGET: usize = 8 * 1024 * 1024;
+/// What a comment's other fields (ids, flags, time, author) add to its body.
+const COMMENT_OVERHEAD: usize = 256;
 
 fn expired() -> Failure {
     Failure::coded("EXPIRED", "The Zendesk sign-in has expired. Sign in again.")
@@ -180,7 +189,9 @@ fn clip(text: &str) -> String {
     out
 }
 
-fn search(account: &Account, access: &str, query: &str) -> Result<Vec<Value>, Failure> {
+/// One page of a search (the most recently updated first), and whether
+/// Zendesk has more results than it.
+fn search(account: &Account, access: &str, query: &str) -> Result<(Vec<Value>, bool), Failure> {
     let body = get(
         account,
         access,
@@ -189,21 +200,25 @@ fn search(account: &Account, access: &str, query: &str) -> Result<Vec<Value>, Fa
             encode(query)
         ),
     )?;
-    Ok(body["results"]
+    let page = body["results"]
         .as_array()
-        .map(|results| {
-            results
-                .iter()
-                .filter(|r| {
-                    r.get("result_type")
-                        .and_then(Value::as_str)
-                        .unwrap_or("ticket")
-                        == "ticket"
-                })
-                .cloned()
-                .collect()
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let more = body["next_page"].is_string()
+        || body["count"]
+            .as_u64()
+            .is_some_and(|count| count > page.len() as u64);
+    let tickets = page
+        .iter()
+        .filter(|r| {
+            r.get("result_type")
+                .and_then(Value::as_str)
+                .unwrap_or("ticket")
+                == "ticket"
         })
-        .unwrap_or_default())
+        .cloned()
+        .collect();
+    Ok((tickets, more))
 }
 
 fn names(
@@ -249,11 +264,14 @@ pub fn fetch(account: &Account, known: &Map<String, Value>) -> Result<Value, Fai
     let me = get(account, &access, "/api/v2/users/me.json")?;
     let me_id =
         id_of(&me["user"]["id"]).ok_or_else(|| Failure::coded("HTTP", "Zendesk sent no user."))?;
-    let mine = group_names(&get(
+    let my_groups = get(
         account,
         &access,
         &format!("/api/v2/users/{me_id}/groups.json"),
-    )?);
+    )?;
+    let mine = group_names(&my_groups);
+    // Groups past MAX_GROUPS (or past Zendesk's first page) aren't searched.
+    let groups_cut = mine.len() > MAX_GROUPS || my_groups["next_page"].is_string();
     let mut group_name: HashMap<u64, String> = mine.iter().cloned().collect();
     // Names of other groups a ticket assigned to me may sit in (best effort).
     if let Ok(all) = get(account, &access, "/api/v2/groups.json?per_page=100") {
@@ -268,8 +286,11 @@ pub fn fetch(account: &Account, known: &Map<String, Value>) -> Result<Value, Fai
             .take(MAX_GROUPS)
             .map(|(id, _)| format!("type:ticket status<solved assignee:none group:{id}")),
     );
+    let mut tickets_cut = false;
     for query in &queries {
-        for ticket in search(account, &access, query)? {
+        let (page, more) = search(account, &access, query)?;
+        tickets_cut |= more;
+        for ticket in page {
             if let Some(id) = id_of(&ticket["id"]) {
                 found.entry(id).or_insert(ticket);
             }
@@ -277,18 +298,21 @@ pub fn fetch(account: &Account, known: &Map<String, Value>) -> Result<Value, Fai
     }
     let mut tickets: Vec<Value> = found.into_values().collect();
     tickets.sort_by(|a, b| b["updated_at"].as_str().cmp(&a["updated_at"].as_str()));
+    tickets_cut |= tickets.len() > MAX_TICKETS;
     tickets.truncate(MAX_TICKETS);
 
-    // Comments for tickets the caller doesn't have at this `updated_at`.
+    // Comments for tickets the caller doesn't have at this `updated_at`,
+    // tidied and clipped as they will be sent, so the budget counts them.
     let mut comments: HashMap<u64, Vec<Value>> = HashMap::new();
     let mut deferred = BTreeSet::new();
+    let (mut spent, mut over_budget) = (0, false);
     for ticket in &tickets {
         let id = id_of(&ticket["id"]).unwrap_or(0);
         let updated = ticket["updated_at"].as_str().unwrap_or("");
         if known.get(&id.to_string()).and_then(Value::as_str) == Some(updated) {
             continue;
         }
-        if comments.len() >= MAX_COMMENT_FETCHES {
+        if comments.len() >= MAX_COMMENT_FETCHES || over_budget {
             deferred.insert(id);
             continue;
         }
@@ -297,7 +321,31 @@ pub fn fetch(account: &Account, known: &Map<String, Value>) -> Result<Value, Fai
             &access,
             &format!("/api/v2/tickets/{id}/comments.json?sort_order=desc&per_page={COMMENTS}"),
         )?;
-        comments.insert(id, body["comments"].as_array().cloned().unwrap_or_default());
+        let list: Vec<Value> = body["comments"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|c| {
+                Some(json!({
+                    "id": id_of(&c["id"])?,
+                    "author_id": c["author_id"].clone(),
+                    "public": c["public"].as_bool().unwrap_or(true),
+                    "created": epoch_ms(c["created_at"].as_str()?)?,
+                    "body": clip(&tidy(c["plain_body"].as_str().or(c["body"].as_str()).unwrap_or(""))),
+                }))
+            })
+            .collect();
+        let cost: usize = list
+            .iter()
+            .map(|c| c["body"].to_string().len() + COMMENT_OVERHEAD)
+            .sum();
+        if spent + cost > OUTPUT_BUDGET && !comments.is_empty() {
+            over_budget = true;
+            deferred.insert(id);
+            continue;
+        }
+        spent += cost;
+        comments.insert(id, list);
     }
 
     let mut people = BTreeSet::new();
@@ -324,7 +372,9 @@ pub fn fetch(account: &Account, known: &Map<String, Value>) -> Result<Value, Fai
                 "subject": ticket["subject"].as_str().unwrap_or("").trim(),
                 "status": status(ticket["status"].as_str().unwrap_or("")),
                 "priority": priority(ticket["priority"].as_str()),
-                "assignee": if assignee.is_some() { person(assignee) } else { "Unassigned".into() },
+                // A name (or "" when unknown), never a stand-in word: an agent may be called anything.
+                "assignee": person(assignee),
+                "unassigned": assignee.is_none(),
                 "mine": assignee == Some(me_id),
                 "group": id_of(&ticket["group_id"]).and_then(|g| group_name.get(&g).cloned()).unwrap_or_default(),
                 "requester": person(id_of(&ticket["requester_id"])),
@@ -334,15 +384,15 @@ pub fn fetch(account: &Account, known: &Map<String, Value>) -> Result<Value, Fai
                 Some(list) => {
                     entry["comments"] = Value::Array(
                         list.iter()
-                            .filter_map(|c| {
-                                Some(json!({
-                                    "id": id_of(&c["id"])?,
+                            .map(|c| {
+                                json!({
+                                    "id": c["id"],
                                     "author": person(id_of(&c["author_id"])),
                                     "mine": id_of(&c["author_id"]) == Some(me_id),
-                                    "public": c["public"].as_bool().unwrap_or(true),
-                                    "created": epoch_ms(c["created_at"].as_str()?)?,
-                                    "body": clip(&tidy(c["plain_body"].as_str().or(c["body"].as_str()).unwrap_or(""))),
-                                }))
+                                    "public": c["public"],
+                                    "created": c["created"],
+                                    "body": c["body"],
+                                })
                             })
                             .collect(),
                     )
@@ -356,6 +406,7 @@ pub fn fetch(account: &Account, known: &Map<String, Value>) -> Result<Value, Fai
         "ok": true,
         "me": {"id": me_id.to_string(), "name": me["user"]["name"].as_str().unwrap_or("")},
         "tickets": out,
+        "truncated": {"tickets": tickets_cut, "groups": groups_cut},
     }))
 }
 
