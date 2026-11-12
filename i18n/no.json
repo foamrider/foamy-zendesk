@@ -202,5 +202,6 @@
   "Can't save snooze or resume": "Kan ikke lagre slumring eller gjenopptakelse",
   "Kept only until the shell restarts.": "Beholdes bare til skallet startes på nytt.",
   "Showing the 100 most recently updated tickets": "Viser de 100 sist oppdaterte sakene",
-  "Showing unassigned tickets from your first 20 groups": "Viser ikke tildelte saker fra de 20 første gruppene dine"
+  "Showing unassigned tickets from your first 20 groups": "Viser ikke tildelte saker fra de 20 første gruppene dine",
+  "Can't open the browser": "Kan ikke åpne nettleseren"
 }

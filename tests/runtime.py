@@ -2,7 +2,7 @@
 
 The account check runs the real helper (the isolated session has no keyring,
 so it reports that); the inbox is then filled from preview/Fixtures.js, as if
-signed in, and ticket links go to a stub instead of a browser.
+signed in, and tickets open in a fake xdg-open instead of a browser.
 
   python3 tests/runtime.py
 
@@ -33,6 +33,7 @@ SHELL = r"""
 import QtQuick
 import QtTest
 import Quickshell
+import Quickshell.Io
 import "harness"
 import "plugin" as Plugin
 import "plugin/kit" as Kit
@@ -48,7 +49,9 @@ ShellRoot {
   property int drawTarget: 0
   property bool finished: false
   property int fetchProbe: 0
-  property var opened: []
+  property int openBase: 0
+  property int saves: 0
+  property int saveBase: 0
   property var sent: []
   property var fetches: []
   property int statusRuns: 0
@@ -59,6 +62,36 @@ ShellRoot {
   property var entry: ({})
   TestEvent { id: ev }
   FoamyWait { id: wait }
+  // The fake xdg-open's log: every URL it was asked to open, in order.
+  FileView { id: openLog; path: Quickshell.env("FOAMY_OUT") + "/opened.log"; blockAllReads: true; printErrors: false }
+  function opened() { openLog.reload(); var text = openLog.text(); return text ? text.trim().split("\n") : []; }
+  // What the fake xdg-open does next (see FAKE_OPENER).
+  FileView { id: openerMode; path: Quickshell.env("FOAMY_OUT") + "/xdg-open.mode"; blockWrites: true; printErrors: false }
+  FileView { id: openerRelease; path: Quickshell.env("FOAMY_OUT") + "/xdg-open.release"; blockWrites: true; printErrors: false }
+  // Every View in Zendesk asked for has ended (launched or failed).
+  function launchesDone() { return !Plugin.TicketStore.launching && Plugin.TicketStore.launches.length === 0; }
+  function launchedOne() { return shell.opened().length > shell.openBase && shell.launchesDone(); }
+  // A notification's button: the daemon runs its argv, `omarchy-shell -q
+  // <target> <function> <argument>`, which calls that function of the
+  // panel's IpcHandler. (`qs ipc` can't reach this shell when the temp path
+  // is too long for a socket.)
+  function press(argv) {
+    if (!check(argv.length === 5 && argv[0] === "omarchy-shell" && argv[1] === "-q", "a button runs omarchy-shell (" + JSON.stringify(argv) + ")")) return false;
+    // One handler per shell: the leading monitor's instance.
+    var handlers = one.data.concat(two.data).filter(function(item) { return item.target === argv[2] && item.enabled && typeof item[argv[3]] === "function"; });
+    if (!check(handlers.length === 1, "one panel answers " + argv[2] + " " + argv[3] + " (" + handlers.length + ")")) return false;
+    var handler = handlers[0];
+    handler[argv[3]](argv[4]);
+    return true;
+  }
+  function actionsOf(argv) {
+    var found = argv.find(function(arg) { return arg.indexOf("--hint=string:omarchy-actions:") === 0; });
+    return JSON.parse(found.slice("--hint=string:omarchy-actions:".length));
+  }
+  Connections {
+    target: Plugin.TicketStore.readFile
+    function onSaved() { shell.saves++; }
+  }
   // Quickshell ends a Process by dropping it (running is false), ending its
   // collectors' streams and only then emitting exited: a check() that runs
   // in between (here from the collector's streamFinished) finds no process
@@ -100,7 +133,9 @@ ShellRoot {
     case 1: return [checked, 30000, "auth-status finished"];
     // The header lays out its actions once the popup is shown (a 0 ms timer).
     case 2: return [function() { return one.popup.bodyItem && one.popup.bodyItem.band.settingsInMenu; }, 10000, "the popup's header laid out"];
+    case 4: return [shell.launchedOne, 10000, "View in Zendesk launched"];
     case 12: return [function() { return shell.fetchProbe !== 1 || !store.fetchProcess.running; }, 30000, "the on-demand fetch finished"];
+    case 16: return [shell.launchedOne, 10000, "this account's View in Zendesk launched"];
     case 17: return [checked, 30000, "the account check finished"];
     case 18: return [function() { return shell.fetches.length >= 2 && store.fetchProcess.running; }, 10000, "the new account's fetch started"];
     // The stopped fetch's exit starts the next account's fetch.
@@ -119,6 +154,17 @@ ShellRoot {
     case 33: return [function() { return store.loaded && store.host === "big.zendesk.com"; }, 10000, "the cut-short inbox arrived"];
     case 34:
     case 35: return [function() { return shell.fetches.length > shell.fetchProbe && !store.fetchProcess.running; }, 10000, "the next fetch finished"];
+    case 38:
+    case 39: return [shell.launchedOne, 10000, "the popup's View in Zendesk ended"];
+    case 40:
+    case 41: return [shell.launchedOne, 10000, "the notification's View in Zendesk ended"];
+    case 42: return [function() { return store.loaded && store.host === "lockable.zendesk.com" && shell.saves > shell.saveBase && !store.saveTimer.running; }, 10000, "the lockable inbox arrived and was saved"];
+    case 43: return [function() { return shell.launchedOne() && shell.saves > shell.saveBase && !store.saveTimer.running; }, 10000, "the open was launched and its mark saved"];
+    case 44: return [shell.launchedOne, 10000, "the read ticket's open ended"];
+    case 45: return [function() { return shell.saves > shell.saveBase && !store.saveTimer.running; }, 10000, "Mark as unread was saved"];
+    case 46: return [function() { return shell.launchesDone() && shell.footer().status === "Can't save read markers"; }, 10000, "the open's failed save is shown"];
+    case 47: return [function() { return store.loaded && store.host === "fresh.zendesk.com" && store.readReady; }, 10000, "the next account's inbox arrived"];
+    case 48: return [shell.launchedOne, 10000, "the previous account's open ended"];
     }
     return null;
   }
@@ -185,7 +231,6 @@ ShellRoot {
   }
   Component.onCompleted: {
     for (var panel of [one, two]) { panel.bar = bar; panel.moduleName = "foamy.zendesk"; }
-    Plugin.TicketStore.openUrl = function(url) { shell.opened = shell.opened.concat([url]); };
     shell.advance();
   }
   function run() {
@@ -277,8 +322,8 @@ ShellRoot {
       if (!check(store.pending !== null && store.pendingChanges === 1 && card.historyRepeater.count === 4, "a new inbox waits while reading")) return;
       if (!check(card.mapToItem(view, 0, 0).y === shell.savedY && card.commentItem.text === shell.savedBody, "reading position and body remain stable")) return;
       if (!check(shell.find(view, "statusBar").visible, "waiting updates are announced without moving the ticket")) return;
-      if (!check(shell.opened.length === 1 && shell.opened[0] === "https://acme.zendesk.com/agent/tickets/4821" && card.expanded,
-                 "View opens the ticket in Zendesk; it stays open")) return;
+      if (!check(shell.opened().length === 1 && shell.opened()[0] === "https://acme.zendesk.com/agent/tickets/4821" && card.expanded && card.read && store.notice === "",
+                 "View opens the ticket in Zendesk; it stays open and read")) return;
       // A real click on the header band (left of the actions) closes it.
       ev.mouseClick(card.bodyItem, card.bodyItem.width / 3, card.bodyItem.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
       break;
@@ -513,10 +558,8 @@ ShellRoot {
       // The buttons' IPC: a newer reply (here: after the one announced) stays unread.
       store.receive(Fixtures.update(3, false));
       shell.sent = shell.sent.slice(0, 1);
-      shell.opened = [];
-      store.viewInZendesk("acme.zendesk.com/4821:48215");
-      if (!check(shell.opened[0] === "https://acme.zendesk.com/agent/tickets/4821" && store.ticketById("4821").ticket.updates === 1,
-                 "View in Zendesk opens it and reads up to the reply shown")) return;
+      store.markReadUpTo("acme.zendesk.com/4821:48215");
+      if (!check(store.ticketById("4821").ticket.updates === 1, "Mark as read reads up to the reply shown")) return;
       store.markReadUpTo("acme.zendesk.com/4821:48216,4824:48241,junk");
       if (!check(store.ticketById("4821").ticket.read && store.ticketById("4824").ticket.read, "Mark as read takes several tickets")) return;
       store.markUnread("4824");
@@ -578,23 +621,24 @@ ShellRoot {
       one.prefs.save("zendeskAddress", "globex");
       if (!check(store.host === "globex.zendesk.com", "the inbox belongs to the new account")) return;
       store.loadFixtures(Fixtures.tickets());
-      shell.opened = [];
+      shell.openBase = shell.opened().length;
       store.markReadUpTo("acme.zendesk.com/4821:48299,4824:48241");
       store.viewInZendesk("acme.zendesk.com/4818:48181");
       store.markReadUpTo("4821:48213");
       store.viewInZendesk("4818:48181");
-      if (!check(shell.opened.length === 0 && store.unreadCount === 3 && Object.keys(store.state.read).length === 0,
+      if (!check(shell.launchesDone() && store.unreadCount === 3 && Object.keys(store.state.read).length === 0,
                  "another account's (or an older) notification marks nothing read and opens nothing")) return;
       one.showNotified("acme.zendesk.com/4824");
       if (!check(one.opened && view.expandedIds.length === 0 && !store.ticketById("4824").ticket.read, "its click opens only the inbox")) return;
       one.close();
       store.viewInZendesk("globex.zendesk.com/4818:48181");
       store.markReadUpTo("globex.zendesk.com/4824:48241");
-      if (!check(shell.opened.length === 1 && shell.opened[0] === "https://globex.zendesk.com/agent/tickets/4818"
-                 && store.ticketById("4818").ticket.read && store.ticketById("4824").ticket.read && store.unreadCount === 1,
-                 "this account's notifications still work")) return;
       break;
     case 16:
+      var globex = shell.opened().slice(shell.openBase);
+      if (!check(globex.length === 1 && globex[0] === "https://globex.zendesk.com/agent/tickets/4818"
+                 && store.ticketById("4818").ticket.read && store.ticketById("4824").ticket.read && store.unreadCount === 1,
+                 "this account's notifications still work")) return;
       if (!check(!store.watching, "the popup is closed")) return;
       shell.sent = [];
       store.receive(Fixtures.update(1, false));
@@ -762,6 +806,111 @@ ShellRoot {
       var footerOf = function(id) { return shell.find(shell.find(view, "ticket-" + id), "cardFooter").text.split("  ·  ")[0]; };
       if (!check(footerOf("4908") === "Assigned to Unassigned" && footerOf("4824") === "Unassigned",
                  "an agent named Unassigned is an assignee (" + footerOf("4908") + "; " + footerOf("4824") + ")")) return;
+      store.loadFixtures(Fixtures.tickets());
+      break;
+    case 37:
+      // View in Zendesk on a closed unread ticket: a real click, the fake xdg-open.
+      var row = shell.find(view, "ticket-4821");
+      if (!check(store.unreadCount === 3 && !row.read && !row.expanded && one.barContent.countLabel.text === "3", "three unread before opening any")) return;
+      shell.openBase = shell.opened().length;
+      ev.mouseClick(row.openButton, row.openButton.width / 2, row.openButton.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
+      break;
+    case 38:
+      var row = shell.find(view, "ticket-4821");
+      if (!check(shell.opened().slice(shell.openBase).join() === "https://big.zendesk.com/agent/tickets/4821", "View in Zendesk opens the ticket's page")) return;
+      if (!check(row.read && !row.expanded && store.unreadCount === 2 && one.barContent.countLabel.text === "2" && store.notice === "",
+                 "opening it in Zendesk marks it read: the count and the bar drop, the card stays closed")) return;
+      // xdg-open fails (no handler): nothing is marked, and the inbox says so.
+      openerMode.setText("fail\n");
+      shell.openBase = shell.opened().length;
+      var other = shell.find(view, "ticket-4824");
+      ev.mouseClick(other.openButton, other.openButton.width / 2, other.openButton.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
+      break;
+    case 39:
+      if (!check(!store.ticketById("4824").ticket.read && store.unreadCount === 2 && one.barContent.countLabel.text === "2",
+                 "a failed launch marks nothing read")) return;
+      if (!check(store.notice === "Can't open the browser" && shell.find(view, "statusBar").visible, "a failed launch says the browser can't open")) return;
+      view.grabToImage(function(result) { result.saveToFile(Quickshell.env("FOAMY_OUT") + "/open-failed.png"); });
+      openerMode.setText("");
+      // A notification's View in Zendesk, through the real IPC: it reads up to
+      // the reply shown, so one that came in since stays unread.
+      store.receive(Fixtures.update(2, false));
+      var argv = store.notificationCommand([store.state.tickets["4821"]]);
+      store.receive(Fixtures.update(3, false));
+      if (!check(!store.ticketById("4821").ticket.read, "the replies are unread")) return;
+      shell.openBase = shell.opened().length;
+      if (!shell.press(shell.actionsOf(argv)[0].argv)) return;
+      break;
+    case 40:
+      if (!check(shell.opened().slice(shell.openBase).join() === "https://big.zendesk.com/agent/tickets/4821", "the notification's button opens the ticket")) return;
+      if (!check(store.ticketById("4821").ticket.updates === 1 && store.unreadCount === 3 && one.barContent.countLabel.text === "3" && store.notice === "",
+                 "and reads it up to the reply shown; the newer one stays unread")) return;
+      openerMode.setText("fail\n");
+      shell.openBase = shell.opened().length;
+      if (!shell.press(shell.actionsOf(store.notificationCommand([store.state.tickets["4818"]]))[0].argv)) return;
+      break;
+    case 41:
+      if (!check(!store.ticketById("4818").ticket.read && store.unreadCount === 3 && store.notice === "Can't open the browser",
+                 "a notification's View in Zendesk that can't launch marks nothing read")) return;
+      openerMode.setText("");
+      // A real account whose read file can be written until the opener locks its folder.
+      store.helperCommand = function(args) {
+        var address = args[args.indexOf("--address") + 1];
+        var reply = shell.inboxReply(address, 9401);
+        if (address === "lockable") reply.state_path = Quickshell.env("FOAMY_OUT") + "/lockable/read-lockable.json";
+        return shell.fake("now", reply);
+      };
+      shell.saveBase = shell.saves;
+      store.fixtures = false;
+      account.address = "lockable";
+      break;
+    case 42:
+      if (!check(store.unreadCount === 1 && !shell.footer().statusError, "the inbox is saved and unread")) return;
+      shell.saveBase = shell.saves;
+      shell.openBase = shell.opened().length;
+      var lockable = shell.find(view, "ticket-9401");
+      ev.mouseClick(lockable.openButton, lockable.openButton.width / 2, lockable.openButton.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
+      break;
+    case 43:
+      if (!check(store.ticketById("9401").ticket.read && store.unreadCount === 0 && !one.barContent.countLabel.visible && !shell.footer().statusError,
+                 "the open's read mark is saved like Mark as read")) return;
+      // Already read: opening it again writes nothing.
+      shell.saveBase = shell.saves;
+      shell.openBase = shell.opened().length;
+      var again = shell.find(view, "ticket-9401");
+      ev.mouseClick(again.openButton, again.openButton.width / 2, again.openButton.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
+      break;
+    case 44:
+      if (!check(!store.saveTimer.running && shell.saves === shell.saveBase && store.ticketById("9401").ticket.read, "opening a read ticket changes and saves nothing")) return;
+      shell.saveBase = shell.saves;
+      store.markUnread("9401");
+      break;
+    case 45:
+      // The opener makes the read file's folder read-only, so the open's save fails.
+      openerMode.setText("lock\n");
+      shell.openBase = shell.opened().length;
+      var locking = shell.find(view, "ticket-9401");
+      ev.mouseClick(locking.openButton, locking.openButton.width / 2, locking.openButton.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
+      break;
+    case 46:
+      var failed = shell.footer();
+      if (!check(failed.statusError && failed.statusTooltip === "Kept only until the shell restarts." && store.ticketById("9401").ticket.read && store.unreadCount === 0,
+                 "an open whose read mark can't be saved shows the footer's save failure; the ticket stays read")) return;
+      // An open that ends after the account changed marks nothing in the next one,
+      // which has a ticket with the same id and comment.
+      openerMode.setText("hold\n");
+      shell.openBase = shell.opened().length;
+      store.viewInZendesk("lockable.zendesk.com/9401:94010");
+      account.address = "fresh";
+      break;
+    case 47:
+      if (!check(store.unreadCount === 1, "the next account's inbox is in, unread")) return;
+      openerRelease.setText("go\n");
+      break;
+    case 48:
+      if (!check(!store.ticketById("9401").ticket.read && store.unreadCount === 1 && one.barContent.countLabel.text === "1" && store.notice === "",
+                 "the previous account's open marks nothing read in this one")) return;
+      openerMode.setText("");
       one.close();
       shell.finished = true;
       console.log("FOAMY DONE runtime interactions passed"); Qt.quit();
@@ -770,11 +919,32 @@ ShellRoot {
 }
 """
 
-run = harness.Run("4.5", SHELL, plugin=plugin, prefix="foamy-zendesk-runtime-")
+# Stands in for the browser: logs the URL, then does what $FOAMY_OUT/xdg-open.mode
+# says: "fail" exits 3 (xdg-open's "no handler"), "lock" makes the lockable
+# read folder read-only first, "hold" waits (at most 4 s) for xdg-open.release.
+FAKE_OPENER = r"""#!/bin/sh
+printf '%s\n' "$1" >>"$FOAMY_OUT/opened.log"
+case $(cat "$FOAMY_OUT/xdg-open.mode" 2>/dev/null) in
+fail) exit 3 ;;
+lock) chmod 0555 "$FOAMY_OUT/lockable" ;;
+hold)
+  i=0
+  while [ ! -e "$FOAMY_OUT/xdg-open.release" ] && [ "$i" -lt 80 ]; do
+    sleep 0.05
+    i=$((i + 1))
+  done
+  ;;
+esac
+exit 0
+"""
+
+run = harness.Run("4.5", SHELL, plugin=plugin, prefix="foamy-zendesk-runtime-", fakebin={"xdg-open": FAKE_OPENER})
 try:
-    # The read-only state folder for the failed saves (steps 27 to 32).
+    # The read-only state folder for the failed saves (steps 27 to 32), and
+    # the one the fake opener locks (steps 42 to 46).
     (run.out / "locked").mkdir(mode=0o555)
-    run.run(timeout=60)
+    (run.out / "lockable").mkdir()
+    run.run(timeout=90)
     if os.environ.get("FOAMY_TEST_OUTPUT"):
         output = Path(os.environ["FOAMY_TEST_OUTPUT"])
         output.mkdir(parents=True, exist_ok=True)
@@ -789,4 +959,6 @@ try:
     print(run.log if not run.ok else "PASS: real plugin runtime interactions")
     sys.exit(0 if run.ok else 1)
 finally:
+    # The fake opener may have left it read-only, with the read file inside.
+    (run.out / "lockable").chmod(0o755)
     run.cleanup()

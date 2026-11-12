@@ -87,10 +87,6 @@ QtObject {
 
   // Preview and tests: sample tickets, no helper, no file.
   property bool fixtures: false
-  // Opens a ticket in the browser; tests replace it.
-  property var openUrl: function (url) {
-    Qt.openUrlExternally(url)
-  }
 
   readonly property string account: ZendeskAccount.signedIn ? Model.host(ZendeskAccount.address) + " " + ZendeskAccount.clientId : ""
   // The Zendesk host the inbox and its read markers belong to ("" signed out):
@@ -237,8 +233,7 @@ QtObject {
     var list = Model.parseAction(payload, host, true)
     if (!list || list.length !== 1)
       return
-    markReadUpTo(payload)
-    openTicket(list[0].id)
+    openTicket(list[0].id, list[0].revision)
   }
   // A notification's click: the ticket in "host/id", or "" when it came from
   // another account (the inbox then opens without it).
@@ -264,10 +259,73 @@ QtObject {
     Model.restore(state, lastBatch)
     changed()
   }
-  function openTicket(id) {
+  // ---- View in Zendesk -------------------------------------------------------
+  // The popup's button and a notification's open the ticket in the browser,
+  // then mark it read like Mark as read (a notification's only up to the
+  // comment it showed: `revision`; the popup's, `revision` null, up to the
+  // newest). Only a launch that worked marks it; one that failed says so.
+  // Opens wait in `launches`, one wrapper at a time, each with the generation
+  // it was asked in: one that ends after restart() (another account, or
+  // signed out) marks nothing in the inbox that replaced it.
+  property var launches: []
+  // The launch under way, or null.
+  property var launching: null
+  function openTicket(id, revision) {
     var url = Model.ticketUrl(ZendeskAccount.address, id)
-    if (url)
-      openUrl(url)
+    if (!url)
+      return
+    var entry = {
+      id: String(id),
+      revision: revision === undefined ? null : revision,
+      generation: generation,
+      url: url
+    }
+    launches = launches.concat([entry])
+    launchNext()
+  }
+  // xdg-open runs in its own session, so it and the browser it starts outlive
+  // the shell. The wrapper waits up to 2 s for it: its exit status when it
+  // ends by then (Omarchy's browser launcher hands off and ends at once),
+  // otherwise 0, as a browser can hold xdg-open open while it runs. 127: no
+  // xdg-open or setsid.
+  readonly property string launchScript: ['setsid -w xdg-open "$1" </dev/null >/dev/null 2>&1 &', 'opener=$!', 'for _ in {1..20}; do', '  kill -0 "$opener" 2>/dev/null || { wait "$opener"; exit; }', '  sleep 0.1', 'done', 'exit 0'].join("\n")
+  function launchNext() {
+    if (launching || !launches.length)
+      return
+    launching = launches[0]
+    launches = launches.slice(1)
+    launchProcess.command = ["timeout", "--kill-after=1s", "10s", "bash", "-c", launchScript, "bash", launching.url]
+    launchProcess.running = true
+  }
+  // Every launch ends here once: its exit code, or -1 when the wrapper never started.
+  function launched(code) {
+    var entry = launching
+    launching = null
+    Qt.callLater(launchNext)
+    if (!entry)
+      return
+    if (code !== 0)
+      console.warn("foamy-zendesk: xdg-open could not open ticket " + entry.id + " (exit " + code + ")")
+    if (entry.generation !== generation)
+      return
+    if (code !== 0) {
+      lastBatch = []
+      notice = openFailedText
+      return
+    }
+    if (entry.revision === null ? Model.markRead(state, entry.id) : Model.markReadUpTo(state, entry.id, entry.revision))
+      changed()
+    else if (notice === openFailedText)
+      notice = ""
+  }
+  readonly property string openFailedText: FoamyI18n.t("Can't open the browser")
+  property Process launchProcess: Process {
+    onExited: function (code) {
+      store.launched(code)
+    }
+    // A wrapper that fails to start ends without `exited`.
+    onRunningChanged: if (!running && store.launching)
+      store.launched(-1)
   }
 
   // ---- desktop notifications ------------------------------------------------

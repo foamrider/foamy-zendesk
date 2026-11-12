@@ -202,5 +202,6 @@
   "Can't save snooze or resume": "Can't save snooze or resume",
   "Kept only until the shell restarts.": "Kept only until the shell restarts.",
   "Showing the 100 most recently updated tickets": "Showing the 100 most recently updated tickets",
-  "Showing unassigned tickets from your first 20 groups": "Showing unassigned tickets from your first 20 groups"
+  "Showing unassigned tickets from your first 20 groups": "Showing unassigned tickets from your first 20 groups",
+  "Can't open the browser": "Can't open the browser"
 }
