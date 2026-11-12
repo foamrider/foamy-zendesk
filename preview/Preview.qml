@@ -9,7 +9,7 @@ Item {
   required property Item anchorItem
   property var previewStates: ["tickets", "expanded", "pending", "all-read", "hide-read", "grouped", "grouped-expanded", "signed-out", "loading", "failed", "offline", "empty", "settings", "connection", "schedule", "outside-schedule", "narrow", "narrow-expanded", "focused", "scrolling", "menu"]
   property string previewState: "tickets"
-  readonly property Item popup: popup
+  readonly property var popup: previewPopup
 
   function many() {
     var list = Fixtures.tickets()
@@ -116,7 +116,7 @@ Item {
   onPreviewStateChanged: Qt.callLater(applyState)
   Component.onCompleted: Qt.callLater(applyState)
   FoamyPopup {
-    id: popup
+    id: previewPopup
     anchorItem: preview.anchorItem
     bar: preview.bar
     open: true
