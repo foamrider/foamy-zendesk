@@ -56,6 +56,24 @@ test('unchanged tickets keep their comments; known lists what we have', () => {
   assert.deepEqual(Model.known(fresh), {}, 'deferred comments are asked for again');
 });
 
+test('a loaded ticket whose new comments are deferred asks for them on the next fetch', () => {
+  const state = seeded();
+  Model.markRead(state, '4821');
+  // #4821 changed, but the run's comment budget was spent: no comments, a new updated_at.
+  const changed = Fixtures.update(1, false)[0];
+  Model.applySnapshot(state, [{ ...changed, comments: undefined, deferred: true }]);
+  assert.equal(Model.visible(state)[0].history.length, 4, 'the earlier comments stay shown meanwhile');
+  assert.deepEqual(Model.known(state), {}, 'the new revision is not reported as fetched');
+  // The next run brings them: the reply is unread.
+  Model.applySnapshot(state, [changed]);
+  assert.equal(Model.known(state)['4821'], changed.updated_at);
+  assert.equal(Model.visible(state)[0].updates, 1);
+  // An unchanged ticket after that keeps its comments and stays known.
+  Model.applySnapshot(state, [{ ...changed, comments: undefined, unchanged: true }]);
+  assert.equal(Model.known(state)['4821'], changed.updated_at);
+  assert.equal(Model.visible(state)[0].updates, 1);
+});
+
 test('mark as unread brings back the newest comment from someone else', () => {
   const state = seeded();
   Model.markRead(state, '4821');

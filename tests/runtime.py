@@ -58,6 +58,9 @@ ShellRoot {
   property bool probeWindow: false
   property var windowResult: null
   property var cut: undefined
+  // What the "big" stand-in says of ticket 9301 (steps 33 to 35): its first
+  // comment, then a change whose comments are "deferred", then those comments.
+  property string bigChange: ""
   readonly property string lockedSignOut: "Sign-out didn't finish: the keyring is locked, so the Zendesk sign-in is still stored. Unlock the keyring and sign out again."
   readonly property string lockedKeyring: "The keyring that holds the Zendesk sign-in is locked. Unlock it and try again."
   // The shell reflects saved settings back to every instance, like the host.
@@ -780,6 +783,13 @@ ShellRoot {
       store.helperCommand = function(args) {
         var reply = shell.inboxReply("big", 9301);
         reply.truncated = shell.cut;
+        var changed = reply.tickets[0];
+        if (shell.bigChange !== "") changed.updated_at = "2026-11-06T10:05:00Z";
+        if (shell.bigChange === "deferred") {
+          delete changed.comments;
+          changed.deferred = true;
+        } else if (shell.bigChange === "reply")
+          changed.comments.unshift({ id: 93011, author: "Jonas", mine: false, public: true, created: Fixtures.BASE + 300000, body: "Still broken." });
         shell.fetches = shell.fetches.concat(["big"]);
         return shell.fake("now", reply);
       };
@@ -790,18 +800,30 @@ ShellRoot {
       var note = shell.find(view, "truncatedNote");
       if (!check(note && note.visible && note.text === "Showing the 100 most recently updated tickets", "the inbox says it shows the 100 most recently updated")) return;
       shell.cut = { tickets: false, groups: true };
+      // Read, then changed with its comments deferred (the run's budget was spent).
+      store.markRead("9301");
+      shell.bigChange = "deferred";
       shell.fetchProbe = shell.fetches.length;
       view.grabToImage(function(result) { result.saveToFile(Quickshell.env("FOAMY_OUT") + "/truncated.png"); store.refresh(); });
       break;
     case 34:
       var groupsNote = shell.find(view, "truncatedNote");
       if (!check(groupsNote.visible && groupsNote.text === "Showing unassigned tickets from your first 20 groups", "or that only the first 20 groups were searched")) return;
+      var stale = store.ticketById("9301").ticket;
+      if (!check(stale.read && stale.history.count === 1 && stale.updatedAt === "2026-11-06T10:05:00Z",
+                 "a deferred change keeps the earlier comments meanwhile (" + stale.history.count + ")")) return;
       shell.cut = undefined;
+      shell.bigChange = "reply";
       shell.fetchProbe = shell.fetches.length;
       store.refresh();
+      // What the helper is asked: the deferred ticket's comments again.
+      var known = JSON.parse(store.fetchProcess.input).known;
+      if (!check(!("9301" in known), "the next fetch asks for the deferred comments (" + JSON.stringify(known) + ")")) return;
       break;
     case 35:
       if (!check(!shell.find(view, "truncatedNote").visible, "a complete inbox has no note")) return;
+      var caught = store.ticketById("9301").ticket;
+      if (!check(!caught.read && caught.updates === 1 && caught.history.count === 2, "the deferred reply comes on the next fetch, unread")) return;
       // An agent may be called "Unassigned": the helper's flag says who has none.
       var named = Fixtures.update(8, true);
       named[0].assignee = "Unassigned";

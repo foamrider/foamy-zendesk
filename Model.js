@@ -58,8 +58,10 @@ function ticketFrom(raw, previous) {
     group: shown(raw.group, 256),
     requester: shown(raw.requester, 256),
     updatedAt: text(raw.updated_at, 64),
-    // Comments not fetched yet: ask for them again next time.
-    loaded: Array.isArray(raw.comments) || (!!previous && previous.loaded),
+    // Whether `history` holds the comments of this `updatedAt`. A "deferred"
+    // ticket keeps its earlier comments but is not loaded, so `known` leaves it
+    // out and the next fetch asks for its comments again.
+    loaded: Array.isArray(raw.comments) || (raw.unchanged === true && !!previous && previous.loaded),
     history: history,
     revision: latest ? latest.revision : 0,
     received: latest ? latest.received : (isNaN(updated) ? 0 : updated),
