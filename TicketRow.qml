@@ -2,16 +2,18 @@ import QtQuick
 import "kit"
 import "Model.js" as Model
 
-// One ticket. Closed: a disclosure triangle, the subject, an unread dot and
-// the time, status pills, the latest comment and the assignment; the whole
-// card opens it. Open: a framed card whose tinted header band is the only
+// One ticket. Closed: a disclosure triangle in the status colour, the
+// subject, an unread dot, the time and the status tag, the priority (High and
+// Urgent only) with the number and sender, the latest comment and the
+// assignment; the whole card opens it. Open: a framed card whose tinted header band is the only
 // part that closes it, with the comments newest first: those unread when it
 // was opened (opening marks it read) and the one before them, the rest behind
 // "Show earlier". Long comments are clipped and fade out, each with its own
 // "Show more" / "Show less"; nothing expands them all.
 // Read tickets stay listed, dimmed, with "Mark as unread" (shown on hover) in
-// place of "Mark as read". `compact` (read tickets) is one line: subject, sender, time and
-// actions; expanding a compact ticket shows it in full.
+// place of "Mark as read". `compact` (read tickets) is one line: subject,
+// priority, sender, time and actions, with the status shown only by the
+// triangle's colour; expanding a compact ticket shows it in full.
 Item {
   id: ticketRow
   property var ticket
@@ -86,9 +88,41 @@ Item {
   readonly property int clipLines: 6
   // The open card, opaque so clipped comments can fade into it.
   readonly property color cardColor: Qt.tint(FoamyPalette.background, FoamyPalette.noteFill)
-  readonly property color priorityTone: ticket.priority === "Urgent" ? FoamyPalette.onSurface(FoamyPalette.error) : ticket.priority === "High" ? FoamyPalette.onSurface(FoamyPalette.warning) : FoamyPalette.mutedText
-  // On-hold waits like Pending (on a third party instead of the requester).
-  readonly property color statusTone: FoamyPalette.onSurface(ticket.status === "Solved" ? FoamyPalette.success : ticket.status === "Pending" || ticket.status === "On-hold" ? FoamyPalette.warning : FoamyPalette.info)
+  // Only High and Urgent get a priority label; Low and Normal get none.
+  readonly property bool flagged: ticket.priority === "Urgent" || ticket.priority === "High"
+  readonly property color priorityTone: FoamyPalette.onSurface(ticket.priority === "Urgent" ? FoamyPalette.error : FoamyPalette.warning)
+  // Zendesk's own status colours, as its agent workspace shows them in a dark
+  // and a light UI, so a status reads the same here as in Zendesk. They are
+  // brand colours, not theme colours. Closed is grey like Solved.
+  readonly property var statusNames: ["New", "Open", "Pending", "On-hold", "Solved", "Closed"]
+  readonly property var darkStatusColors: ["#e38215", "#eb5c69", "#2694d6", "#f8f9f9", "#b0b8be", "#b0b8be"] // foamy-lint: allow hex-colour — Zendesk status colours (dark UI)
+  readonly property var lightStatusColors: ["#ffa142", "#cc3340", "#1f73b7", "#23272b", "#87929d", "#87929d"] // foamy-lint: allow hex-colour — Zendesk status colours (light UI)
+  // The helper maps an unknown status to Open; this does the same for a
+  // stored one.
+  function statusColorOf(status) {
+    var index = statusNames.indexOf(status)
+    return (FoamyPalette.lightTheme ? lightStatusColors : darkStatusColors)[index < 0 ? 1 : index]
+  }
+  readonly property color statusColor: statusColorOf(ticket.status)
+  // Text on a status tag: of the two candidates (the popup's text and
+  // background colours), the one that contrasts more with the fill.
+  // WCAG relative luminance on linearised sRGB: FoamyPalette.luminance()
+  // weighs gamma-encoded channels, which picks dark text on Open and Pending
+  // in light themes where light text reads better.
+  function inkOn(fill, first, second) {
+    function linear(channel) {
+      return channel <= 0.04045 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4)
+    }
+    function luminance(c) {
+      return 0.2126 * linear(c.r) + 0.7152 * linear(c.g) + 0.0722 * linear(c.b)
+    }
+    function contrast(a, b) {
+      var la = luminance(a) + 0.05
+      var lb = luminance(b) + 0.05
+      return Math.max(la, lb) / Math.min(la, lb)
+    }
+    return contrast(fill, first) >= contrast(fill, second) ? first : second
+  }
   function format(ms, fmt) {
     return new Date(ms).toLocaleString(Qt.locale(FoamyI18n.formatLocale), fmt)
   }
@@ -114,19 +148,24 @@ Item {
   implicitHeight: column.implicitHeight
   height: implicitHeight
 
+  // A soft pill in `tone` (the priority), or with `solid` a tag filled with
+  // `tone` and lettered in `ink` (the status, as Zendesk shows it).
   component StatusLabel: Rectangle {
     required property string text
     property color tone: FoamyPalette.secondaryText
+    property bool solid: false
+    property color ink: FoamyPalette.text
     implicitWidth: label.implicitWidth + FoamyStyle.gap * 2
     implicitHeight: label.implicitHeight + FoamyStyle.gapSmall * 2
-    radius: FoamyStyle.pillRadius(height)
-    color: Qt.alpha(tone, 0.10)
+    radius: solid ? FoamyStyle.radiusSmall : FoamyStyle.pillRadius(height)
+    color: solid ? tone : Qt.alpha(tone, 0.10)
     PlainText {
       id: label
       anchors.centerIn: parent
       text: parent.text
-      color: parent.tone
+      color: parent.solid ? parent.ink : parent.tone
       font.pixelSize: FoamyStyle.font.bodySmall
+      font.weight: parent.solid ? Font.DemiBold : Font.Normal
     }
   }
   // A text link in the open ticket ("Show full comment", "Show earlier").
@@ -234,7 +273,8 @@ Item {
           id: rowHover
         }
         Accessible.role: Accessible.Button
-        Accessible.name: ticketRow.ticket.subject + (ticketRow.read ? "" : ", " + FoamyI18n.t("unread"))
+        // A one-line ticket shows its status only by colour: name it here.
+        Accessible.name: ticketRow.ticket.subject + ", " + FoamyI18n.t(ticketRow.ticket.status) + (ticketRow.flagged ? ", " + FoamyI18n.t(ticketRow.ticket.priority) : "") + (ticketRow.read ? "" : ", " + FoamyI18n.t("unread"))
         Accessible.description: ticketRow.expanded ? FoamyI18n.t("Collapse ticket") : FoamyI18n.t("Expand ticket")
         Accessible.onPressAction: ticketRow.toggleRequested()
       }
@@ -247,23 +287,28 @@ Item {
         width: parent.width - x - FoamyStyle.rowPadding + 4
         spacing: FoamyStyle.gapSmall
         Item {
+          id: titleLine
+          // The subject keeps up to this much of the line; a long sender
+          // shortens first, so a narrow popup never squeezes the subject out.
+          readonly property real subjectFloor: Math.min(subject.implicitWidth, width * 0.4)
           width: parent.width
           height: Math.max(subject.implicitHeight, FoamyStyle.actionSize - (ticketRow.oneLine ? 2 : 6))
-          // Points right while closed, down while open.
+          // Points right while closed, down while open; coloured by status.
           FoamyIcon {
             id: disclosure
             objectName: "disclosure"
             anchors.verticalCenter: parent.verticalCenter
             name: ticketRow.expanded ? "chevron-down" : "chevron-right"
-            color: ticketRow.expanded ? FoamyPalette.secondaryText : FoamyPalette.mutedText
+            color: ticketRow.statusColor
             width: 14
             height: width
           }
           PlainText {
             id: subject
+            objectName: "subject"
             x: ticketRow.indent
             anchors.verticalCenter: parent.verticalCenter
-            width: Math.min(implicitWidth, (whenLabel.visible ? unreadDot.x - (unreadDot.visible ? FoamyStyle.gapSmall : 0) : actions.x) - x - FoamyStyle.gap)
+            width: Math.max(0, Math.min(implicitWidth, lead.x - x - FoamyStyle.gap))
             text: ticketRow.ticket.subject
             font.pixelSize: ticketRow.oneLine ? FoamyStyle.font.body : FoamyStyle.font.subtitle
             font.weight: ticketRow.read ? Font.Normal : Font.DemiBold
@@ -272,40 +317,23 @@ Item {
             wrapMode: ticketRow.oneLine ? Text.NoWrap : Text.Wrap
             elide: Text.ElideRight
           }
-          // Unread, without a rail: a dot by the time.
-          Rectangle {
-            id: unreadDot
-            objectName: "unreadDot"
-            visible: !ticketRow.read && !ticketRow.expanded
-            x: whenLabel.x - (visible ? width + FoamyStyle.gapSmall : 0)
-            anchors.verticalCenter: parent.verticalCenter
-            width: 7
-            height: 7
-            radius: 3.5
-            color: FoamyPalette.accent
-          }
-          // Closed, the time sits on the subject line (with the sender on a
-          // one-line read ticket); open, it's in the footer.
-          PlainText {
-            id: whenLabel
-            objectName: "when"
-            visible: !ticketRow.expanded
-            anchors.right: actions.left
+          // Right of the subject, in order: `lead` (the read action, the
+          // priority), the sender, then `trailing` (the time, the status).
+          // Rows skip their hidden items. Separate targets keep the actions
+          // from toggling the ticket.
+          Row {
+            id: lead
+            objectName: "lead"
+            anchors.right: sender.visible ? sender.left : trailing.left
             anchors.rightMargin: FoamyStyle.gapSmall
             anchors.verticalCenter: parent.verticalCenter
-            text: (ticketRow.oneLine ? ticketRow.author(ticketRow.ticket.sender, ticketRow.ticket.senderMine) + " · " : "") + ticketRow.when(ticketRow.ticket.received)
-            color: FoamyPalette.mutedText
-            font.pixelSize: FoamyStyle.font.bodySmall
-            wrapMode: Text.NoWrap
-          }
-          // Separate targets keep the actions from toggling the ticket.
-          Row {
-            id: actions
-            anchors.right: parent.right
-            anchors.rightMargin: -FoamyStyle.gapSmall
-            anchors.verticalCenter: parent.verticalCenter
+            spacing: FoamyStyle.gapSmall
+            // "Mark as unread" shows only on hover or under the keyboard
+            // cursor. Its slot comes first, so while it's hidden the gap
+            // falls after the subject and the status tag stays by View.
             FoamyAction {
               id: readButton
+              anchors.verticalCenter: parent.verticalCenter
               iconName: ticketRow.read ? "undo-dot" : "check"
               tooltipText: ticketRow.read ? FoamyI18n.t("Mark as unread") : FoamyI18n.t("Mark as read")
               foreground: FoamyPalette.secondaryText
@@ -320,16 +348,86 @@ Item {
                 ticketRow.hovered(1)
               onClicked: ticketRow.readToggleRequested()
             }
-            FoamyAction {
-              id: openButton
-              iconName: "external-link"
-              tooltipText: FoamyI18n.t("View in Zendesk")
-              foreground: ticketRow.muted ? FoamyPalette.secondaryText : FoamyPalette.text
-              hasCursor: ticketRow.cursorPart === 2
-              onHoveredChanged: if (hovered)
-                ticketRow.hovered(2)
-              onClicked: ticketRow.openRequested()
+            // A one-line ticket's priority, before the sender.
+            StatusLabel {
+              id: linePriority
+              objectName: "linePriority"
+              visible: ticketRow.oneLine && ticketRow.flagged
+              anchors.verticalCenter: parent.verticalCenter
+              text: FoamyI18n.t(ticketRow.ticket.priority)
+              tone: ticketRow.priorityTone
             }
+          }
+          // A one-line ticket's sender: it gives way first when space runs out.
+          PlainText {
+            id: sender
+            objectName: "sender"
+            visible: ticketRow.oneLine
+            anchors.right: trailing.left
+            anchors.rightMargin: FoamyStyle.gapSmall
+            anchors.verticalCenter: parent.verticalCenter
+            width: Math.min(implicitWidth, Math.max(0, trailing.x - FoamyStyle.gapSmall * 2 - lead.width - ticketRow.indent - titleLine.subjectFloor - FoamyStyle.gap))
+            // The separator goes with it when it's cut.
+            text: ticketRow.author(ticketRow.ticket.sender, ticketRow.ticket.senderMine) + " ·"
+            color: FoamyPalette.mutedText
+            font: whenLabel.font
+            wrapMode: Text.NoWrap
+            elide: Text.ElideRight
+          }
+          Row {
+            id: trailing
+            objectName: "trailing"
+            anchors.right: openButton.left
+            anchors.rightMargin: FoamyStyle.gapSmall
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: FoamyStyle.gapSmall
+            // Unread, without a rail: a dot by the time.
+            Rectangle {
+              id: unreadDot
+              objectName: "unreadDot"
+              visible: !ticketRow.read && !ticketRow.expanded
+              anchors.verticalCenter: parent.verticalCenter
+              width: 7
+              height: 7
+              radius: 3.5
+              color: FoamyPalette.accent
+            }
+            // Closed, the time sits on the subject line (after the sender on a
+            // one-line read ticket); open, it's in the footer.
+            PlainText {
+              id: whenLabel
+              objectName: "when"
+              visible: !ticketRow.expanded
+              anchors.verticalCenter: parent.verticalCenter
+              text: ticketRow.when(ticketRow.ticket.received)
+              color: FoamyPalette.mutedText
+              font.pixelSize: FoamyStyle.font.bodySmall
+              wrapMode: Text.NoWrap
+            }
+            // A one-line ticket has the triangle's colour only.
+            StatusLabel {
+              id: statusTag
+              objectName: "statusTag"
+              visible: !ticketRow.oneLine
+              anchors.verticalCenter: parent.verticalCenter
+              text: FoamyI18n.t(ticketRow.ticket.status)
+              solid: true
+              tone: ticketRow.statusColor
+              ink: ticketRow.inkOn(ticketRow.statusColor, FoamyPalette.text, FoamyPalette.background)
+            }
+          }
+          FoamyAction {
+            id: openButton
+            anchors.right: parent.right
+            anchors.rightMargin: -FoamyStyle.gapSmall
+            anchors.verticalCenter: parent.verticalCenter
+            iconName: "external-link"
+            tooltipText: FoamyI18n.t("View in Zendesk")
+            foreground: ticketRow.muted ? FoamyPalette.secondaryText : FoamyPalette.text
+            hasCursor: ticketRow.cursorPart === 2
+            onHoveredChanged: if (hovered)
+              ticketRow.hovered(2)
+            onClicked: ticketRow.openRequested()
           }
         }
         Flow {
@@ -338,26 +436,20 @@ Item {
           width: parent.width - x
           spacing: FoamyStyle.gapSmall
           opacity: ticketRow.muted ? 0.6 : 1
-          // Most tickets are Open and Normal: only the exceptions get a label.
-          StatusLabel {
-            id: statusPill
-            visible: ticketRow.ticket.status !== "Open"
-            text: FoamyI18n.t(ticketRow.ticket.status)
-            tone: ticketRow.statusTone
-          }
           StatusLabel {
             id: priorityPill
-            visible: ticketRow.ticket.priority !== "Normal"
+            objectName: "priorityPill"
+            visible: ticketRow.flagged
             text: FoamyI18n.t(ticketRow.ticket.priority)
             tone: ticketRow.priorityTone
           }
           PlainText {
             id: meta
             objectName: "meta"
-            height: statusPill.height
+            height: priorityPill.height
             width: Math.min(implicitWidth, parent.width)
             verticalAlignment: Text.AlignVCenter
-            leftPadding: statusPill.visible || priorityPill.visible ? FoamyStyle.gapSmall : 0
+            leftPadding: priorityPill.visible ? FoamyStyle.gapSmall : 0
             wrapMode: Text.NoWrap
             elide: Text.ElideRight
             text: "#" + ticketRow.ticket.id + " · " + ticketRow.author(ticketRow.ticket.sender, ticketRow.ticket.senderMine)

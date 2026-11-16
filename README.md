@@ -11,9 +11,11 @@ The bar shows the Zendesk icon followed by a red count of unread tickets,
 like Teams. Click it to open the inbox: your tickets under **Assigned to
 you**, then **Unassigned in your groups**. Unread tickets have a bold
 subject with an accent-coloured dot by the time (10:40 today, then Yesterday, a weekday
-or a date), their status and priority (only when not Open or Normal), who
-wrote last ("You" for your own replies), the latest comment, and a footer
-line with the assignee and the group. Read tickets take one line.
+or a date), their status as a tag in Zendesk's colours, the priority (only
+High and Urgent), who wrote last ("You" for your own replies), the latest
+comment, and a footer line with the assignee and the group. Read tickets take
+one line: the subject, the priority, the sender and the time. The disclosure
+triangle always has the status colour, so a read ticket shows its status too.
 
 Click a ticket to open it; one ticket is open at a time. An open ticket gets
 a frame and a tinted header band: click the band to close it (clicks on the
