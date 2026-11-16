@@ -288,6 +288,23 @@ ShellRoot {
       var closed = view.repeater.itemAt(0);
       if (!check(closed.unreadDot.visible && !closed.frameItem.visible && closed.bodyItem.height === closed.bodyItem.parent.height,
                  "closed, an unread ticket has the dot and the whole card is its target")) return;
+      // #4821 is Open and High, #4818 Pending, #4824 New and Normal; all unread.
+      var tag = shell.find(closed, "statusTag");
+      var waiting = shell.find(view, "ticket-4818");
+      var fresh = shell.find(view, "ticket-4824");
+      if (!check(tag !== null && tag.visible && tag.text === "Open" && Qt.colorEqual(tag.color, closed.statusColorOf("Open"))
+                 && Qt.colorEqual(shell.find(closed, "disclosure").color, tag.color)
+                 && Qt.colorEqual(waiting.statusColor, waiting.statusColorOf("Pending")) && Qt.colorEqual(fresh.statusColor, fresh.statusColorOf("New"))
+                 && !Qt.colorEqual(waiting.statusColor, fresh.statusColor),
+                 "an unread ticket shows its status as a tag in Zendesk's colour, the triangle in the same colour")) return;
+      // Light-UI fills: white beats black on Open and Pending (WCAG), black on New.
+      var black = Qt.color("#000000"), white = Qt.color("#ffffff");
+      if (!check(Qt.colorEqual(closed.inkOn(Qt.color("#cc3340"), black, white), white) && Qt.colorEqual(closed.inkOn(Qt.color("#1f73b7"), black, white), white)
+                 && Qt.colorEqual(closed.inkOn(Qt.color("#ffa142"), black, white), black),
+                 "a status tag's text is the candidate with the higher WCAG contrast")) return;
+      if (!check(shell.find(closed, "priorityPill").visible && !shell.find(closed, "linePriority").visible && !shell.find(fresh, "priorityPill").visible
+                 && closed.bodyItem.Accessible.name === "VPN disconnects after sign-in, Open, High, unread",
+                 "High is labelled by the sender, Normal is not, and both are named for screen readers")) return;
       // A real click low on the closed card, on its latest comment, opens it.
       ev.mouseClick(closed.bodyItem, closed.bodyItem.width / 3, closed.bodyItem.height - 12, Qt.LeftButton, Qt.NoModifier, -1);
       break;
@@ -318,6 +335,12 @@ ShellRoot {
       if (!check(!card.showMore(), "m has nothing more to show")) return;
       if (!check(card.historyRepeater.itemAt(0).textItem.textFormat === Text.PlainText, "history uses plain text")) return;
       if (!check(card.read && store.unreadCount === 2 && one.barContent.countLabel.text === "2", "opening a ticket marks it read")) return;
+      // The hidden Mark as unread leaves no gap between the status and View.
+      var openTag = shell.find(card, "statusTag");
+      var tagEnd = openTag.mapToItem(card, openTag.width, 0).x;
+      if (!check(card.openButton.mapToItem(card, 0, 0).x - tagEnd <= 8
+                 && card.readButton.mapToItem(card, 0, 0).x < openTag.mapToItem(card, 0, 0).x,
+                 "the status tag sits by View; the hidden Mark as unread keeps its slot before it")) return;
       if (!check(card.openedUpdates === 2 && card.historyRepeater.itemAt(0).fresh && !card.historyRepeater.itemAt(1).fresh && card.historyRepeater.itemAt(2).fresh,
                  "the opened ticket still marks what was new; my reply never is")) return;
       if (!check(store.tickets.get(0).id === "4821" && view.repeater.itemAt(1).unreadDot.visible, "it stays in place; the next ticket still has its unread dot")) return;
@@ -341,8 +364,30 @@ ShellRoot {
       if (!check(!view.repeater.itemAt(0).showEarlier, "collapsing forgets Show earlier")) return;
       view.repeater.itemAt(0).readButton.clicked();
       if (!check(store.count === 3 && store.unreadCount === 2 && view.repeater.itemAt(0).read && one.barContent.countLabel.text === "2", "Mark as read keeps the ticket and lowers the count")) return;
-      if (!check(view.repeater.itemAt(0).compact && !view.repeater.itemAt(0).unreadDot.visible && shell.find(view.repeater.itemAt(0), "when").text.indexOf("Anna · ") === 0,
+      if (!check(view.repeater.itemAt(0).compact && !view.repeater.itemAt(0).unreadDot.visible && shell.find(view.repeater.itemAt(0), "sender").text === "Anna ·"
+                 && shell.find(view.repeater.itemAt(0), "when").text === view.repeater.itemAt(0).when(view.repeater.itemAt(0).ticket.received),
                  "a read ticket takes one line: no unread dot, the sender and time by the subject")) return;
+      // A narrow popup (320 px): an Urgent one-line ticket from a long name
+      // shortens the sender first; the subject keeps the rest, the triangle its room.
+      var probe = Qt.createComponent(Qt.resolvedUrl("plugin/TicketRow.qml")).createObject(view, {
+        width: 272, compact: true, now: Fixtures.NOW,
+        ticket: { id: "9900", subject: "Printer on the third floor jams on every job", status: "Open", priority: "Urgent",
+                  sender: "Christopher Anderson", senderMine: false, received: Fixtures.BASE - 26 * 3600000, read: true, updates: 0, since: 0,
+                  history: null, body: "", mine: false, unassigned: true, assignee: "", group: "" } });
+      // Rows lay out on the next frame; do it now to measure.
+      shell.find(probe, "trailing").forceLayout();
+      shell.find(probe, "lead").forceLayout();
+      var probeSubject = shell.find(probe, "subject");
+      var probeSender = shell.find(probe, "sender");
+      var leadX = shell.find(probe, "lead").x;
+      var ok = probeSubject.width > 0 && probeSubject.width >= leadX - probeSubject.x - 9 && probeSender.truncated
+               && probe.readButton.mapToItem(probe, 0, 0).x > shell.find(probe, "disclosure").mapToItem(probe, 14, 0).x;
+      probe.destroy();
+      if (!check(ok, "a narrow one-line row shortens the sender first and keeps the subject visible")) return;
+      var oneLine = view.repeater.itemAt(0);
+      if (!check(!shell.find(oneLine, "statusTag").visible && shell.find(oneLine, "linePriority").visible
+                 && Qt.colorEqual(shell.find(oneLine, "disclosure").color, oneLine.statusColorOf("Open")),
+                 "a one-line ticket shows its status only by the triangle's colour, and its priority by the sender")) return;
       view.cursor.reset();
       if (!check(!view.repeater.itemAt(0).readActionShown && view.repeater.itemAt(1).readActionShown && view.repeater.itemAt(0).readButton.visible,
                  "Mark as unread waits for hover, keeping its place; Mark as read stays shown")) return;
