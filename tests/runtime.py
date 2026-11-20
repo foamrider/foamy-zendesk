@@ -1158,6 +1158,16 @@ ShellRoot {
       if (!check(steps > 2 && Math.abs(bottom - (conversation.contentHeight - conversation.height)) < 1 && view.cursor.index === view.refreshStop,
                  "Down scrolls the conversation to its end, then moves on")) return;
       view.moveRequested(0, -1);
+      // Enter on the conversation opens nothing.
+      shell.openBase = shell.opened().length;
+      view.activateRequested();
+      if (!check(view.cursor.index === view.conversationStop && !store.launching && store.launches.length === 0 && view.selected.ticket.id === "4902",
+                 "Enter on the conversation does nothing")) return;
+      // A wheel notch still animating doesn't undo a key's step.
+      var wheel = view.pane.wheel;
+      wheel.scrollBy(-wheel.notch, true);
+      view.moveRequested(0, -1);
+      if (!check(Math.abs(conversation.contentY - (bottom - 2 * wheel.notch)) < 1, "a key during a wheel animation scrolls from where the wheel goes")) return;
       steps = 0;
       while (view.cursor.index === view.conversationStop && steps++ < 100) view.moveRequested(0, -1);
       if (!check(conversation.contentY === 0 && view.cursor.index === view.paneFirstStop + 1, "Up scrolls it back to the top, then moves on")) return;

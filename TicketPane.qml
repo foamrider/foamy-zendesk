@@ -26,6 +26,7 @@ Item {
   signal openRequested
   readonly property alias conversation: conversationList
   readonly property alias readButton: readButton
+  readonly property alias wheel: conversationWheel
   readonly property alias openButton: openButton
   readonly property alias comments: comments
   readonly property string ticketId: ticket ? ticket.id : ""
@@ -46,13 +47,9 @@ Item {
   onTicketIdChanged: conversationList.contentY = 0
   // One keyboard step (a wheel notch) up or down the conversation. False at
   // its end, so the cursor moves on instead.
+  // Through the wheel helper, so a running wheel animation can't undo the step.
   function scrollBy(direction) {
-    var end = Math.max(0, conversationList.contentHeight - conversationList.height)
-    var target = Math.max(0, Math.min(end, conversationList.contentY + direction * conversationWheel.notch))
-    if (Math.abs(target - conversationList.contentY) < 0.5)
-      return false
-    conversationList.contentY = target
-    return true
+    return conversationWheel.scrollBy(direction * conversationWheel.notch, false)
   }
 
   function format(ms, fmt) {

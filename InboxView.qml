@@ -227,11 +227,12 @@ PanelKeyCatcher {
     }
     var paneAt = cursor.index - paneFirstStop
     if (paneAt >= 0 && paneAt < paneStops) {
+      // The conversation stop (2) only scrolls: Enter there does nothing.
       if (!selected)
         toggleTicket(TicketStore.overview.awaiting[paneAt].id)
       else if (paneAt === 0)
         toggleRead(selected.ticket.id, selected.index)
-      else
+      else if (paneAt === 1)
         TicketStore.openTicket(selected.ticket.id)
       return
     }
