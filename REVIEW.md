@@ -268,6 +268,14 @@ Use the rows that apply; a QML-only plugin needs no Rust toolchain.
   Quickshell buffers the whole line or stream before QML sees it, and a
   chunk-mode parser can split a UTF-8 character. Bound the producer instead
   (a fixed `head -c` wrapper, or a helper that reads with a limit).
+- Qt reads the whole clipboard text on the UI thread, with no byte cap or
+  total deadline, for its own paste and also when the clipboard changes: an
+  editable `TextInput`, or a `TextField` built on it, reads the text on every
+  change to update `canPaste`, with no paste gesture. Never ship an editable
+  one. Use `SafeTextField` for text fields, or a read-only `TextInput` that
+  the plugin edits itself (foamy-lock's password field). In either case,
+  paste through `FoamyClipboard`. Intercepting the paste keys does not remove
+  the read on change.
 - Validate URL schemes, origins and redirects for the intended operation.
   Do not forward credentials across origins. Bound delivered and decompressed
   bytes and decoded image dimensions; a remote `Image.source` or an inline
@@ -374,6 +382,7 @@ remove the row when its rule is retired.
 | [HANCORE: Media provenance](https://github.com/omacom/omarchy-plugin-marketplace/issues/14501#issuecomment-6755462397) | Pins and an author's local rebuild do not replace independently verifiable build evidence. |
 | [HANCORE: Media tooltip](https://github.com/omacom/omarchy-plugin-marketplace/issues/14501#issuecomment-6765150976) and [Notifications tooltip](https://github.com/omacom/omarchy-plugin-marketplace/issues/13972#issuecomment-6710458899) | Follow metadata to the host's AutoText sink; safe primary labels do not protect a tooltip. |
 | [HANCORE: Menu response size](https://github.com/omacom/omarchy-plugin-marketplace/issues/14144#issuecomment-6705753414) and [GitHub clipboard](https://github.com/omacom/omarchy-plugin-marketplace/issues/10938#issuecomment-6100592043) | Bound the transport before the shell buffers the body, not only the parsed value. |
+| [HANCORE: Lock clipboard change](https://github.com/omacom/omarchy-plugin-marketplace/issues/13968#issuecomment-6912287557) | An editable Qt text input reads the clipboard on every change, so a bounded paste alone does not protect the shell. |
 | [HANCORE: Zendesk sign-out race](https://github.com/omacom/omarchy-plugin-marketplace/issues/14297#issuecomment-6765056811) and [lock-error follow-up](https://github.com/omacom/omarchy-plugin-marketplace/issues/14297#issuecomment-6766306405) | Auth mutations need shared synchronization; a failed lock must not become a successful logout. |
 | [HANCORE: Syncthing ownership follow-up](https://github.com/omacom/omarchy-plugin-marketplace/issues/8971#issuecomment-5856630260) | Creation markers do not authorize deletion of later user edits. |
 | [Google engineering practices](https://google.github.io/eng-practices/review/reviewer/looking-for.html) | Review overall design, concurrency and unnecessary complexity before style; avoid speculative generality. |
