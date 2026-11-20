@@ -162,6 +162,50 @@ function visible(state, options) {
   return list;
 }
 
+// The Wide panel's overview of a `visible` list: the counts its sections
+// show, the tickets waiting for a reply (New or Open, the latest comment from
+// someone else; the longest wait first) and the tickets per group, yours and
+// unassigned (the most first). The view dates the waits against its clock.
+// A ticket whose comments haven't come (`loaded` false: the helper deferred
+// them) has no known latest author, so it isn't counted as waiting:
+// `unknown` counts the New and Open ones, which may be waiting. The lists
+// are cut at five; `awaitingMore` and `groupsMore` count what was left out.
+var MAX_AWAITING = 5
+var MAX_OVERVIEW_GROUPS = 5
+var AWAITING_STATUSES = ["New", "Open"]
+
+function overview(list) {
+  var counts = { mine: 0, unassigned: 0, waiting: 0 };
+  // Group names come from Zendesk: no inherited keys ("constructor", "__proto__").
+  var groups = Object.create(null);
+  for (var ticket of list) {
+    counts[ticket.section] += 1;
+    var group = groups[ticket.group] || (groups[ticket.group] = { name: ticket.group, mine: 0, unassigned: 0 });
+    if (ticket.mine) group.mine += 1;
+    else if (ticket.unassigned) group.unassigned += 1;
+  }
+  var open = list.filter(function(item) { return AWAITING_STATUSES.indexOf(item.status) >= 0; });
+  var waitingAll = open.filter(function(item) { return item.loaded && !item.senderMine; });
+  var awaiting = waitingAll.sort(function(a, b) {
+    return a.received - b.received || a.id.localeCompare(b.id);
+  }).slice(0, MAX_AWAITING).map(function(item) {
+    return { id: item.id, subject: item.subject, status: item.status, sender: item.sender,
+             unassigned: item.unassigned, received: item.received };
+  });
+  var groupsAll = Object.keys(groups).map(function(name) { return groups[name]; })
+    .filter(function(group) { return group.mine + group.unassigned > 0; });
+  var grouped = groupsAll.sort(function(a, b) {
+    return b.mine + b.unassigned - (a.mine + a.unassigned) || a.name.localeCompare(b.name);
+  }).slice(0, MAX_OVERVIEW_GROUPS);
+  return {
+    unread: list.filter(function(item) { return !item.read; }).length,
+    mine: counts.mine, unassigned: counts.unassigned, waiting: counts.waiting,
+    awaiting: awaiting, awaitingMore: waitingAll.length - awaiting.length,
+    unknown: open.filter(function(item) { return !item.loaded; }).length,
+    groups: grouped, groupsMore: groupsAll.length - grouped.length
+  };
+}
+
 // Desktop notifications: the newest comment from someone else that has been
 // seen on each ticket (0: none yet).
 function newestFromOthers(ticket) {
@@ -341,7 +385,7 @@ function fetchOutcome(started, current, text) {
 }
 
 if (typeof module !== "undefined") module.exports = {
-  empty, ticketFrom, applySnapshot, known, unread, waiting, section, visible, daysAgo, markRead, markUnread,
+  empty, ticketFrom, applySnapshot, known, unread, waiting, section, visible, overview, daysAgo, markRead, markUnread,
   markReadUpTo, markAllRead, restore, parseReadState, serializeReadState, host, ticketUrl, newestFromOthers, notices,
   arrivals, parseAction, notificationText, fetchOutcome
 };

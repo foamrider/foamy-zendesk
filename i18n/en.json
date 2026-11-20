@@ -207,5 +207,48 @@
   "Kept only until the shell restarts.": "Kept only until the shell restarts.",
   "Showing the 100 most recently updated tickets": "Showing the 100 most recently updated tickets",
   "Showing unassigned tickets from your first 20 groups": "Showing unassigned tickets from your first 20 groups",
-  "Can't open the browser": "Can't open the browser"
+  "Can't open the browser": "Can't open the browser",
+  "Hide ticket": "Hide ticket",
+  "Show ticket": "Show ticket",
+  "From %1": "From %1",
+  "New comments": "New comments",
+  "Earlier comments": "Earlier comments",
+  "Internal note": "Internal note",
+  "No comments to show": "No comments to show",
+  "Earlier comments are in Zendesk": "Earlier comments are in Zendesk",
+  "Unread": "Unread",
+  "Waiting for a reply": "Waiting for a reply",
+  "Nobody is waiting for a reply": "Nobody is waiting for a reply",
+  "By group": "By group",
+  "No group": "No group",
+  "Panel": "Panel",
+  "Size": "Size",
+  "Small": "Small",
+  "Wide": "Wide",
+  "%1 hours": {
+    "one": "%1 hour",
+    "other": "%1 hours"
+  },
+  "%1 days": {
+    "one": "%1 day",
+    "other": "%1 days"
+  },
+  "%1 updates waiting — close the ticket to show": {
+    "one": "%1 update waiting — close the ticket to show",
+    "other": "%1 updates waiting — close the ticket to show"
+  },
+  "%1 more waiting": {
+    "one": "%1 more waiting",
+    "other": "%1 more waiting"
+  },
+  "%1 more groups": {
+    "one": "%1 more group",
+    "other": "%1 more groups"
+  },
+  "Comments haven't loaded yet. Close the ticket to get them with the next update.": "Comments haven't loaded yet. Close the ticket to get them with the next update.",
+  "Newer comments haven't loaded yet. Close the ticket to get them with the next update.": "Newer comments haven't loaded yet. Close the ticket to get them with the next update.",
+  "%1 more may be waiting: their comments haven't loaded yet": {
+    "one": "%1 more may be waiting: its comments haven't loaded yet",
+    "other": "%1 more may be waiting: their comments haven't loaded yet"
+  }
 }

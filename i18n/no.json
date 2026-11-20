@@ -207,5 +207,48 @@
   "Kept only until the shell restarts.": "Beholdes bare til skallet startes på nytt.",
   "Showing the 100 most recently updated tickets": "Viser de 100 sist oppdaterte sakene",
   "Showing unassigned tickets from your first 20 groups": "Viser ikke tildelte saker fra de 20 første gruppene dine",
-  "Can't open the browser": "Kan ikke åpne nettleseren"
+  "Can't open the browser": "Kan ikke åpne nettleseren",
+  "Hide ticket": "Skjul saken",
+  "Show ticket": "Vis saken",
+  "From %1": "Fra %1",
+  "New comments": "Nye kommentarer",
+  "Earlier comments": "Tidligere kommentarer",
+  "Internal note": "Internt notat",
+  "No comments to show": "Ingen kommentarer å vise",
+  "Earlier comments are in Zendesk": "Eldre kommentarer finner du i Zendesk",
+  "Unread": "Ulest",
+  "Waiting for a reply": "Venter på svar",
+  "Nobody is waiting for a reply": "Ingen venter på svar",
+  "By group": "Per gruppe",
+  "No group": "Ingen gruppe",
+  "Panel": "Panel",
+  "Size": "Størrelse",
+  "Small": "Liten",
+  "Wide": "Bred",
+  "%1 hours": {
+    "one": "%1 time",
+    "other": "%1 timer"
+  },
+  "%1 days": {
+    "one": "%1 dag",
+    "other": "%1 dager"
+  },
+  "%1 updates waiting — close the ticket to show": {
+    "one": "%1 oppdatering venter – lukk saken for å vise den",
+    "other": "%1 oppdateringer venter – lukk saken for å vise dem"
+  },
+  "%1 more waiting": {
+    "one": "%1 til venter",
+    "other": "%1 til venter"
+  },
+  "%1 more groups": {
+    "one": "%1 gruppe til",
+    "other": "%1 grupper til"
+  },
+  "Comments haven't loaded yet. Close the ticket to get them with the next update.": "Kommentarene er ikke hentet ennå. Lukk saken for å få dem med neste oppdatering.",
+  "Newer comments haven't loaded yet. Close the ticket to get them with the next update.": "Nyere kommentarer er ikke hentet ennå. Lukk saken for å få dem med neste oppdatering.",
+  "%1 more may be waiting: their comments haven't loaded yet": {
+    "one": "%1 til kan vente: kommentarene er ikke hentet ennå",
+    "other": "%1 til kan vente: kommentarene er ikke hentet ennå"
+  }
 }

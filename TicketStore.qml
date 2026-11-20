@@ -105,6 +105,11 @@ QtObject {
   property int firstWaitingIndex: -1
   property int waitingCount: 0
   property int unreadCount: 0
+  // The Wide panel's overview of the listed tickets (Model.overview).
+  property var overview: Model.overview([])
+  // Counts every sync(), so a binding that looks a ticket up in `tickets`
+  // (the Wide panel's selected ticket) follows moves and changes.
+  property int revision: 0
   signal resetting
   // Listed tickets; unreadCount is what the bar shows.
   readonly property int count: tickets.count
@@ -146,6 +151,8 @@ QtObject {
     if (tickets.count > wanted.length)
       tickets.remove(wanted.length, tickets.count - wanted.length)
     firstWaitingIndex = waitingAt
+    overview = Model.overview(wanted)
+    revision++
   }
 
   // A new inbox from Zendesk (or the tests). Frozen while anyone is reading.

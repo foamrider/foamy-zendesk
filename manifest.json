@@ -18,6 +18,7 @@
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
+      "panelWidth": "standard",
       "hideRead": false,
       "unreadFirst": false,
       "groupWaiting": true,
@@ -37,6 +38,16 @@
       "refreshSeconds": 60
     },
     "schema": [
+      {
+        "key": "panelWidth",
+        "type": "enum",
+        "label": "Size",
+        "defaultValue": "standard",
+        "options": [
+          "standard",
+          "wide"
+        ]
+      },
       {
         "key": "hideRead",
         "type": "boolean",

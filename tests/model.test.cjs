@@ -107,6 +107,56 @@ test('your tickets come first, then unassigned ones, then waiting ones; heads ma
   assert.deepEqual(Model.visible(unassigned).map(t => t.sectionHead), ['unassigned']);
 });
 
+test('the Wide overview counts the sections and lists who waits for a reply, longest first', () => {
+  const list = Fixtures.tickets().concat([
+    { id: '4807', subject: 'Teams calls drop', status: 'New', priority: 'Normal', assignee: 'Alex', mine: true,
+      group: 'Workplace', requester: 'Sofie', updated_at: '2026-11-02T08:00:00Z',
+      comments: [{ id: 48071, author: 'Sofie', mine: false, public: true, created: Date.parse('2026-11-02T08:00:00Z'), body: 'Calls drop' }] },
+    { id: '4802', subject: 'Shared mailbox', status: 'On-hold', priority: 'Normal', assignee: 'Alex', mine: true,
+      group: '', requester: 'Kari', updated_at: '2026-11-01T08:00:00Z',
+      comments: [{ id: 48021, author: 'Kari', mine: false, public: true, created: Date.parse('2026-11-01T08:00:00Z'), body: 'Missing' }] }]);
+  const state = seeded(list);
+  Model.markRead(state, '4818');
+  Model.markRead(state, '4802');
+  const view = Model.overview(Model.visible(state, { groupWaiting: true }));
+  assert.deepEqual([view.unread, view.mine, view.unassigned, view.waiting], [3, 2, 1, 2]);
+  // On-hold and Pending tickets wait on others, not on you; #4821 has Anna's reply after Alex's.
+  assert.deepEqual(view.awaiting.map(item => item.id), ['4807', '4824', '4821']);
+  assert.deepEqual(plain(view.awaiting[1]), { id: '4824', subject: 'Meeting room display is blank', status: 'New', sender: 'Maria',
+    unassigned: true, received: Fixtures.BASE - 26 * 3600000 });
+  assert.deepEqual(plain(view.groups), [{ name: 'IT support', mine: 2, unassigned: 0 }, { name: '', mine: 1, unassigned: 0 },
+    { name: 'Facilities', mine: 0, unassigned: 1 }, { name: 'Workplace', mine: 1, unassigned: 0 }]);
+  // Your own reply last: nobody waits on you.
+  const replied = seeded([Object.assign(Fixtures.tickets()[0], { comments: Fixtures.tickets()[0].comments.slice(1) })]);
+  assert.deepEqual(Model.overview(Model.visible(replied)).awaiting, []);
+  assert.deepEqual(plain(Model.overview([])), { unread: 0, mine: 0, unassigned: 0, waiting: 0, awaiting: [], awaitingMore: 0, unknown: 0, groups: [], groupsMore: 0 });
+});
+
+test('the overview leaves out tickets whose comments have not come; group names are plain keys', () => {
+  const list = Fixtures.tickets();
+  // #4824's comments were deferred by the helper: who wrote last is unknown.
+  delete list[2].comments;
+  list[2].deferred = true;
+  list[0].group = 'constructor';
+  list[1].group = '__proto__';
+  const view = Model.overview(Model.visible(seeded(list)));
+  assert.deepEqual(view.awaiting.map(item => item.id), ['4821']);
+  assert.equal(view.unknown, 1, 'the deferred New ticket may be waiting');
+  assert.deepEqual(plain(view.groups), [{ name: '__proto__', mine: 1, unassigned: 0 }, { name: 'constructor', mine: 1, unassigned: 0 },
+    { name: 'Facilities', mine: 0, unassigned: 1 }]);
+  assert.equal(Object.prototype.mine, undefined);
+});
+
+test('the overview shows at most five waiting tickets and five groups, and counts the rest', () => {
+  const many = Array.from({ length: 7 }, (_, i) => ({ id: String(5000 + i), subject: 'Ticket ' + i, status: 'Open', priority: 'Normal',
+    assignee: '', unassigned: true, mine: false, group: 'Group ' + i, requester: 'Ola', updated_at: `2026-11-0${i + 1}T08:00:00Z`,
+    comments: [{ id: 50000 + i, author: 'Ola', mine: false, public: true, created: Date.parse(`2026-11-0${i + 1}T08:00:00Z`), body: 'Hi' }] }));
+  const view = Model.overview(Model.visible(seeded(many)));
+  assert.deepEqual(view.awaiting.map(item => item.id), ['5000', '5001', '5002', '5003', '5004']);
+  assert.deepEqual(view.groups.map(group => group.name), ['Group 0', 'Group 1', 'Group 2', 'Group 3', 'Group 4']);
+  assert.deepEqual([view.awaitingMore, view.groupsMore], [2, 2], 'what the lists leave out is counted');
+});
+
 test('the latest comment says whether it is your own; days count calendar days', () => {
   const list = Fixtures.tickets();
   list[0].comments = list[0].comments.slice(1);

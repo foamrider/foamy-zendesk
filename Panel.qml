@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import qs.Commons
 import qs.Commons as Commons
@@ -19,6 +20,13 @@ Ui.Panel {
   implicitHeight: button.implicitHeight
   // Outside the schedule the widget dims, or hides unless its popup is open.
   visible: opened || TicketStore.withinSchedule || prefs.value("scheduleOutsideMode") !== "hide"
+  // Wide is 880 by 640 (the list and the reading pane), where this bar's
+  // screen has room for its width; elsewhere, and with the setting on Small,
+  // the standard 420 and as tall as the inbox. Wide keeps its size whatever
+  // the view shows (a ticket, the overview, Settings); the card still caps
+  // the height to the screen.
+  readonly property int wideWidth: Style.space(880)
+  readonly property bool wide: prefs.value("panelWidth") === "wide" && root.popup.fittedContentWidth(wideWidth) >= wideWidth
 
   FoamyPrefsQueue {
     id: prefs
@@ -166,9 +174,12 @@ Ui.Panel {
     bar: root.bar
     owner: root
     open: root.opened
+    contentWidth: fittedContentWidth(root.wide ? root.wideWidth : FoamyStyle.popupWidth)
+    contentHeight: fittedContentHeight(Math.max(root.wide ? FoamyStyle.popupMaxHeight : bodyImplicitHeight, menuReserve), maxHeight)
     body: Component {
       InboxView {
         active: root.opened
+        wide: root.wide
         preferences: prefs.effectiveSettings
         saving: prefs.busy
         settingsError: prefs.error !== "" ? FoamyI18n.t(prefs.error) : ""
