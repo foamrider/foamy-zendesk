@@ -1206,6 +1206,23 @@ ShellRoot {
     case 60:
       if (!check(one.popup.contentWidth === one.popup.fittedContentWidth(Kit.FoamyStyle.popupWidth) && !view.wide && !view.paneShown && view.list.width === view.width
                  && view.repeater.itemAt(0).wide === false, "Small again: 420, the list across the popup")) return;
+      // Zendesk's comment ids exceed an int. A ticket read up to one comment
+      // gets a reply: opened in place, only the reply is new.
+      var big = 31234567890123;
+      var bigTicket = function(comments, updated) {
+        return [{ id: "7001", subject: "Large comment ids", status: "Open", priority: "Normal", assignee: "Alex", mine: true,
+                  group: "IT support", requester: "Ola", updated_at: updated, comments: comments }];
+      };
+      var bigComment = function(id, minutesAgo) {
+        return { id: id, author: "Ola", mine: false, public: true, created: Fixtures.BASE - minutesAgo * 60000, body: "Comment " + id };
+      };
+      store.loadFixtures(bigTicket([bigComment(big, 10)], "2026-11-06T09:30:00Z"));
+      store.markRead("7001");
+      store.receive(bigTicket([bigComment(big + 1, 1), bigComment(big, 10)], "2026-11-06T09:39:00Z"));
+      view.toggleTicket("7001");
+      var bigCard = shell.find(view, "ticket-7001");
+      if (!check(bigCard.expanded && bigCard.openedSince === big && bigCard.historyRepeater.itemAt(0).fresh && !bigCard.historyRepeater.itemAt(1).fresh,
+                 "opened in place, a ticket with large comment ids marks only the reply as new")) return;
       one.close();
       shell.finished = true;
       console.log("FOAMY DONE runtime interactions passed"); Qt.quit();
