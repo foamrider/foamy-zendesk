@@ -1,4 +1,4 @@
-// foamy-kit 0.9.0 f086c00ed761a46bea42c7ff4e69cb7a0558d6b5c8c26794f95bf0d96de2a316 — do not edit; change foamy-kit and run sync
+// foamy-kit 0.13.0 f086c00ed761a46bea42c7ff4e69cb7a0558d6b5c8c26794f95bf0d96de2a316 — do not edit; change foamy-kit and run sync
 //! JSON lines: one compact JSON value per `\n`-terminated line, and
 //! [`run`], the entry point that prints JSON for every outcome (success,
 //! failure and panic) so the QML side always gets a reply it can parse.
