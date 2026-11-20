@@ -49,8 +49,9 @@ Item {
   // The earlier comments are listed too (each still clipped).
   property bool showEarlier: false
   // What was unread when the ticket opened: opening marks it read, but the
-  // timeline keeps showing those comments as new until it closes.
-  property int openedSince: 0
+  // timeline keeps showing those comments as new until it closes. A comment
+  // id: Zendesk's exceed an int.
+  property double openedSince: 0
   property int openedUpdates: 0
   onExpandedChanged: {
     if (expanded) {
