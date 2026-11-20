@@ -246,5 +246,9 @@
     "other": "%1 grupper til"
   },
   "Comments haven't loaded yet. Close the ticket to get them with the next update.": "Kommentarene er ikke hentet ennå. Lukk saken for å få dem med neste oppdatering.",
-  "Newer comments haven't loaded yet. Close the ticket to get them with the next update.": "Nyere kommentarer er ikke hentet ennå. Lukk saken for å få dem med neste oppdatering."
+  "Newer comments haven't loaded yet. Close the ticket to get them with the next update.": "Nyere kommentarer er ikke hentet ennå. Lukk saken for å få dem med neste oppdatering.",
+  "%1 more may be waiting: their comments haven't loaded yet": {
+    "one": "%1 til kan vente: kommentarene er ikke hentet ennå",
+    "other": "%1 til kan vente: kommentarene er ikke hentet ennå"
+  }
 }

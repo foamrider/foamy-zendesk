@@ -1089,7 +1089,7 @@ ShellRoot {
       if (!check(one.popup.contentWidth === one.wideWidth && one.popup.contentHeight === shell.savedY, "showing a ticket keeps the card's size")) return;
       // The pane's read action, from the keyboard: unread again, still shown.
       view.cursor.index = view.paneFirstStop;
-      if (!check(view.pane.readButton.hasCursor && view.cursor.count === view.firstTicketStop + 3 + 2 + 1, "the pane's two actions are cursor stops")) return;
+      if (!check(view.pane.readButton.hasCursor && view.cursor.count === view.firstTicketStop + 3 + 3 + 1, "the pane's two actions and its conversation are cursor stops")) return;
       view.activateRequested();
       if (!check(!store.ticketById("4821").ticket.read && view.pane.readButton.iconName === "check" && view.selected.ticket.id === "4821",
                  "Mark as unread in the pane keeps the ticket shown")) return;
@@ -1118,11 +1118,14 @@ ShellRoot {
       arrival[0].requester = longName;
       arrival[0].group = longName;
       arrival[0].comments[0].author = longName;
+      // A comment taller than the pane, for scrolling it from the keyboard.
+      arrival[0].comments[0].body = Array(80).join("A line of a long comment.\n");
       // And one whose comments the helper deferred: it isn't counted as waiting.
       arrival.push({ id: "4950", subject: "Deferred comments", status: "Open", priority: "Normal", assignee: "Alex", mine: true,
                      group: "IT support", requester: "Ola", updated_at: "2026-11-06T09:00:00Z", deferred: true });
       store.receive(arrival);
-      if (!check(view.overview.awaitingRows.count === 3 && store.ticketById("4950") !== null, "a new ticket waits for a reply too; the deferred one doesn't")) return;
+      if (!check(view.overview.awaitingRows.count === 3 && store.ticketById("4950") !== null && shell.find(view.overview, "awaitingUnknown").visible
+                 && !shell.find(view.overview, "nobodyWaiting").visible, "a new ticket waits for a reply too; the deferred one may, and the overview says so")) return;
       // Keyboard on an overview too short for its rows: the cursor's row scrolls into view.
       var overviewScroll = shell.find(view.overview, "overviewScroll");
       view.overview.anchors.fill = undefined;
@@ -1141,6 +1144,23 @@ ShellRoot {
       view.activateRequested();
       if (!check(view.selected && view.selected.ticket.id === "4902" && view.cursor.index === view.firstTicketStop + view.selected.index,
                  "Enter on the overview's last waiting ticket shows it, the cursor on its row")) return;
+      // The conversation, from the keyboard: Down scrolls it to its end, then
+      // the cursor moves on to Refresh; Up scrolls back to the top, then to View.
+      var conversation = view.pane.conversation;
+      // The Column lays out before the next frame; the keys come after one.
+      view.pane.comments.forceLayout();
+      view.cursor.index = view.conversationStop;
+      if (!check(shell.find(view.pane, "conversationCursor").visible && conversation.contentHeight > conversation.height,
+                 "the cursor rings the conversation, which is taller than the pane")) return;
+      var steps = 0;
+      while (view.cursor.index === view.conversationStop && steps++ < 100) view.moveRequested(0, 1);
+      var bottom = conversation.contentY;
+      if (!check(steps > 2 && Math.abs(bottom - (conversation.contentHeight - conversation.height)) < 1 && view.cursor.index === view.refreshStop,
+                 "Down scrolls the conversation to its end, then moves on")) return;
+      view.moveRequested(0, -1);
+      steps = 0;
+      while (view.cursor.index === view.conversationStop && steps++ < 100) view.moveRequested(0, -1);
+      if (!check(conversation.contentY === 0 && view.cursor.index === view.paneFirstStop + 1, "Up scrolls it back to the top, then moves on")) return;
       // Long names stay inside the pane.
       var facts = shell.find(view.pane, "paneFacts");
       var fitted = facts.children.every(function(item) { return !item.visible || item.width <= facts.width; });

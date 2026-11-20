@@ -39,15 +39,17 @@ PanelKeyCatcher {
   readonly property alias settingsPage: settingsPage
   // Cursor stops in on-screen order: header actions, the empty state's button,
   // three per ticket (body, Mark as read, View in Zendesk), then Refresh.
-  // Wide: one per ticket, then the pane's (its two actions, or the
-  // overview's waiting tickets), then Refresh.
+  // Wide: one per ticket, then the pane's (its two actions and the
+  // conversation, or the overview's waiting tickets), then Refresh.
   readonly property int markAllStop: 0
   // The ⋯ button (Snooze and Settings are in its menu), or the cog.
   readonly property int settingsStop: 1
   readonly property int firstTicketStop: 2
   readonly property int stopsPerTicket: wide ? 1 : 3
   readonly property int paneFirstStop: firstTicketStop + TicketStore.count * stopsPerTicket
-  readonly property int paneStops: !paneShown ? 0 : selected ? 2 : TicketStore.overview.awaiting.length
+  readonly property int paneStops: !paneShown ? 0 : selected ? 3 : TicketStore.overview.awaiting.length
+  // Wide: the stop on the selected ticket's conversation, where Up and Down scroll it.
+  readonly property int conversationStop: paneFirstStop + 2
   readonly property int refreshStop: cursor.count - 1
   // Wide: the list's width while the pane shows (always, unless the inbox is
   // empty: then the empty state takes the whole width).
@@ -264,6 +266,9 @@ PanelKeyCatcher {
   }
   onMoveRequested: function (dx, dy) {
     var direction = dy || dx
+    // On the conversation, Up and Down scroll it; at its end the cursor moves on.
+    if (selected && cursor.index === conversationStop && dy !== 0 && ticketPane.scrollBy(dy))
+      return
     cursor.move(direction)
     // "Mark all as read" is disabled while nothing is unread; the cursor stops at the top.
     if (cursor.index === markAllStop && TicketStore.unreadCount === 0) {
@@ -507,7 +512,7 @@ PanelKeyCatcher {
       ticket: root.selected ? root.selected.ticket : null
       openedSince: root.openedSince
       now: root.fixedNow > 0 ? root.fixedNow : clock.date.getTime()
-      cursorPart: root.selected && cursor.index >= root.paneFirstStop && cursor.index < root.paneFirstStop + 2 ? cursor.index - root.paneFirstStop : -1
+      cursorPart: root.selected && cursor.index >= root.paneFirstStop && cursor.index < root.paneFirstStop + root.paneStops ? cursor.index - root.paneFirstStop : -1
       onHovered: function (part) {
         cursor.hover(root.paneFirstStop + part)
       }

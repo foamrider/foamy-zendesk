@@ -51,7 +51,8 @@ newest first and in full; those that were unread sit under "New comments".
 Click the selected ticket again to close it. With no ticket selected the pane
 shows an overview: the counts of the list's sections, the tickets waiting for
 a reply (New or Open, the latest comment from someone else; the longest wait
-first, amber after an hour and red after four; click one to show it) and the
+first, amber after an hour and red after four; click one to show it; tickets
+whose comments haven't loaded yet are counted as "may be waiting") and the
 tickets per group. Settings keep the same size. Where the screen has no room
 for 880, the popup is the standard size.
 
@@ -198,8 +199,9 @@ Escape closes, and Tab switches shell panels. `r` refreshes, `m` opens the
 ticket under the cursor, then shows one more thing per press (the newest
 clipped comment in full, then the earlier comments), `u` undoes Mark all as read
 and `s` opens settings. In Wide each ticket is one stop, Enter (or `m`)
-selects it, and the pane's two actions, or the overview's waiting tickets,
-come after the list.
+selects it, and the pane's stops come after the list: its two actions and
+the conversation (Up and Down scroll it; at its end the cursor moves on), or
+the overview's waiting tickets.
 
 IPC: `omarchy-shell foamy.zendesk <open|close|toggle|settings|snooze>` (`snooze`
 is the ⋯ menu's snooze entry). A notification uses `show <host>/<ticket id>`
@@ -312,7 +314,7 @@ Mark all as read, hidden read tickets, grouped waiting tickets, signed out,
 loading, failed and offline states, an empty inbox, settings (signed in and
 signed out), the schedule, outside the schedule, a narrow popup, keyboard
 focus and scrolling, and Wide: the overview, a selected ticket, a waiting
-update, keyboard focus on the overview, an empty inbox and settings. Render with `--theme light` to check the light palette.
+update, keyboard focus on the overview and on the conversation, an empty inbox and settings. Render with `--theme light` to check the light palette.
 `FOAMY_KIT` overrides the kit path used by runtime tests (default: a sibling
 `foamy-kit`, else `~/GitHub/Personal/foamy-kit`).
 

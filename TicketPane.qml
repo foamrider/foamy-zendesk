@@ -18,7 +18,8 @@ Item {
   // a comment id, which exceeds an int.
   property double openedSince: 0
   property double now: Date.now()
-  // The keyboard cursor: 0 the read action, 1 View in Zendesk, -1 elsewhere.
+  // The keyboard cursor: 0 the read action, 1 View in Zendesk, 2 the
+  // conversation (Up and Down scroll it: scrollBy), -1 elsewhere.
   property int cursorPart: -1
   signal hovered(int part)
   signal readToggleRequested
@@ -43,6 +44,16 @@ Item {
   }
   readonly property bool flagged: !!ticket && (ticket.priority === "Urgent" || ticket.priority === "High")
   onTicketIdChanged: conversationList.contentY = 0
+  // One keyboard step (a wheel notch) up or down the conversation. False at
+  // its end, so the cursor moves on instead.
+  function scrollBy(direction) {
+    var end = Math.max(0, conversationList.contentHeight - conversationList.height)
+    var target = Math.max(0, Math.min(end, conversationList.contentY + direction * conversationWheel.notch))
+    if (Math.abs(target - conversationList.contentY) < 0.5)
+      return false
+    conversationList.contentY = target
+    return true
+  }
 
   function format(ms, fmt) {
     return new Date(ms).toLocaleString(Qt.locale(FoamyI18n.formatLocale), fmt)
@@ -215,7 +226,20 @@ Item {
       policy: Controls.ScrollBar.AsNeeded
     }
     FoamyWheelScroll {
+      id: conversationWheel
       target: conversationList
+    }
+    // The keyboard cursor on the conversation: an accent ring inside its edge.
+    Rectangle {
+      objectName: "conversationCursor"
+      parent: conversationList
+      anchors.fill: parent
+      anchors.margins: FoamyStyle.gapSmall
+      visible: pane.cursorPart === 2
+      color: "transparent"
+      radius: FoamyStyle.radius
+      border.width: 2
+      border.color: Qt.alpha(FoamyPalette.accent, 0.6)
     }
     Column {
       id: comments

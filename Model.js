@@ -167,7 +167,8 @@ function visible(state, options) {
 // someone else; the longest wait first) and the tickets per group, yours and
 // unassigned (the most first). The view dates the waits against its clock.
 // A ticket whose comments haven't come (`loaded` false: the helper deferred
-// them) has no known latest author, so it isn't counted as waiting. The lists
+// them) has no known latest author, so it isn't counted as waiting:
+// `unknown` counts the New and Open ones, which may be waiting. The lists
 // are cut at five; `awaitingMore` and `groupsMore` count what was left out.
 var MAX_AWAITING = 5
 var MAX_OVERVIEW_GROUPS = 5
@@ -183,9 +184,8 @@ function overview(list) {
     if (ticket.mine) group.mine += 1;
     else if (ticket.unassigned) group.unassigned += 1;
   }
-  var waitingAll = list.filter(function(item) {
-    return item.loaded && AWAITING_STATUSES.indexOf(item.status) >= 0 && !item.senderMine;
-  });
+  var open = list.filter(function(item) { return AWAITING_STATUSES.indexOf(item.status) >= 0; });
+  var waitingAll = open.filter(function(item) { return item.loaded && !item.senderMine; });
   var awaiting = waitingAll.sort(function(a, b) {
     return a.received - b.received || a.id.localeCompare(b.id);
   }).slice(0, MAX_AWAITING).map(function(item) {
@@ -201,6 +201,7 @@ function overview(list) {
     unread: list.filter(function(item) { return !item.read; }).length,
     mine: counts.mine, unassigned: counts.unassigned, waiting: counts.waiting,
     awaiting: awaiting, awaitingMore: waitingAll.length - awaiting.length,
+    unknown: open.filter(function(item) { return !item.loaded; }).length,
     groups: grouped, groupsMore: groupsAll.length - grouped.length
   };
 }

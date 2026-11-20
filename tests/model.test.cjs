@@ -129,7 +129,7 @@ test('the Wide overview counts the sections and lists who waits for a reply, lon
   // Your own reply last: nobody waits on you.
   const replied = seeded([Object.assign(Fixtures.tickets()[0], { comments: Fixtures.tickets()[0].comments.slice(1) })]);
   assert.deepEqual(Model.overview(Model.visible(replied)).awaiting, []);
-  assert.deepEqual(plain(Model.overview([])), { unread: 0, mine: 0, unassigned: 0, waiting: 0, awaiting: [], awaitingMore: 0, groups: [], groupsMore: 0 });
+  assert.deepEqual(plain(Model.overview([])), { unread: 0, mine: 0, unassigned: 0, waiting: 0, awaiting: [], awaitingMore: 0, unknown: 0, groups: [], groupsMore: 0 });
 });
 
 test('the overview leaves out tickets whose comments have not come; group names are plain keys', () => {
@@ -141,6 +141,7 @@ test('the overview leaves out tickets whose comments have not come; group names 
   list[1].group = '__proto__';
   const view = Model.overview(Model.visible(seeded(list)));
   assert.deepEqual(view.awaiting.map(item => item.id), ['4821']);
+  assert.equal(view.unknown, 1, 'the deferred New ticket may be waiting');
   assert.deepEqual(plain(view.groups), [{ name: '__proto__', mine: 1, unassigned: 0 }, { name: 'constructor', mine: 1, unassigned: 0 },
     { name: 'Facilities', mine: 0, unassigned: 1 }]);
   assert.equal(Object.prototype.mine, undefined);

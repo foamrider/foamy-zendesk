@@ -246,5 +246,9 @@
     "other": "%1 more groups"
   },
   "Comments haven't loaded yet. Close the ticket to get them with the next update.": "Comments haven't loaded yet. Close the ticket to get them with the next update.",
-  "Newer comments haven't loaded yet. Close the ticket to get them with the next update.": "Newer comments haven't loaded yet. Close the ticket to get them with the next update."
+  "Newer comments haven't loaded yet. Close the ticket to get them with the next update.": "Newer comments haven't loaded yet. Close the ticket to get them with the next update.",
+  "%1 more may be waiting: their comments haven't loaded yet": {
+    "one": "%1 more may be waiting: its comments haven't loaded yet",
+    "other": "%1 more may be waiting: their comments haven't loaded yet"
+  }
 }

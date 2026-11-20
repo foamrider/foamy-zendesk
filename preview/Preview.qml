@@ -8,7 +8,7 @@ Item {
   id: preview
   required property QtObject bar
   required property Item anchorItem
-  property var previewStates: ["tickets", "expanded", "pending", "all-read", "hide-read", "grouped", "grouped-expanded", "signed-out", "loading", "failed", "offline", "empty", "settings", "connection", "schedule", "outside-schedule", "narrow", "narrow-expanded", "focused", "scrolling", "menu", "wide", "wide-ticket", "wide-pending", "wide-focused", "wide-empty", "wide-settings"]
+  property var previewStates: ["tickets", "expanded", "pending", "all-read", "hide-read", "grouped", "grouped-expanded", "signed-out", "loading", "failed", "offline", "empty", "settings", "connection", "schedule", "outside-schedule", "narrow", "narrow-expanded", "focused", "scrolling", "menu", "wide", "wide-ticket", "wide-pending", "wide-focused", "wide-conversation", "wide-empty", "wide-settings"]
   property string previewState: "tickets"
   readonly property var popup: previewPopup
   // Wide: the list and the reading pane (Panel.qml's wideWidth).
@@ -98,7 +98,7 @@ Item {
     // A typical inbox: #4818 (waiting on its requester) was read earlier.
     if (sample && previewState !== "all-read")
       store.markRead("4818")
-    if (previewState === "expanded" || previewState === "pending" || previewState === "narrow-expanded" || previewState === "wide-ticket" || previewState === "wide-pending")
+    if (previewState === "expanded" || previewState === "pending" || previewState === "narrow-expanded" || previewState === "wide-ticket" || previewState === "wide-pending" || previewState === "wide-conversation")
       view.toggleTicket("4821")
     if (previewState === "pending" || previewState === "wide-pending")
       Qt.callLater(function () {
@@ -121,6 +121,9 @@ Item {
     // The overview's first waiting ticket under the keyboard cursor.
     if (previewState === "wide-focused")
       view.cursor.index = view.paneFirstStop
+    // The keyboard cursor on the selected ticket's conversation.
+    if (previewState === "wide-conversation")
+      view.cursor.index = view.conversationStop
     if (previewState === "scrolling")
       Qt.callLater(function () {
         view.list.contentY = 160

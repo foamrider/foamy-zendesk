@@ -17,6 +17,7 @@ Item {
       waiting: 0,
       awaiting: [],
       awaitingMore: 0,
+      unknown: 0,
       groups: [],
       groupsMore: 0
     })
@@ -161,7 +162,8 @@ Item {
         }
         PlainText {
           objectName: "nobodyWaiting"
-          visible: overview.summary.awaiting.length === 0
+          // Only when every ticket's comments are in: else nobody is known to wait.
+          visible: overview.summary.awaiting.length === 0 && overview.summary.unknown === 0
           width: parent.width
           text: FoamyI18n.t("Nobody is waiting for a reply")
           color: FoamyPalette.mutedText
@@ -236,6 +238,15 @@ Item {
           visible: overview.summary.awaitingMore > 0
           width: parent.width
           text: FoamyI18n.tn("%1 more waiting", overview.summary.awaitingMore)
+          color: FoamyPalette.mutedText
+          font.pixelSize: FoamyStyle.font.bodySmall
+        }
+        // Tickets whose comments haven't come may be waiting too.
+        PlainText {
+          objectName: "awaitingUnknown"
+          visible: overview.summary.unknown > 0
+          width: parent.width
+          text: FoamyI18n.tn("%1 more may be waiting: their comments haven't loaded yet", overview.summary.unknown)
           color: FoamyPalette.mutedText
           font.pixelSize: FoamyStyle.font.bodySmall
         }
