@@ -39,6 +39,7 @@ import "plugin" as Plugin
 import "plugin/kit" as Kit
 import "plugin/preview/Fixtures.js" as Fixtures
 import "plugin/Model.js" as Model
+import "plugin/Status.js" as Status
 ShellRoot {
   id: shell
   property int step: 0
@@ -174,6 +175,11 @@ ShellRoot {
     case 50: return [shell.launchedOne, 10000, "the previous account's open ended"];
     case 52: return [function() { return !account.busy && account.error !== ""; }, 10000, "the sign-out finished"];
     case 53: return [checked, 10000, "the first check finished"];
+    case 54: return [function() { return one.wide && !store.hideRead && !account.busy && !store.fetchProcess.running; }, 10000, "Wide was saved"];
+    case 55: return [function() { return one.opened && one.popup.bodyItem.wide; }, 10000, "the Wide popup opened"];
+    case 57: return [shell.launchedOne, 10000, "the pane's View in Zendesk launched"];
+    case 58: return [function() { return store.pendingChanges === 0; }, 10000, "the waiting update came in"];
+    case 60: return [function() { return !one.wide; }, 10000, "Small was saved"];
     }
     return null;
   }
@@ -299,8 +305,8 @@ ShellRoot {
                  "an unread ticket shows its status as a tag in Zendesk's colour, the triangle in the same colour")) return;
       // Light-UI fills: white beats black on Open and Pending (WCAG), black on New.
       var black = Qt.color("#000000"), white = Qt.color("#ffffff");
-      if (!check(Qt.colorEqual(closed.inkOn(Qt.color("#cc3340"), black, white), white) && Qt.colorEqual(closed.inkOn(Qt.color("#1f73b7"), black, white), white)
-                 && Qt.colorEqual(closed.inkOn(Qt.color("#ffa142"), black, white), black),
+      if (!check(Qt.colorEqual(Status.inkOn(Qt.color("#cc3340"), black, white), white) && Qt.colorEqual(Status.inkOn(Qt.color("#1f73b7"), black, white), white)
+                 && Qt.colorEqual(Status.inkOn(Qt.color("#ffa142"), black, white), black),
                  "a status tag's text is the candidate with the higher WCAG contrast")) return;
       if (!check(shell.find(closed, "priorityPill").visible && !shell.find(closed, "linePriority").visible && !shell.find(fresh, "priorityPill").visible
                  && closed.bodyItem.Accessible.name === "VPN disconnects after sign-in, Open, High, unread",
@@ -1046,6 +1052,130 @@ ShellRoot {
       if (!check(account.state === "error" && account.error === shell.lockedKeyring && shell.find(first, "accountTitle").text === "Can't sign in"
                  && shell.find(first, "accountDetail").text === shell.lockedKeyring, "a locked keyring at the first check says so (" + account.state + ": " + account.error + ")")) return;
       view.settingsPage.back();
+      one.close();
+      // Wide: the list and the reading pane.
+      one.prefs.save("hideRead", false);
+      one.prefs.save("panelWidth", "wide");
+      break;
+    case 54:
+      // Once the saved settings have settled (and any check they started), the
+      // sample inbox; fixtures first, so signing in starts no fetch.
+      store.loadFixtures(Fixtures.tickets());
+      account.state = "signed_in";
+      account.user = { name: "Alex", email: "alex@acme.example" };
+      account.error = "";
+      button.triggerPress(Qt.LeftButton);
+      break;
+    case 55:
+      // Nothing selected: the overview beside the list. #4818 is Pending, so
+      // only #4824 (the longest wait) and #4821 wait for a reply.
+      if (!check(one.popup.contentWidth === one.wideWidth && view.list.width === view.listWidth && view.overview.visible && !view.pane.visible
+                 && view.repeater.itemAt(0).wide && !view.repeater.itemAt(0).openButton.visible && !view.repeater.itemAt(0).readButton.visible,
+                 "Wide opens at its width with the overview beside the list, and rows without their own actions")) return;
+      if (!check(view.overview.awaitingRows.count === 2 && store.overview.awaiting.map(function(item) { return item.id; }).join() === "4824,4821"
+                 && view.cursor.count === view.firstTicketStop + 3 + 2 + 1, "the overview lists who waits for a reply, each a cursor stop")) return;
+      shell.savedY = one.popup.contentHeight;
+      // Enter on the first ticket shows it in the pane and marks it read.
+      view.cursor.index = view.firstTicketStop;
+      view.activateRequested();
+      var shown = view.repeater.itemAt(0);
+      if (!check(view.selected && view.selected.ticket.id === "4821" && view.pane.visible && !view.overview.visible
+                 && shown.selected && !shown.expanded && store.ticketById("4821").ticket.read, "Enter shows the ticket in the pane, read, not opened in place")) return;
+      if (!check(shell.find(view.pane, "newDivider").visible && view.pane.lastFresh === 2 && view.pane.comments.children.length >= 4
+                 && Model.MAX_HISTORY === 20 && !shell.find(view.pane, "paneNote").visible,
+                 "the pane shows every comment, the unread ones under New")) return;
+      break;
+    case 56:
+      if (!check(one.popup.contentWidth === one.wideWidth && one.popup.contentHeight === shell.savedY, "showing a ticket keeps the card's size")) return;
+      // The pane's read action, from the keyboard: unread again, still shown.
+      view.cursor.index = view.paneFirstStop;
+      if (!check(view.pane.readButton.hasCursor && view.cursor.count === view.firstTicketStop + 3 + 2 + 1, "the pane's two actions are cursor stops")) return;
+      view.activateRequested();
+      if (!check(!store.ticketById("4821").ticket.read && view.pane.readButton.iconName === "check" && view.selected.ticket.id === "4821",
+                 "Mark as unread in the pane keeps the ticket shown")) return;
+      // An update while a ticket is shown waits, and says how to show it.
+      store.receive(Fixtures.update(1, false));
+      if (!check(store.pendingChanges === 1 && shell.find(view, "statusText").text === "1 update waiting — close the ticket to show",
+                 "an update waits while a ticket is shown")) return;
+      shell.openBase = shell.opened().length;
+      view.cursor.index = view.paneFirstStop + 1;
+      view.activateRequested();
+      break;
+    case 57:
+      if (!check(shell.opened().slice(shell.openBase).join() === "https://" + store.host + "/agent/tickets/4821", "View in Zendesk in the pane opens the ticket")) return;
+      // A click on the shown ticket's row closes it: the overview is back.
+      var selectedRow = view.repeater.itemAt(view.selected.index);
+      ev.mouseClick(selectedRow.bodyItem, selectedRow.bodyItem.width / 3, selectedRow.bodyItem.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
+      if (!check(view.selected === null && view.overview.visible && !view.pane.visible, "a click on the shown ticket closes it")) return;
+      break;
+    case 58:
+      if (!check(store.ticketById("4821").ticket.history.count === 5, "the waiting update came in once the ticket closed")) return;
+      // A click on a waiting ticket in the overview shows it, the cursor on its row.
+      // A new ticket makes three waiting, from a requester with a long name in
+      // a long-named group.
+      var arrival = Fixtures.update(2, true);
+      var longName = Array(40).join("Bergersen-");
+      arrival[0].requester = longName;
+      arrival[0].group = longName;
+      arrival[0].comments[0].author = longName;
+      // And one whose comments the helper deferred: it isn't counted as waiting.
+      arrival.push({ id: "4950", subject: "Deferred comments", status: "Open", priority: "Normal", assignee: "Alex", mine: true,
+                     group: "IT support", requester: "Ola", updated_at: "2026-11-06T09:00:00Z", deferred: true });
+      store.receive(arrival);
+      if (!check(view.overview.awaitingRows.count === 3 && store.ticketById("4950") !== null, "a new ticket waits for a reply too; the deferred one doesn't")) return;
+      // Keyboard on an overview too short for its rows: the cursor's row scrolls into view.
+      var overviewScroll = shell.find(view.overview, "overviewScroll");
+      view.overview.anchors.fill = undefined;
+      view.overview.height = 140;
+      view.cursor.index = view.paneFirstStop - 1;
+      view.moveRequested(0, 1);
+      view.moveRequested(0, 1);
+      view.moveRequested(0, 1);
+      var lastRow = view.overview.awaitingRows.itemAt(2);
+      var rowY = lastRow.mapToItem(overviewScroll.contentItem, 0, 0).y;
+      var revealed = overviewScroll.contentY > 0 && rowY >= overviewScroll.contentY && rowY + lastRow.height <= overviewScroll.contentY + overviewScroll.height;
+      view.overview.anchors.fill = view.overview.parent;
+      if (!check(revealed && view.cursor.index === view.paneFirstStop + 2, "the keyboard scrolls the overview to the waiting ticket under the cursor")) return;
+      // Enter on the last waiting ticket: the selection leaves the pane two
+      // stops, and the cursor lands on the ticket's row.
+      view.activateRequested();
+      if (!check(view.selected && view.selected.ticket.id === "4902" && view.cursor.index === view.firstTicketStop + view.selected.index,
+                 "Enter on the overview's last waiting ticket shows it, the cursor on its row")) return;
+      // Long names stay inside the pane.
+      var facts = shell.find(view.pane, "paneFacts");
+      var fitted = facts.children.every(function(item) { return !item.visible || item.width <= facts.width; });
+      var author = (function named(item) {
+        // The model keeps 256 characters of a name (with "…").
+        if (typeof item.text === "string" && item.text.indexOf("Bergersen-Bergersen-") === 0) return item;
+        for (var child of item.children) { var hit = named(child); if (hit) return hit; }
+        return null;
+      })(shell.find(view.pane, "comment-49002"));
+      if (!check(fitted && author && author.truncated && author.width < view.pane.comments.width, "long names elide inside the pane")) return;
+      // Zendesk's comment ids exceed an int: the marker keeps them whole.
+      view.openedSince = 31234567890123;
+      if (!check(view.pane.openedSince === 31234567890123, "a large comment id survives as the pane's read marker")) return;
+      view.openedSince = 0;
+      // The deferred ticket's comments are missing, not empty.
+      view.toggleTicket("4950");
+      if (!check(view.selected.ticket.id === "4950" && shell.find(view.pane, "paneNote").text === "Comments haven't loaded yet. Close the ticket to get them with the next update.",
+                 "a ticket whose comments haven't come says so")) return;
+      view.toggleTicket("4950");
+      // A click on a waiting ticket shows it too.
+      var waitingRow = shell.find(view.overview, "awaiting-4824");
+      ev.mouseClick(waitingRow, waitingRow.width / 2, waitingRow.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
+      if (!check(view.selected && view.selected.ticket.id === "4824" && view.cursor.index === view.firstTicketStop + view.selected.index,
+                 "a click on a waiting ticket in the overview shows it")) return;
+      view.editingSettings = true;
+      break;
+    case 59:
+      if (!check(one.popup.contentWidth === one.wideWidth && one.popup.contentHeight === shell.savedY && shell.find(view.settingsPage, "panelWidth").value === "wide",
+                 "Settings keep Wide's size")) return;
+      view.settingsPage.back();
+      one.prefs.save("panelWidth", "standard");
+      break;
+    case 60:
+      if (!check(one.popup.contentWidth === one.popup.fittedContentWidth(Kit.FoamyStyle.popupWidth) && !view.wide && !view.paneShown && view.list.width === view.width
+                 && view.repeater.itemAt(0).wide === false, "Small again: 420, the list across the popup")) return;
       one.close();
       shell.finished = true;
       console.log("FOAMY DONE runtime interactions passed"); Qt.quit();

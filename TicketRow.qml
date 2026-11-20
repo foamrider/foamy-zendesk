@@ -1,6 +1,7 @@
 import QtQuick
 import "kit"
 import "Model.js" as Model
+import "Status.js" as Status
 
 // One ticket. Closed: a disclosure triangle in the status colour, the
 // subject, an unread dot, the time and the status tag, the priority (High and
@@ -14,11 +15,17 @@ import "Model.js" as Model
 // place of "Mark as read". `compact` (read tickets) is one line: subject,
 // priority, sender, time and actions, with the status shown only by the
 // triangle's colour; expanding a compact ticket shows it in full.
+// `wide` (the Wide panel's list): never expands; two lines (the subject with
+// the time and status, then the priority, number and sender) without the
+// row's actions or latest comment. The ticket being read is `selected` and
+// shows in the reading pane (TicketPane).
 Item {
   id: ticketRow
   property var ticket
   property bool expanded: false
   property bool compact: false
+  property bool wide: false
+  property bool selected: false
   // Shown above this ticket when it starts a section, e.g. "Waiting on others".
   property string sectionTitle: ""
   property int sectionCount: 0
@@ -72,8 +79,8 @@ Item {
   }
   readonly property bool read: ticket.read === true
   // Read tickets are dimmed, except the one being read.
-  readonly property bool muted: read && !expanded
-  readonly property bool oneLine: compact && !expanded
+  readonly property bool muted: read && !expanded && !selected
+  readonly property bool oneLine: compact && !expanded && !wide
   // The pointer is over the ticket (its actions included).
   readonly property bool pointerOver: rowHover.hovered || readButton.hovered || openButton.hovered
   // "Mark as unread" is an undo: it shows only on hover or under the keyboard
@@ -91,38 +98,11 @@ Item {
   // Only High and Urgent get a priority label; Low and Normal get none.
   readonly property bool flagged: ticket.priority === "Urgent" || ticket.priority === "High"
   readonly property color priorityTone: FoamyPalette.onSurface(ticket.priority === "Urgent" ? FoamyPalette.error : FoamyPalette.warning)
-  // Zendesk's own status colours, as its agent workspace shows them in a dark
-  // and a light UI, so a status reads the same here as in Zendesk. They are
-  // brand colours, not theme colours. Closed is grey like Solved.
-  readonly property var statusNames: ["New", "Open", "Pending", "On-hold", "Solved", "Closed"]
-  readonly property var darkStatusColors: ["#e38215", "#eb5c69", "#2694d6", "#f8f9f9", "#b0b8be", "#b0b8be"] // foamy-lint: allow hex-colour — Zendesk status colours (dark UI)
-  readonly property var lightStatusColors: ["#ffa142", "#cc3340", "#1f73b7", "#23272b", "#87929d", "#87929d"] // foamy-lint: allow hex-colour — Zendesk status colours (light UI)
-  // The helper maps an unknown status to Open; this does the same for a
-  // stored one.
+  // Zendesk's colour for a status, in this theme's mode (Status.js).
   function statusColorOf(status) {
-    var index = statusNames.indexOf(status)
-    return (FoamyPalette.lightTheme ? lightStatusColors : darkStatusColors)[index < 0 ? 1 : index]
+    return Status.color(status, FoamyPalette.lightTheme)
   }
   readonly property color statusColor: statusColorOf(ticket.status)
-  // Text on a status tag: of the two candidates (the popup's text and
-  // background colours), the one that contrasts more with the fill.
-  // WCAG relative luminance on linearised sRGB: FoamyPalette.luminance()
-  // weighs gamma-encoded channels, which picks dark text on Open and Pending
-  // in light themes where light text reads better.
-  function inkOn(fill, first, second) {
-    function linear(channel) {
-      return channel <= 0.04045 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4)
-    }
-    function luminance(c) {
-      return 0.2126 * linear(c.r) + 0.7152 * linear(c.g) + 0.0722 * linear(c.b)
-    }
-    function contrast(a, b) {
-      var la = luminance(a) + 0.05
-      var lb = luminance(b) + 0.05
-      return Math.max(la, lb) / Math.min(la, lb)
-    }
-    return contrast(fill, first) >= contrast(fill, second) ? first : second
-  }
   function format(ms, fmt) {
     return new Date(ms).toLocaleString(Qt.locale(FoamyI18n.formatLocale), fmt)
   }
@@ -148,26 +128,6 @@ Item {
   implicitHeight: column.implicitHeight
   height: implicitHeight
 
-  // A soft pill in `tone` (the priority), or with `solid` a tag filled with
-  // `tone` and lettered in `ink` (the status, as Zendesk shows it).
-  component StatusLabel: Rectangle {
-    required property string text
-    property color tone: FoamyPalette.secondaryText
-    property bool solid: false
-    property color ink: FoamyPalette.text
-    implicitWidth: label.implicitWidth + FoamyStyle.gap * 2
-    implicitHeight: label.implicitHeight + FoamyStyle.gapSmall * 2
-    radius: solid ? FoamyStyle.radiusSmall : FoamyStyle.pillRadius(height)
-    color: solid ? tone : Qt.alpha(tone, 0.10)
-    PlainText {
-      id: label
-      anchors.centerIn: parent
-      text: parent.text
-      color: parent.solid ? parent.ink : parent.tone
-      font.pixelSize: FoamyStyle.font.bodySmall
-      font.weight: parent.solid ? Font.DemiBold : Font.Normal
-    }
-  }
   // A text link in the open ticket ("Show full comment", "Show earlier").
   component MoreLink: FoamyCursorSurface {
     id: link
@@ -264,7 +224,7 @@ Item {
         radius: ticketRow.expanded ? FoamyStyle.bandRadius : FoamyStyle.radius
         bottomLeftRadius: ticketRow.expanded ? 0 : radius
         bottomRightRadius: ticketRow.expanded ? 0 : radius
-        color: ticketRow.expanded ? (hasCursor ? Qt.tint(FoamyPalette.bandFill, fill) : FoamyPalette.bandFill) : (hasCursor ? fill : "transparent")
+        color: ticketRow.expanded ? (hasCursor ? Qt.tint(FoamyPalette.bandFill, fill) : FoamyPalette.bandFill) : ticketRow.selected ? (hasCursor ? Qt.tint(FoamyPalette.selectedFill, fill) : FoamyPalette.selectedFill) : (hasCursor ? fill : "transparent")
         foreground: FoamyPalette.text
         hasCursor: ticketRow.cursorPart === 0
         onHovered: ticketRow.hovered(0)
@@ -275,7 +235,7 @@ Item {
         Accessible.role: Accessible.Button
         // A one-line ticket shows its status only by colour: name it here.
         Accessible.name: ticketRow.ticket.subject + ", " + FoamyI18n.t(ticketRow.ticket.status) + (ticketRow.flagged ? ", " + FoamyI18n.t(ticketRow.ticket.priority) : "") + (ticketRow.read ? "" : ", " + FoamyI18n.t("unread"))
-        Accessible.description: ticketRow.expanded ? FoamyI18n.t("Collapse ticket") : FoamyI18n.t("Expand ticket")
+        Accessible.description: ticketRow.wide ? (ticketRow.selected ? FoamyI18n.t("Hide ticket") : FoamyI18n.t("Show ticket")) : ticketRow.expanded ? FoamyI18n.t("Collapse ticket") : FoamyI18n.t("Expand ticket")
         Accessible.onPressAction: ticketRow.toggleRequested()
       }
 
@@ -313,8 +273,8 @@ Item {
             font.pixelSize: ticketRow.oneLine ? FoamyStyle.font.body : FoamyStyle.font.subtitle
             font.weight: ticketRow.read ? Font.Normal : Font.DemiBold
             color: ticketRow.muted ? FoamyPalette.secondaryText : FoamyPalette.text
-            maximumLineCount: ticketRow.oneLine ? 1 : 2
-            wrapMode: ticketRow.oneLine ? Text.NoWrap : Text.Wrap
+            maximumLineCount: ticketRow.oneLine || ticketRow.wide ? 1 : 2
+            wrapMode: ticketRow.oneLine || ticketRow.wide ? Text.NoWrap : Text.Wrap
             elide: Text.ElideRight
           }
           // Right of the subject, in order: `lead` (the read action, the
@@ -333,6 +293,8 @@ Item {
             // falls after the subject and the status tag stays by View.
             FoamyAction {
               id: readButton
+              // Wide: the reading pane has the ticket's actions.
+              visible: !ticketRow.wide
               anchors.verticalCenter: parent.verticalCenter
               iconName: ticketRow.read ? "undo-dot" : "check"
               tooltipText: ticketRow.read ? FoamyI18n.t("Mark as unread") : FoamyI18n.t("Mark as read")
@@ -377,8 +339,8 @@ Item {
           Row {
             id: trailing
             objectName: "trailing"
-            anchors.right: openButton.left
-            anchors.rightMargin: FoamyStyle.gapSmall
+            anchors.right: openButton.visible ? openButton.left : parent.right
+            anchors.rightMargin: openButton.visible ? FoamyStyle.gapSmall : 0
             anchors.verticalCenter: parent.verticalCenter
             spacing: FoamyStyle.gapSmall
             // Unread, without a rail: a dot by the time.
@@ -411,13 +373,12 @@ Item {
               visible: !ticketRow.oneLine
               anchors.verticalCenter: parent.verticalCenter
               text: FoamyI18n.t(ticketRow.ticket.status)
-              solid: true
-              tone: ticketRow.statusColor
-              ink: ticketRow.inkOn(ticketRow.statusColor, FoamyPalette.text, FoamyPalette.background)
+              status: ticketRow.ticket.status
             }
           }
           FoamyAction {
             id: openButton
+            visible: !ticketRow.wide
             anchors.right: parent.right
             anchors.rightMargin: -FoamyStyle.gapSmall
             anchors.verticalCenter: parent.verticalCenter
@@ -452,7 +413,8 @@ Item {
             leftPadding: priorityPill.visible ? FoamyStyle.gapSmall : 0
             wrapMode: Text.NoWrap
             elide: Text.ElideRight
-            text: "#" + ticketRow.ticket.id + " · " + ticketRow.author(ticketRow.ticket.sender, ticketRow.ticket.senderMine)
+            // Wide has no card footer: an unassigned ticket names its group here.
+            text: "#" + ticketRow.ticket.id + " · " + ticketRow.author(ticketRow.ticket.sender, ticketRow.ticket.senderMine) + (ticketRow.wide && ticketRow.ticket.unassigned && ticketRow.ticket.group ? " · " + ticketRow.ticket.group : "")
             color: FoamyPalette.secondaryText
             font.pixelSize: FoamyStyle.font.bodySmall
           }
@@ -464,12 +426,12 @@ Item {
       Column {
         id: rest
         x: head.x
-        y: head.y + head.height + (ticketRow.expanded ? ticketRow.pad * 2 : (ticketRow.oneLine ? 0 : head.spacing + 2))
+        y: head.y + head.height + (ticketRow.expanded ? ticketRow.pad * 2 : (ticketRow.oneLine || ticketRow.wide ? 0 : head.spacing + 2))
         width: head.width
         spacing: FoamyStyle.gapSmall + 2
         PlainText {
           id: comment
-          visible: !ticketRow.expanded && !ticketRow.oneLine
+          visible: !ticketRow.expanded && !ticketRow.oneLine && !ticketRow.wide
           x: ticketRow.indent
           width: parent.width - x
           text: ticketRow.ticket.body
@@ -583,7 +545,7 @@ Item {
         PlainText {
           id: cardFooter
           objectName: "cardFooter"
-          visible: !ticketRow.oneLine
+          visible: !ticketRow.oneLine && !ticketRow.wide
           x: ticketRow.indent
           width: parent.width - x
           text: (ticketRow.expanded ? ticketRow.when(ticketRow.ticket.received) + "  ·  " : "") + (ticketRow.ticket.mine ? FoamyI18n.t("Assigned to you") : ticketRow.ticket.unassigned ? FoamyI18n.t("Unassigned") : FoamyI18n.t("Assigned to %1", ticketRow.ticket.assignee || "?")) + (ticketRow.ticket.group ? "  ·  " + ticketRow.ticket.group : "")

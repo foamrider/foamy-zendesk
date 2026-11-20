@@ -10,29 +10,8 @@ InboxView.qml: id-shadows-member: Note: Id defined here | id: band
 InboxView.qml: id-shadows-member: Note: Id defined here | id: cursor
 InboxView.qml: id-shadows-member: Note: Id defined here | id: list
 InboxView.qml: id-shadows-member: Note: Id defined here | id: settingsPage
-InboxView.qml: missing-property: Member "expanded" not found on type "QQuickItem" | if (!row.expanded)
-InboxView.qml: missing-property: Member "openButton" not found on type "QQuickItem" | var item = (cursor.index - firstTicketStop) % 3 === 0 ? ticket : ticket.openButton
 InboxView.qml: missing-property: Member "sectionHeader" not found on type "QQuickItem" | var y = row.mapToItem(list.contentItem, 0, 0).y + (row.sectionHeader.visible ? row.sectionHeader.height : 0)
 InboxView.qml: missing-property: Member "sectionHeader" not found on type "QQuickItem" | var y = row.mapToItem(list.contentItem, 0, 0).y + (row.sectionHeader.visible ? row.sectionHeader.height : 0)
-InboxView.qml: missing-property: Member "showMore" not found on type "QQuickItem" | row.showMore()
-InboxView.qml: missing-property: Member "ticket" not found on type "QQuickItem" | toggleTicket(row.ticket.id)
-InboxView.qml: unqualified: Unqualified access | cursor.hover(firstStop + part)
-InboxView.qml: unqualified: Unqualified access | cursorPart: cursor.index >= firstStop && cursor.index < firstStop + 3 ? cursor.index - firstStop : -1
-InboxView.qml: unqualified: Unqualified access | cursorPart: cursor.index >= firstStop && cursor.index < firstStop + 3 ? cursor.index - firstStop : -1
-InboxView.qml: unqualified: Unqualified access | cursorPart: cursor.index >= firstStop && cursor.index < firstStop + 3 ? cursor.index - firstStop : -1
-InboxView.qml: unqualified: Unqualified access | enabled: !root.saving
-InboxView.qml: unqualified: Unqualified access | expanded: root.expandedIds.indexOf(model.id) >= 0
-InboxView.qml: unqualified: Unqualified access | now: root.fixedNow > 0 ? root.fixedNow : clock.date.getTime()
-InboxView.qml: unqualified: Unqualified access | now: root.fixedNow > 0 ? root.fixedNow : clock.date.getTime()
-InboxView.qml: unqualified: Unqualified access | now: root.fixedNow > 0 ? root.fixedNow : clock.date.getTime()
-InboxView.qml: unqualified: Unqualified access | onInvalid: root.saveRequested(modelData, "invalid")
-InboxView.qml: unqualified: Unqualified access | onReadToggleRequested: root.toggleRead(model.id, index)
-InboxView.qml: unqualified: Unqualified access | onToggleRequested: root.toggleTicket(model.id)
-InboxView.qml: unqualified: Unqualified access | readonly property int firstStop: root.firstTicketStop + index * 3
-InboxView.qml: unqualified: Unqualified access | root.saveRequested(modelData, range)
-InboxView.qml: unqualified: Unqualified access | sectionTitle: model.sectionHead ? root.sectionTitles[model.sectionHead] : ""
-InboxView.qml: unqualified: Unqualified access | value: root.pref(modelData)
-InboxView.qml: unqualified: Unqualified access | width: body.width - FoamyStyle.gapLarge * 2
 Panel.qml: id-shadows-member: Id for object FoamyPopup shadows property "popup". Rename one or the other. | var view = popup.ensureBody()
 Panel.qml: id-shadows-member: Id for object FoamyPrefsQueue shadows property "prefs". Rename one or the other. | visible: opened || TicketStore.withinSchedule || prefs.value("scheduleOutsideMode") !== "hide"
 Panel.qml: id-shadows-member: Note: Id defined here | id: popup
@@ -46,16 +25,6 @@ Panel.qml: missing-property: Member "iconSlot" not found on type "QObject" | fix
 Panel.qml: missing-property: Member "urgent" not found on type "QObject" | color: root.bar ? root.bar.urgent : Commons.Color.urgent
 Panel.qml: missing-property: Member "vertical" not found on type "QObject" | fixedWidth: root.bar && root.bar.vertical ? -1 : Math.max(Style.bar.iconSlot, barContent.implicitWidth + Style.bar.iconSlot - Style.bar.iconCanvas)
 Panel.qml: missing-property: Member "vertical" not found on type "QObject" | visible: TicketStore.unreadCount > 0 && TicketStore.withinSchedule && !(root.bar && root.bar.vertical)
-Panel.qml: unqualified: Unqualified access | active: root.opened
-Panel.qml: unqualified: Unqualified access | onCloseView: root.close()
-Panel.qml: unqualified: Unqualified access | onRetryRequested: prefs.retry()
-Panel.qml: unqualified: Unqualified access | preferences: prefs.effectiveSettings
-Panel.qml: unqualified: Unqualified access | prefs.save(key, value)
-Panel.qml: unqualified: Unqualified access | retryable: prefs.canRetry
-Panel.qml: unqualified: Unqualified access | root.switchPanel(direction)
-Panel.qml: unqualified: Unqualified access | saving: prefs.busy
-Panel.qml: unqualified: Unqualified access | settingsError: prefs.error !== "" ? FoamyI18n.t(prefs.error) : ""
-Panel.qml: unqualified: Unqualified access | settingsError: prefs.error !== "" ? FoamyI18n.t(prefs.error) : ""
 TicketRow.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < shownCount; i++) {
 TicketRow.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var item = history.itemAt(i)
 TicketRow.qml: id-shadows-member: Id for object FoamyAction shadows property "openButton". Rename one or the other. | readonly property bool pointerOver: rowHover.hovered || readButton.hovered || openButton.hovered

@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
@@ -22,21 +23,44 @@ PanelKeyCatcher {
   function pref(key) {
     return Prefs.value(Schema.fields, preferences, key)
   }
+  // Wide (Panel.qml): the list on the reading start and a reading pane
+  // beside it, one size whatever is shown. Selecting a ticket (a click or
+  // Enter) shows it in the pane instead of opening it in place; with none
+  // selected the pane shows the overview.
+  property bool wide: false
+  // The open ticket ([id] or []): expanded in place, or (Wide) selected.
   property var expandedIds: []
   readonly property alias list: list
+  readonly property alias pane: ticketPane
+  readonly property alias overview: ticketOverview
   readonly property alias cursor: cursor
   readonly property alias band: band
   readonly property alias repeater: ticketRows
   readonly property alias settingsPage: settingsPage
   // Cursor stops in on-screen order: header actions, the empty state's button,
   // three per ticket (body, Mark as read, View in Zendesk), then Refresh.
+  // Wide: one per ticket, then the pane's (its two actions, or the
+  // overview's waiting tickets), then Refresh.
   readonly property int markAllStop: 0
   // The ⋯ button (Snooze and Settings are in its menu), or the cog.
   readonly property int settingsStop: 1
   readonly property int firstTicketStop: 2
+  readonly property int stopsPerTicket: wide ? 1 : 3
+  readonly property int paneFirstStop: firstTicketStop + TicketStore.count * stopsPerTicket
+  readonly property int paneStops: !paneShown ? 0 : selected ? 2 : TicketStore.overview.awaiting.length
   readonly property int refreshStop: cursor.count - 1
+  // Wide: the list's width while the pane shows (always, unless the inbox is
+  // empty: then the empty state takes the whole width).
+  readonly property int listWidth: Style.space(340)
+  readonly property bool paneShown: wide && TicketStore.count > 0
+  // Wide: the selected ticket ({ index, ticket } in TicketStore.tickets), or null.
+  readonly property var selected: wide && expandedIds.length > 0 && TicketStore.revision >= 0 ? TicketStore.ticketById(expandedIds[0]) : null
+  // The selected ticket's read marker when it was selected, for the pane's
+  // "New". A comment id: Zendesk's exceed an int.
+  property double openedSince: 0
   signal closeView
   signal switchPanel(int direction)
+  // Wide's width and height are Panel.qml's: one size, Settings included.
   implicitWidth: FoamyStyle.popupWidth
   implicitHeight: editingSettings ? settingsPage.implicitHeight : band.implicitHeight + body.implicitHeight + (footer.visible ? footer.implicitHeight : 0)
   // The ⋯ menu takes the keys while it is open.
@@ -48,7 +72,7 @@ PanelKeyCatcher {
   }
   FoamyCursor {
     id: cursor
-    count: root.firstTicketStop + TicketStore.count * 3 + (ZendeskAccount.signedIn ? 1 : 0)
+    count: root.paneFirstStop + root.paneStops + (ZendeskAccount.signedIn ? 1 : 0)
   }
   // Minute ticks for "Updated 3 minutes ago" while the popup is open.
   FoamyWallClock {
@@ -113,11 +137,15 @@ PanelKeyCatcher {
     var found = opening ? TicketStore.ticketById(id) : null
     if (opening && !found)
       return
-    var onTicket = cursor.index >= firstTicketStop && cursor.index < refreshStop
-    var part = onTicket ? (cursor.index - firstTicketStop) % 3 : 0
+    var onTicket = cursor.index >= firstTicketStop && cursor.index < paneFirstStop
+    var part = onTicket ? (cursor.index - firstTicketStop) % stopsPerTicket : 0
+    // Wide, from the overview: read before the selection swaps the pane's stops.
+    var onOverview = wide && !selected && cursor.index >= paneFirstStop && cursor.index < paneFirstStop + paneStops
     // Swap the hold before collapsing the other ticket, so the list re-sorts once.
-    if (opening)
+    if (opening) {
+      openedSince = found.ticket.since
       TicketStore.hold(holdKey, id, found.ticket.read)
+    }
     expandedIds = opening ? [id] : []
     if (opening)
       TicketStore.markRead(id)
@@ -127,8 +155,9 @@ PanelKeyCatcher {
     var now = TicketStore.ticketById(id)
     if (!now)
       return
-    if (onTicket)
-      cursor.index = firstTicketStop + now.index * 3 + part
+    // From the overview the cursor goes to the ticket's row.
+    if (onTicket || onOverview)
+      cursor.index = firstTicketStop + now.index * stopsPerTicket + part
     revealTicket(now.index)
   }
   // Opens the ticket (from a notification), or just shows the inbox when it
@@ -167,7 +196,7 @@ PanelKeyCatcher {
     expandedIds = expandedIds.filter(function (value) {
       return value !== id
     })
-    cursor.index = TicketStore.count ? firstTicketStop + Math.min(index, TicketStore.count - 1) * 3 : settingsStop
+    cursor.index = TicketStore.count ? firstTicketStop + Math.min(index, TicketStore.count - 1) * stopsPerTicket : settingsStop
     root.forceActiveFocus()
   }
   function markAllRead() {
@@ -176,7 +205,7 @@ PanelKeyCatcher {
     TicketStore.markAllRead()
   }
   function ticketIndex() {
-    return Math.floor((cursor.index - firstTicketStop) / 3)
+    return Math.floor((cursor.index - firstTicketStop) / stopsPerTicket)
   }
   function activateCursor() {
     if (cursor.index === markAllStop) {
@@ -194,11 +223,21 @@ PanelKeyCatcher {
       TicketStore.refresh()
       return
     }
+    var paneAt = cursor.index - paneFirstStop
+    if (paneAt >= 0 && paneAt < paneStops) {
+      if (!selected)
+        toggleTicket(TicketStore.overview.awaiting[paneAt].id)
+      else if (paneAt === 0)
+        toggleRead(selected.ticket.id, selected.index)
+      else
+        TicketStore.openTicket(selected.ticket.id)
+      return
+    }
     var index = ticketIndex()
     if (index < 0 || index >= TicketStore.count)
       return
     var id = TicketStore.tickets.get(index).id
-    var part = (cursor.index - firstTicketStop) % 3
+    var part = (cursor.index - firstTicketStop) % stopsPerTicket
     if (part === 0)
       toggleTicket(id)
     else if (part === 1)
@@ -207,10 +246,15 @@ PanelKeyCatcher {
       TicketStore.openTicket(id)
   }
   function reveal() {
-    var ticket = ticketRows.itemAt(ticketIndex())
-    if (!ticket || cursor.index < firstTicketStop)
+    // Wide: the overview's waiting tickets scroll in their own list.
+    if (wide && !selected && cursor.index >= paneFirstStop && cursor.index < paneFirstStop + paneStops) {
+      ticketOverview.revealRow(cursor.index - paneFirstStop)
       return
-    var item = (cursor.index - firstTicketStop) % 3 === 0 ? ticket : ticket.openButton
+    }
+    var ticket = ticketRows.itemAt(ticketIndex()) as TicketRow
+    if (!ticket || cursor.index < firstTicketStop || cursor.index >= paneFirstStop)
+      return
+    var item = (cursor.index - firstTicketStop) % stopsPerTicket === 0 ? ticket : ticket.openButton
     var y = item.mapToItem(list.contentItem, 0, 0).y
     // Tall expanded tickets keep their top in view; actions scroll to the actual button.
     if (y < list.contentY)
@@ -252,14 +296,15 @@ PanelKeyCatcher {
   }
   // The ticket under the cursor opens; once open, each press shows one more
   // thing: the newest clipped comment in full, then the earlier comments.
+  // Wide shows comments in full: `m` only selects.
   function showMore() {
     var index = ticketIndex()
-    var row = cursor.index >= firstTicketStop ? ticketRows.itemAt(index) : null
+    var row = cursor.index >= firstTicketStop && cursor.index < paneFirstStop ? ticketRows.itemAt(index) as TicketRow : null
     if (!row)
       return
-    if (!row.expanded)
+    if (expandedIds.indexOf(row.ticket.id) < 0)
       toggleTicket(row.ticket.id)
-    else
+    else if (!wide)
       row.showMore()
   }
   readonly property var sectionTitles: ({
@@ -315,7 +360,8 @@ PanelKeyCatcher {
     visible: !root.editingSettings
     anchors.top: band.bottom
     anchors.bottom: footer.visible ? footer.top : parent.bottom
-    width: parent.width
+    anchors.left: parent.left
+    width: root.paneShown ? root.listWidth : parent.width
     contentWidth: width
     contentHeight: body.implicitHeight
     clip: true
@@ -400,8 +446,9 @@ PanelKeyCatcher {
         TicketRow {
           required property var model
           required property int index
-          readonly property int firstStop: root.firstTicketStop + index * 3
+          readonly property int firstStop: root.firstTicketStop + index * root.stopsPerTicket
           ticket: model
+          wide: root.wide
           objectName: "ticket-" + model.id
           // Read tickets take one line; unread ones show their latest comment.
           compact: model.read
@@ -410,8 +457,9 @@ PanelKeyCatcher {
           now: root.fixedNow > 0 ? root.fixedNow : clock.date.getTime()
           x: FoamyStyle.gapLarge
           width: body.width - FoamyStyle.gapLarge * 2
-          expanded: root.expandedIds.indexOf(model.id) >= 0
-          cursorPart: cursor.index >= firstStop && cursor.index < firstStop + 3 ? cursor.index - firstStop : -1
+          expanded: !root.wide && root.expandedIds.indexOf(model.id) >= 0
+          selected: root.wide && root.expandedIds.indexOf(model.id) >= 0
+          cursorPart: cursor.index >= firstStop && cursor.index < firstStop + root.stopsPerTicket ? cursor.index - firstStop : -1
           onHovered: function (part) {
             cursor.hover(firstStop + part)
           }
@@ -431,6 +479,55 @@ PanelKeyCatcher {
         text: TicketStore.ticketsTruncated ? FoamyI18n.t("Showing the 100 most recently updated tickets") : TicketStore.groupsTruncated ? FoamyI18n.t("Showing unassigned tickets from your first 20 groups") : ""
         color: FoamyPalette.mutedText
         font.pixelSize: FoamyStyle.font.bodySmall
+      }
+    }
+  }
+  // Wide: the reading pane beside the list.
+  Rectangle {
+    id: paneEdge
+    visible: root.paneShown && !root.editingSettings
+    anchors.left: list.right
+    anchors.top: list.top
+    anchors.bottom: list.bottom
+    width: FoamyStyle.borderWidth
+    color: FoamyPalette.divider
+  }
+  Item {
+    id: paneArea
+    visible: paneEdge.visible
+    anchors.left: paneEdge.right
+    anchors.right: parent.right
+    anchors.top: list.top
+    anchors.bottom: list.bottom
+    TicketPane {
+      id: ticketPane
+      objectName: "ticketPane"
+      anchors.fill: parent
+      visible: root.selected !== null
+      ticket: root.selected ? root.selected.ticket : null
+      openedSince: root.openedSince
+      now: root.fixedNow > 0 ? root.fixedNow : clock.date.getTime()
+      cursorPart: root.selected && cursor.index >= root.paneFirstStop && cursor.index < root.paneFirstStop + 2 ? cursor.index - root.paneFirstStop : -1
+      onHovered: function (part) {
+        cursor.hover(root.paneFirstStop + part)
+      }
+      onReadToggleRequested: root.toggleRead(root.selected.ticket.id, root.selected.index)
+      onOpenRequested: TicketStore.openTicket(root.selected.ticket.id)
+    }
+    TicketOverview {
+      id: ticketOverview
+      objectName: "ticketOverview"
+      anchors.fill: parent
+      visible: root.selected === null
+      summary: TicketStore.overview
+      showWaiting: TicketStore.groupWaiting && !TicketStore.hideRead
+      now: root.fixedNow > 0 ? root.fixedNow : clock.date.getTime()
+      cursorRow: !root.selected && cursor.index >= root.paneFirstStop && cursor.index < root.paneFirstStop + root.paneStops ? cursor.index - root.paneFirstStop : -1
+      onHovered: function (row) {
+        cursor.hover(root.paneFirstStop + row)
+      }
+      onSelectRequested: function (id) {
+        root.toggleTicket(id)
       }
     }
   }
@@ -473,8 +570,9 @@ PanelKeyCatcher {
     visible: !root.editingSettings && statusText.text.length > 0
     anchors.bottom: footer.top
     anchors.bottomMargin: FoamyStyle.gap
-    x: FoamyStyle.gapLarge
-    width: parent.width - FoamyStyle.gapLarge * 2
+    anchors.left: list.left
+    anchors.leftMargin: FoamyStyle.gapLarge
+    width: list.width - FoamyStyle.gapLarge * 2
     height: Math.max(FoamyStyle.rowHeight, statusText.implicitHeight + FoamyStyle.gap * 2)
     radius: FoamyStyle.radiusSmall + 2
     color: Qt.tint(FoamyPalette.background, FoamyPalette.menuFill)
@@ -482,6 +580,7 @@ PanelKeyCatcher {
     border.color: FoamyPalette.border
     PlainText {
       id: statusText
+      objectName: "statusText"
       anchors.left: parent.left
       anchors.leftMargin: FoamyStyle.gapLarge
       anchors.right: undoButton.visible ? undoButton.left : parent.right
@@ -489,7 +588,7 @@ PanelKeyCatcher {
       anchors.verticalCenter: parent.verticalCenter
       font.pixelSize: FoamyStyle.font.bodySmall
       color: FoamyPalette.text
-      text: TicketStore.pendingChanges ? FoamyI18n.tn("%1 updates waiting — collapse tickets to show", TicketStore.pendingChanges) : TicketStore.notice
+      text: !TicketStore.pendingChanges ? TicketStore.notice : root.wide ? FoamyI18n.tn("%1 updates waiting — close the ticket to show", TicketStore.pendingChanges) : FoamyI18n.tn("%1 updates waiting — collapse tickets to show", TicketStore.pendingChanges)
       maximumLineCount: 2
       elide: Text.ElideRight
       Accessible.role: Accessible.StaticText
@@ -529,8 +628,38 @@ PanelKeyCatcher {
     retryable: root.retryable
     onBack: root.editingSettings = false
     onRetry: root.retryRequested()
+    // Wide keeps its size on Settings; the sections keep the standard
+    // settings width, centred.
+    readonly property real columnWidth: FoamyStyle.popupWidthWide - FoamyStyle.padding * 2
     FoamySettingsSection {
-      width: parent.width
+      width: Math.min(parent.width, settingsPage.columnWidth)
+      anchors.horizontalCenter: parent.horizontalCenter
+      title: FoamyI18n.t("Panel")
+      FoamyDropdown {
+        objectName: "panelWidth"
+        width: parent.width
+        compact: true
+        label: FoamyI18n.t("Size")
+        value: root.pref("panelWidth")
+        enabled: !root.saving
+        options: [
+          {
+            value: "standard",
+            label: FoamyI18n.t("Small")
+          },
+          {
+            value: "wide",
+            label: FoamyI18n.t("Wide")
+          }
+        ]
+        onChanged: function (value) {
+          root.saveRequested("panelWidth", value)
+        }
+      }
+    }
+    FoamySettingsSection {
+      width: Math.min(parent.width, settingsPage.columnWidth)
+      anchors.horizontalCenter: parent.horizontalCenter
       title: FoamyI18n.t("Read tickets")
       description: FoamyI18n.t("Read state stays on this computer; nothing changes in Zendesk.")
       FoamyToggle {
@@ -562,7 +691,8 @@ PanelKeyCatcher {
     }
 
     FoamySettingsSection {
-      width: parent.width
+      width: Math.min(parent.width, settingsPage.columnWidth)
+      anchors.horizontalCenter: parent.horizontalCenter
       title: FoamyI18n.t("Notifications")
       description: FoamyI18n.t("A desktop notification for a new ticket or a new reply from someone else. None while this inbox is open, outside your schedule or while snoozed.")
       FoamyDropdown {
@@ -603,7 +733,8 @@ PanelKeyCatcher {
     }
     FoamySettingsSection {
       id: scheduleSection
-      width: parent.width
+      width: Math.min(parent.width, settingsPage.columnWidth)
+      anchors.horizontalCenter: parent.horizontalCenter
       title: FoamyI18n.t("Schedule")
       description: settingsPage.scheduleOn ? FoamyI18n.t("Local time. Turn a day off to skip it. Overnight ranges are supported.") : ""
       FoamyToggle {
@@ -690,7 +821,8 @@ PanelKeyCatcher {
     FoamySettingsSection {
       id: zendeskSection
       objectName: "zendeskSection"
-      width: parent.width
+      width: Math.min(parent.width, settingsPage.columnWidth)
+      anchors.horizontalCenter: parent.horizontalCenter
       title: "Zendesk"
       description: ZendeskAccount.signedIn ? "" : FoamyI18n.t("Sign in with your Zendesk account. The sign-in is kept in your keyring.")
       info: FoamyI18n.t("A Zendesk admin creates the OAuth client once, in Admin Center › Apps and integrations › APIs › OAuth clients: kind Public, redirect URL %1, read access. Enter its unique identifier as the OAuth client ID.", [settingsPage.redirectUrl])

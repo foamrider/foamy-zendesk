@@ -4,3 +4,6 @@ InboxView 1.0 InboxView.qml
 TicketRow 1.0 TicketRow.qml
 PlainText 1.0 PlainText.qml
 singleton ZendeskAccount 1.0 ZendeskAccount.qml
+StatusLabel 1.0 StatusLabel.qml
+TicketPane 1.0 TicketPane.qml
+TicketOverview 1.0 TicketOverview.qml

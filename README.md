@@ -41,8 +41,23 @@ too, once `xdg-open` has handed it to your default browser; when that fails
 the ticket stays unread and the notice bar says **Can't open the browser**.
 Nothing in Zendesk changes either way.
 
+**Wide** (Settings › Panel › Size) shows the list and a reading pane side by
+side, at one size (880 by 640, smaller only where the screen is). The list
+rows are two lines without their own buttons. Selecting a ticket (a click or
+Enter) shows it in the pane and marks it read: its subject, **Mark as read**
+or **Mark as unread** and **View in Zendesk** as icons, the requester,
+assignment and group, then every comment the helper fetched (the latest 20),
+newest first and in full; those that were unread sit under "New comments".
+Click the selected ticket again to close it. With no ticket selected the pane
+shows an overview: the counts of the list's sections, the tickets waiting for
+a reply (New or Open, the latest comment from someone else; the longest wait
+first, amber after an hour and red after four; click one to show it) and the
+tickets per group. Settings keep the same size. Where the screen has no room
+for 880, the popup is the standard size.
+
 Settings (in the ⋯ menu, `s`, or right-click the bar icon):
 
+- **Size** (Small): **Wide** adds the reading pane, as above.
 - **Hide read tickets** (off), **Show unread first** (off), and **Group
   waiting tickets** (on): Pending and On-hold tickets you have read move to a
   "Waiting on others" section at the end; a new reply brings them back up.
@@ -182,7 +197,9 @@ their actions in on-screen order, then Refresh. Enter or Space activates,
 Escape closes, and Tab switches shell panels. `r` refreshes, `m` opens the
 ticket under the cursor, then shows one more thing per press (the newest
 clipped comment in full, then the earlier comments), `u` undoes Mark all as read
-and `s` opens settings.
+and `s` opens settings. In Wide each ticket is one stop, Enter (or `m`)
+selects it, and the pane's two actions, or the overview's waiting tickets,
+come after the list.
 
 IPC: `omarchy-shell foamy.zendesk <open|close|toggle|settings|snooze>` (`snooze`
 is the ⋯ menu's snooze entry). A notification uses `show <host>/<ticket id>`
@@ -294,7 +311,8 @@ The preview covers tickets (one read), expanded content, a waiting inbox,
 Mark all as read, hidden read tickets, grouped waiting tickets, signed out,
 loading, failed and offline states, an empty inbox, settings (signed in and
 signed out), the schedule, outside the schedule, a narrow popup, keyboard
-focus and scrolling. Render with `--theme light` to check the light palette.
+focus and scrolling, and Wide: the overview, a selected ticket, a waiting
+update, keyboard focus on the overview, an empty inbox and settings. Render with `--theme light` to check the light palette.
 `FOAMY_KIT` overrides the kit path used by runtime tests (default: a sibling
 `foamy-kit`, else `~/GitHub/Personal/foamy-kit`).
 
