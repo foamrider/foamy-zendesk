@@ -221,9 +221,27 @@ test('a read-state file over the limit keeps the most recently marked tickets', 
   assert.equal(kept['1002'], undefined, 'the least recently marked goes');
 });
 
-test('invalid replies are refused; text stays plain data', () => {
+test('a hostile or broken reply is refused whole, bounded and defaulted', () => {
   assert.throws(() => Model.applySnapshot(Model.empty(), 'nope'));
   assert.throws(() => Model.applySnapshot(Model.empty(), [{ id: '__proto__' }]));
+  // One bad ticket refuses the whole reply: the previous inbox stays.
+  const state = seeded();
+  assert.throws(() => Model.applySnapshot(state, Fixtures.tickets().concat([{ id: '12a' }])));
+  assert.deepEqual(ids(state), ['4821', '4818', '4824']);
+  // Ticket ids have at most 15 digits.
+  assert.throws(() => Model.applySnapshot(Model.empty(), [{ id: '1'.repeat(16) }]));
+  assert.deepEqual(Object.keys(Model.applySnapshot(Model.empty(), [{ id: '1'.repeat(15) }]).tickets), ['1'.repeat(15)]);
+  // At most 200 tickets and 20 comments per ticket are kept.
+  const many = Array.from({ length: 201 }, (_, i) => ({ id: String(6000 + i) }));
+  assert.equal(Object.keys(Model.applySnapshot(Model.empty(), many).tickets).length, 200);
+  const c = (id, created) => ({ id, author: 'Ola', mine: false, public: true, created, body: 'Hi' });
+  const long = Model.ticketFrom({ id: '1', comments: Array.from({ length: 25 }, (_, i) => c(100 - i, 1)) });
+  assert.equal(long.history.length, 20);
+  // Comments with an id or time that is not a safe integer are dropped.
+  assert.deepEqual(Model.ticketFrom({ id: '2', comments: [c(1.5, 1), c(7, 'x'), c(2 ** 53, 1), c(9, 1)] }).history.map(h => h.revision), [9]);
+  // Missing fields get defaults.
+  const bare = Model.ticketFrom({ id: '1', comments: [{ id: 1, created: 1 }] });
+  assert.deepEqual([bare.subject, bare.status, bare.priority, bare.sender], ['(no subject)', 'Open', 'Normal', '?']);
   const body = '<img src="https://example.invalid/tracker">\nSecond paragraph';
   const list = Fixtures.tickets();
   list[0].comments[0].body = body;
@@ -283,9 +301,25 @@ test("the helper's truncated flags reach the inbox; anything else is not cut", (
 });
 
 test('ticket links use the configured account only', () => {
-  assert.equal(Model.host('ACME'), 'acme.zendesk.com');
-  assert.equal(Model.host('https://acme.zendesk.com/'), 'acme.zendesk.com');
-  assert.equal(Model.host('evil.com'), '');
+  // The helper normalizes the address the same way: native/src/oauth.rs
+  // addresses_normalize_to_the_zendesk_subdomain holds the same rows. If the
+  // two disagree, the read file and notifications name another host.
+  const hosts = [
+    ['ACME', 'acme.zendesk.com'],
+    ['https://acme.zendesk.com/', 'acme.zendesk.com'],
+    [' Acme ', 'acme.zendesk.com'],
+    ['a'.repeat(63), 'a'.repeat(63) + '.zendesk.com'],
+    ['evil.com', ''],
+    ['acme.zendesk.com.evil.com', ''],
+    ['http://acme.zendesk.com', ''],
+    ['acme/x', ''],
+    ['-acme', ''],
+    ['acme-', ''],
+    ['a'.repeat(64), ''],
+    ['zendesk.com', ''],
+    ['', ''],
+  ];
+  for (const [input, expected] of hosts) assert.equal(Model.host(input), expected, JSON.stringify(input));
   assert.equal(Model.ticketUrl('acme', '4821'), 'https://acme.zendesk.com/agent/tickets/4821');
   assert.equal(Model.ticketUrl('acme', '1/../x'), '');
   assert.equal(Model.ticketUrl('', '1'), '');
@@ -427,12 +461,22 @@ test('notification text is escaped markup on one line', () => {
   assert.equal(Model.notificationText(null, 6), '');
 });
 
-test('settings schema: defaults keep today\'s behaviour and match the manifest', () => {
+test('the settings schema agrees with the manifest; its patterns refuse bad values', () => {
   const manifest = require('../manifest.json');
+  const pick = f => ({ key: f.key, type: f.type, defaultValue: f.defaultValue, options: f.options, min: f.min, max: f.max, step: f.step });
+  assert.deepEqual(plain(manifest.barWidget.schema.map(pick)), plain(Schema.fields.map(pick)));
   const defaults = Object.fromEntries(Schema.fields.map(field => [field.key, field.defaultValue]));
   assert.deepEqual(defaults, manifest.barWidget.defaults);
-  assert.deepEqual(manifest.barWidget.schema.map(field => field.key), Schema.fields.map(field => field.key));
-  assert.equal(Schema.fields.find(field => field.key === 'scheduleOutsideMode').defaultValue, 'mute');
-  for (const value of ['', '08:00-16:00', '22:00-02:00', '00:00-24:00']) assert.match(value, new RegExp(Schema.schedulePattern));
-  for (const value of ['8:00-16:00', '24:00-01:00', '08:00']) assert.doesNotMatch(value, new RegExp(Schema.schedulePattern));
+  const pattern = key => new RegExp(Schema.fields.find(field => field.key === key).pattern);
+  const rows = [
+    [new RegExp(Schema.schedulePattern), ['', '08:00-16:00', '22:00-02:00', '00:00-24:00'], ['8:00-16:00', '24:00-01:00', '08:00']],
+    [new RegExp(Schema.addressPattern), ['', 'acme', 'ACME.zendesk.com', 'https://acme.zendesk.com/'],
+      ['evil.com', 'acme.zendesk.com.evil', 'http://acme', '-acme', 'acme x']],
+    [pattern('oauthClientId'), ['foamy-test', 'a.b_c'], ['a b', 'x'.repeat(129)]],
+    [pattern('oauthPort'), ['', '47823'], ['80a', '123456']],
+  ];
+  for (const [re, accepted, refused] of rows) {
+    for (const value of accepted) assert.match(value, re);
+    for (const value of refused) assert.doesNotMatch(value, re);
+  }
 });
