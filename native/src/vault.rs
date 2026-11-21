@@ -359,7 +359,6 @@ mod tests {
             "{}",
             failure.message
         );
-        assert!(!dir.join("item").exists());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

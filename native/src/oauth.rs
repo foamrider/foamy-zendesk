@@ -211,6 +211,8 @@ mod tests {
         }
         // The longest DNS label is accepted. Model.host in the panel must give
         // the same answers for these rows: both must agree on the host.
+        // tests/model.test.cjs "ticket links use the configured account only"
+        // holds the same rows.
         let longest = "a".repeat(63);
         assert_eq!(
             normalize_address(&longest).unwrap(),
@@ -225,10 +227,12 @@ mod tests {
             "zendesk.com",
             "http://acme.zendesk.com",
             "acme.zendesk.com.evil.com",
+            "evil.com",
             "acme.example.com",
             "ac me",
             "https://evil.com/x.zendesk.com",
             "a/b",
+            "acme/x",
         ] {
             assert_eq!(
                 normalize_address(input).map_err(|failure| failure.code),

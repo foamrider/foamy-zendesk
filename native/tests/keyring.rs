@@ -222,6 +222,21 @@ fn fetch_takes_known_on_stdin_and_names_a_private_read_file() {
         "700",
         "the read state is private"
     );
+    // A read-state directory that others can enter is refused, not used. This
+    // holds under any umask, also one that makes every new directory 0700.
+    let open = dir.0.join("open-state");
+    fs::create_dir_all(open.join("foamy-zendesk")).unwrap();
+    fs::set_permissions(
+        open.join("foamy-zendesk"),
+        fs::Permissions::from_mode(0o755),
+    )
+    .unwrap();
+    let reply = fetch(&open, "{}");
+    assert_eq!(
+        (&reply["ok"], &reply["code"]),
+        (&json!(false), &json!("INTERNAL")),
+        "{reply}"
+    );
 
     // A relative XDG_STATE_HOME is ignored, as the spec says.
     let reply = fetch(Path::new("relative/state"), "{}");
