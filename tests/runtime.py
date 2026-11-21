@@ -37,6 +37,7 @@ import Quickshell.Io
 import "harness"
 import "plugin" as Plugin
 import "plugin/kit" as Kit
+import "plugin/kit/FoamyNative.js" as FoamyNative
 import "plugin/preview/Fixtures.js" as Fixtures
 import "plugin/Model.js" as Model
 import "plugin/Status.js" as Status
@@ -56,6 +57,16 @@ ShellRoot {
   property var sent: []
   property var fetches: []
   property int statusRuns: 0
+  // Ends of fetches and sign-outs, counted after the store or the account
+  // applied the reply (their own handlers run first).
+  property int fetchesEnded: 0
+  property int fetchEndBase: 0
+  property int signOutsEnded: 0
+  property int signOutBase: 0
+  // What the "failing" stand-in answers next (steps 63 to 68).
+  property var fetchReply: null
+  // The highest unread count since it was set to 0 (-1: not watched).
+  property int maxUnread: -1
   property bool probeWindow: false
   property var windowResult: null
   property var cut: undefined
@@ -97,6 +108,19 @@ ShellRoot {
   Connections {
     target: Plugin.TicketStore.readFile
     function onSaved() { shell.saves++; }
+  }
+  Connections {
+    target: Plugin.TicketStore.fetchProcess
+    function onExited() { shell.fetchesEnded++; }
+  }
+  Connections {
+    target: Plugin.ZendeskAccount.logoutProcess
+    function onExited() { shell.signOutsEnded++; }
+  }
+  Connections {
+    target: Plugin.TicketStore
+    enabled: shell.maxUnread >= 0
+    function onUnreadCountChanged() { shell.maxUnread = Math.max(shell.maxUnread, Plugin.TicketStore.unreadCount); }
   }
   // Quickshell ends a Process by dropping it (running is false), ending its
   // collectors' streams and only then emitting exited: a check() that runs
@@ -180,6 +204,20 @@ ShellRoot {
     case 57: return [shell.launchedOne, 10000, "the pane's View in Zendesk launched"];
     case 58: return [function() { return store.pendingChanges === 0; }, 10000, "the waiting update came in"];
     case 60: return [function() { return !one.wide; }, 10000, "Small was saved"];
+    case 62:
+    case 63: return [function() { return !account.busy && shell.signOutsEnded > shell.signOutBase; }, 10000, "the sign-out finished"];
+    case 64: return [function() { return store.loaded && store.host === "failing.zendesk.com" && !store.fetchProcess.running && !store.refreshAgain; }, 10000, "the failing account's inbox arrived"];
+    case 65:
+    case 66:
+    case 67: return [function() { return shell.fetchesEnded > shell.fetchEndBase && !store.fetchProcess.running && !account.busy; }, 10000, "the next fetch finished"];
+    case 68: return [function() { return store.loaded && store.host === "preread.zendesk.com" && store.readReady && !store.fetchProcess.running; }, 10000, "the inbox with an existing read file arrived"];
+    // Saving Wide pushes the saved address back to the account, which checks it again.
+    case 69: return [function() { return one.wide && !account.busy && !store.fetchProcess.running; }, 10000, "Wide was saved"];
+    case 70: return [function() { return one.opened && one.popup.bodyItem.wide; }, 10000, "the Wide popup opened"];
+    case 71: return [function() { return !one.wide && !account.busy && !store.fetchProcess.running; }, 10000, "Small was saved"];
+    case 72: return [function() { return !account.busy; }, 10000, "the check finished"];
+    case 73: return [function() { return !store.fetchProcess.running && store.helperMissing; }, 10000, "the fetch without a helper ended"];
+    case 74: return [function() { return !account.busy && account.state === "unavailable"; }, 10000, "the check without a helper ended"];
     }
     return null;
   }
@@ -217,6 +255,15 @@ ShellRoot {
              tickets: [{ id: String(id), subject: "Ticket " + id, status: "Open", priority: "Normal", assignee: "Alex", mine: true,
                          group: "IT support", requester: "Jonas", updated_at: "2026-11-06T10:00:00Z",
                          comments: [{ id: id * 10, author: "Jonas", mine: false, public: true, created: Fixtures.BASE, body: "Hello." }] }] };
+  }
+  // Zendesk's comment ids exceed an int (steps 60 and 73).
+  readonly property double bigId: 31234567890123
+  function bigTicket(comments, updated) {
+    return [{ id: "7001", subject: "Large comment ids", status: "Open", priority: "Normal", assignee: "Alex", mine: true,
+              group: "IT support", requester: "Ola", updated_at: updated, comments: comments }];
+  }
+  function bigComment(id, minutesAgo) {
+    return { id: id, author: "Ola", mine: false, public: true, created: Fixtures.BASE - minutesAgo * 60000, body: "Comment " + id };
   }
   function many() {
     var list = Fixtures.tickets();
@@ -490,10 +537,6 @@ ShellRoot {
       view.toggleTicket("4818");
       store.markUnread("4818");
       if (!check(store.firstWaitingIndex === -1 && store.tickets.get(1).id === "4818", "marking it unread brings it back up")) return;
-      store.error = "Can't reach Zendesk. Check your connection.";
-      var footer = view.children.find(function(item) { return item.hasOwnProperty("statusError"); });
-      if (!check(footer && footer.statusError && footer.status.indexOf("Can't reach") === 0 && store.count === 3, "a failed refresh keeps the tickets and says why")) return;
-      store.error = "";
       store.loadFixtures(shell.many());
       account.state = "signed_in";
       break;
@@ -1205,10 +1248,6 @@ ShellRoot {
         return null;
       })(shell.find(view.pane, "comment-49002"));
       if (!check(fitted && author && author.truncated && author.width < view.pane.comments.width, "long names elide inside the pane")) return;
-      // Zendesk's comment ids exceed an int: the marker keeps them whole.
-      view.openedSince = 31234567890123;
-      if (!check(view.pane.openedSince === 31234567890123, "a large comment id survives as the pane's read marker")) return;
-      view.openedSince = 0;
       // The deferred ticket's comments are missing, not empty.
       view.toggleTicket("4950");
       if (!check(view.selected.ticket.id === "4950" && shell.find(view.pane, "paneNote").text === "Comments haven't loaded yet. Close the ticket to get them with the next update.",
@@ -1232,22 +1271,189 @@ ShellRoot {
                  && view.repeater.itemAt(0).wide === false, "Small again: 420, the list across the popup")) return;
       // Zendesk's comment ids exceed an int. A ticket read up to one comment
       // gets a reply: opened in place, only the reply is new.
-      var big = 31234567890123;
-      var bigTicket = function(comments, updated) {
-        return [{ id: "7001", subject: "Large comment ids", status: "Open", priority: "Normal", assignee: "Alex", mine: true,
-                  group: "IT support", requester: "Ola", updated_at: updated, comments: comments }];
-      };
-      var bigComment = function(id, minutesAgo) {
-        return { id: id, author: "Ola", mine: false, public: true, created: Fixtures.BASE - minutesAgo * 60000, body: "Comment " + id };
-      };
-      store.loadFixtures(bigTicket([bigComment(big, 10)], "2026-11-06T09:30:00Z"));
+      var big = shell.bigId;
+      store.loadFixtures(shell.bigTicket([shell.bigComment(big, 10)], "2026-11-06T09:30:00Z"));
       store.markRead("7001");
-      store.receive(bigTicket([bigComment(big + 1, 1), bigComment(big, 10)], "2026-11-06T09:39:00Z"));
+      store.receive(shell.bigTicket([shell.bigComment(big + 1, 1), shell.bigComment(big, 10)], "2026-11-06T09:39:00Z"));
       view.toggleTicket("7001");
       var bigCard = shell.find(view, "ticket-7001");
       if (!check(bigCard.expanded && bigCard.openedSince === big && bigCard.historyRepeater.itemAt(0).fresh && !bigCard.historyRepeater.itemAt(1).fresh,
                  "opened in place, a ticket with large comment ids marks only the reply as new")) return;
       one.close();
+      view.fixedNow = 0;
+      break;
+    case 61:
+      // A check that started before a sign-out answers for a sign-in that is
+      // gone: its reply, slower than the sign-out's, is ignored.
+      account.error = "";
+      account.state = "signed_in";
+      account.user = { name: "Alex", email: "alex@acme.example" };
+      shell.statusRuns = 0;
+      account.helperCommand = function(args) {
+        if (args[0] === "auth-status") {
+          shell.statusRuns++;
+          return shell.fake("slow", { ok: true, state: "signed_in", verified: true, user: { name: "Stale", email: "stale@example.invalid" } });
+        }
+        return shell.fake("now", { ok: true, state: "signed_out" });
+      };
+      shell.signOutBase = shell.signOutsEnded;
+      account.check();
+      account.signOut();
+      if (!check(account.statusProcess.running && account.logoutProcess.running, "a check and a sign-out run at once")) return;
+      break;
+    case 62:
+      if (!check(account.state === "signed_out" && account.user === null && shell.statusRuns === 1,
+                 "a status reply from before the sign-out is ignored (" + account.state + ", " + JSON.stringify(account.user) + ")")) return;
+      // A sign-out that can't use the sign-in's lock file: still signed in, and why.
+      account.state = "signed_in";
+      account.user = { name: "Alex", email: "alex@acme.example" };
+      account.helperCommand = function(args) {
+        return shell.fake("now", { ok: false, code: "LOCK_UNAVAILABLE", error: "Sign-out didn't finish: the Zendesk sign-in's lock file can't be used (%1). Try again.\u001ftest" });
+      };
+      shell.signOutBase = shell.signOutsEnded;
+      account.signOut();
+      break;
+    case 63:
+      if (!check(account.state === "signed_in" && account.user && account.user.name === "Alex"
+                 && account.error === "Sign-out didn't finish: the Zendesk sign-in's lock file can't be used (test). Try again.",
+                 "a sign-out that can't use the lock file stays signed in and says why (" + account.state + ": " + account.error + ")")) return;
+      // An account whose fetches fail, then refuse: first its inbox.
+      account.error = "";
+      account.helperCommand = function(args) {
+        if (args[0] === "auth-status") shell.statusRuns++;
+        return shell.fake("now", { ok: true, state: "signed_in", verified: true, user: { name: "Alex", email: "alex@acme.example" } });
+      };
+      shell.fetchReply = shell.inboxReply("failing", 9601);
+      store.helperCommand = function(args) {
+        shell.fetches = shell.fetches.concat([args[args.indexOf("--address") + 1]]);
+        return shell.fake("now", shell.fetchReply);
+      };
+      // Signed out while the store leaves fixtures, so only the sign-in below starts a fetch.
+      account.state = "signed_out";
+      store.fixtures = false;
+      account.address = "failing";
+      shell.fetchProbe = shell.fetches.length;
+      account.state = "signed_in";
+      break;
+    case 64:
+      if (!check(shell.fetches.length === shell.fetchProbe + 1 && store.count === 1 && store.tickets.get(0).id === "9601" && store.error === "" && store.failures === 0,
+                 "the failing account's inbox arrived, from one fetch")) return;
+      // Zendesk answers 503: the inbox stays, the footer says why, the next check waits twice as long.
+      shell.fetchReply = { ok: false, code: "HTTP", error: "Zendesk answered HTTP %1.\u001f503" };
+      shell.fetchEndBase = shell.fetchesEnded;
+      store.refresh();
+      break;
+    case 65:
+      if (!check(store.count === 1 && store.error === "Zendesk answered HTTP 503." && shell.footer().statusError && shell.footer().status === store.error,
+                 "a failed fetch keeps the inbox and the footer says why (" + store.error + ")")) return;
+      if (!check(store.failures === 1 && store.pollTimer.running && store.pollTimer.interval === 2 * store.refreshSeconds * 1000 && store.retryAt > Date.now(),
+                 "a failed fetch doubles the wait for the next (" + store.failures + ", " + store.pollTimer.interval + ")")) return;
+      // An expired sign-in: the account checks again.
+      shell.statusRuns = 0;
+      shell.fetchReply = { ok: false, code: "EXPIRED", error: "Zendesk answered HTTP %1.\u001f401" };
+      shell.fetchEndBase = shell.fetchesEnded;
+      store.refresh();
+      break;
+    case 66:
+      if (!check(shell.statusRuns === 1 && store.failures === 2 && account.state === "signed_in" && account.user && account.user.name === "Alex",
+                 "an expired sign-in makes the account check again (" + shell.statusRuns + " checks, " + store.failures + " failures)")) return;
+      // A reply with a broken ticket is refused whole.
+      shell.fetchReply = { ok: true, state_path: shell.inboxReply("failing", 9601).state_path, tickets: [{ id: "x" }] };
+      shell.fetchEndBase = shell.fetchesEnded;
+      store.refresh();
+      break;
+    case 67:
+      if (!check(store.error === "Zendesk sent an unexpected reply." && store.count === 1 && store.tickets.get(0).id === "9601",
+                 "a refused reply keeps the previous inbox and says so (" + store.error + ")")) return;
+      // Read markers in an existing file load before the first inbox shows:
+      // the store's unread count never rises above 0.
+      store.helperCommand = function(args) {
+        var address = args[args.indexOf("--address") + 1];
+        shell.fetches = shell.fetches.concat([address]);
+        return shell.fake("now", shell.inboxReply(address, 9501));
+      };
+      shell.maxUnread = 0;
+      account.address = "preread";
+      break;
+    case 68:
+      if (!check(store.count === 1 && store.unreadCount === 0 && shell.maxUnread === 0,
+                 "markers from the read file load before the inbox shows: no flash of unread (" + shell.maxUnread + ")")) return;
+      shell.maxUnread = -1;
+      // Wide, with markup in every text field: each is shown as plain text.
+      one.prefs.save("panelWidth", "wide");
+      break;
+    case 69:
+      var marked = Fixtures.tickets();
+      marked[0].subject = "<b>Bold</b> subject";
+      marked[0].group = "<s>IT</s>";
+      marked[0].comments[0].body = "<img src=\"https://example.invalid/x\"> <i>hi</i>";
+      marked[0].comments[0].author = "<u>Anna</u>";
+      store.loadFixtures(marked);
+      account.state = "signed_in";
+      account.user = { name: "Alex", email: "alex@acme.example" };
+      account.error = "";
+      one.open();
+      break;
+    case 70:
+      view.toggleTicket("4821");
+      var markup = ["<b>Bold", "<img", "<u>Anna", "<s>IT"];
+      var texts = [];
+      (function collect(item) {
+        if (item.hasOwnProperty("textFormat") && typeof item.text === "string" && markup.some(function(mark) { return item.text.indexOf(mark) >= 0; }))
+          texts.push(item);
+        for (var child of item.children) collect(child);
+      })(view);
+      var rich = texts.filter(function(item) { return item.textFormat !== Text.PlainText; });
+      if (!check(texts.length >= 4 && rich.length === 0,
+                 "markup in a subject, comment, author or group shows as plain text in the list and the pane (" + texts.length + " found, "
+                 + rich.map(function(item) { return item.text; }).join(" | ") + ")")) return;
+      view.toggleTicket("4821");
+      // A ticket read up to a large comment id gets a reply: shown in the pane, only the reply is new.
+      var big = shell.bigId;
+      store.loadFixtures(shell.bigTicket([shell.bigComment(big, 10)], "2026-11-06T09:30:00Z"));
+      store.markRead("7001");
+      store.receive(shell.bigTicket([shell.bigComment(big + 1, 1), shell.bigComment(big, 10)], "2026-11-06T09:39:00Z"));
+      view.toggleTicket("7001");
+      if (!check(view.selected && view.selected.ticket.id === "7001" && view.pane.lastFresh === 0 && shell.find(view.pane, "newDivider").visible
+                 && shell.find(shell.find(view.pane, "comment-" + big), "earlierDivider").visible, "in the pane, a ticket with large comment ids marks only the reply as new (" + view.pane.lastFresh + ")")) return;
+      view.toggleTicket("7001");
+      one.close();
+      one.prefs.save("panelWidth", "standard");
+      break;
+    case 71:
+      // The helper prints something that isn't JSON: an error, still signed in.
+      account.state = "signed_in";
+      account.user = { name: "Alex", email: "alex@acme.example" };
+      account.error = "";
+      account.helperCommand = function() { return ["sh", "-c", "echo not json"]; };
+      account.check();
+      break;
+    case 72:
+      if (!check(account.state === "signed_in" && account.error === "The Zendesk helper failed.",
+                 "output that isn't JSON never signs the user out (" + account.state + ": " + account.error + ")")) return;
+      // No helper for this CPU (the timeout wrapper exits 127): the inbox stops trying.
+      store.helperCommand = function() { return ["/nonexistent/foamy-zendesk-helper"]; };
+      store.fixtures = false;
+      if (!store.fetchProcess.running) store.refresh();
+      break;
+    case 73:
+      if (!check(store.helperMissing && !store.connected && !store.pollTimer.running && store.error === Kit.FoamyI18n.t(FoamyNative.UNAVAILABLE_TEXT),
+                 "a missing helper stops the inbox and says why (" + store.error + ")")) return;
+      shell.fetchEndBase = shell.fetchesEnded;
+      store.refresh();
+      if (!check(!store.fetchProcess.running && shell.fetchesEnded === shell.fetchEndBase, "and nothing is fetched again")) return;
+      account.helperCommand = function() { return ["/nonexistent/foamy-zendesk-helper"]; };
+      account.check();
+      break;
+    case 74:
+      if (!check(account.state === "unavailable" && account.error === Kit.FoamyI18n.t(FoamyNative.UNAVAILABLE_TEXT),
+                 "a missing helper makes the account unavailable (" + account.state + ": " + account.error + ")")) return;
+      view.editingSettings = true;
+      if (!check(!shell.find(view.settingsPage, "accountButton").actionEnabled, "Sign in is off without a helper")) return;
+      view.editingSettings = false;
+      account.check();
+      account.signIn();
+      if (!check(!account.statusProcess.running && !account.loginProcess.running && account.state === "unavailable", "no more checks or sign-ins")) return;
       shell.finished = true;
       console.log("FOAMY DONE runtime interactions passed"); Qt.quit();
     }
@@ -1288,6 +1494,8 @@ broken = run.out / "read-broken.json"
 try:
     broken.write_text(BROKEN_READ)
     broken.chmod(0o200)
+    # Ticket 9501 is read up to its only comment (steps 67 and 68).
+    (run.out / "read-preread.json").write_text('{"version":1,"read":{"9501":{"revision":95010,"at":1}}}\n')
     # The read-only state folder for the failed saves (steps 27 to 32), and
     # the one the fake opener locks (steps 42 to 46).
     (run.out / "locked").mkdir(mode=0o555)

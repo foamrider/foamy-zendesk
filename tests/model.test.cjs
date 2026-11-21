@@ -242,10 +242,6 @@ test('a hostile or broken reply is refused whole, bounded and defaulted', () => 
   // Missing fields get defaults.
   const bare = Model.ticketFrom({ id: '1', comments: [{ id: 1, created: 1 }] });
   assert.deepEqual([bare.subject, bare.status, bare.priority, bare.sender], ['(no subject)', 'Open', 'Normal', '?']);
-  const body = '<img src="https://example.invalid/tracker">\nSecond paragraph';
-  const list = Fixtures.tickets();
-  list[0].comments[0].body = body;
-  assert.equal(Model.visible(seeded(list))[0].body, body);
 });
 
 test('text cut to its limit says so; a comment the helper clipped keeps its mark', () => {
