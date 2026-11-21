@@ -751,11 +751,13 @@ mod tests {
         }));
         let vault = Memory::default();
         let port = free_port();
+        let mut challenge = String::new();
         let result = account(&base, &vault)
             .login(port, Duration::from_secs(10), |url| {
                 assert!(url.starts_with(&format!("{base}/oauth/authorizations/new?")));
                 assert_eq!(query(url, "code_challenge_method"), "S256");
                 let state = query(url, "state");
+                challenge = query(url, "code_challenge");
                 std::thread::spawn(move || {
                     // A stray request and a stale tab first: both refused, the wait goes on.
                     assert!(browser(port, "/favicon.ico".into()).starts_with("HTTP/1.1 404"));
@@ -783,6 +785,12 @@ mod tests {
         assert!(exchange.get("client_secret").is_none());
         let verifier = exchange["code_verifier"].as_str().unwrap();
         assert_eq!(verifier.len(), 43);
+        // Zendesk refuses the exchange unless the two belong together.
+        assert_eq!(
+            challenge,
+            oauth::challenge(verifier),
+            "the URL's challenge is the S256 of the exchanged verifier"
+        );
         assert_eq!(seen[1].2, "Bearer A1");
         let stored: Value = serde_json::from_str(&vault.get().unwrap().unwrap()).unwrap();
         assert_eq!(
@@ -1063,8 +1071,10 @@ mod tests {
         );
     }
 
-    /// An agent in 25 groups whose own search has more than one page.
-    fn crowded(more_mine: bool, groups: usize) -> (String, Log) {
+    /// An agent in `groups` groups whose own search has 100 results (more
+    /// when `more_mine`); with `extra`, one newer unassigned ticket in the
+    /// first group.
+    fn crowded(more_mine: bool, groups: usize, extra: bool) -> (String, Log) {
         fake(Box::new(move |_, path, _| {
             let path = path.to_string();
             let ticket = |id: u64| {
@@ -1093,6 +1103,13 @@ mod tests {
                         json!({"results": page, "count": 100, "next_page": null}),
                     )
                 }
+            } else if extra && path.contains("assignee%3Anone%20group%3A100&") {
+                (
+                    200,
+                    json!({"results": [{"id": 1000, "result_type": "ticket", "subject": "New", "status": "new",
+                    "assignee_id": null, "group_id": 100, "requester_id": 7, "updated_at": "2026-11-07T00:00:00Z"}],
+                    "count": 1, "next_page": null}),
+                )
             } else if path.contains("assignee%3Anone") {
                 (200, json!({"results": [], "count": 0, "next_page": null}))
             } else if path.contains("/comments.json") {
@@ -1112,29 +1129,47 @@ mod tests {
             .put(&json!({"access_token": "A1"}).to_string())
             .unwrap();
         let none = serde_json::Map::new();
-        for (more_mine, groups, expected) in [
-            (false, 20, json!({"tickets": false, "groups": false})),
-            (true, 20, json!({"tickets": true, "groups": false})),
-            (false, 25, json!({"tickets": false, "groups": true})),
+        // (more_mine, groups, extra, truncated): complete; own search with
+        // more pages; past 20 groups; one page each but 101 in the merged list.
+        for (more_mine, groups, extra, expected) in [
+            (false, 20, false, json!({"tickets": false, "groups": false})),
+            (true, 20, false, json!({"tickets": true, "groups": false})),
+            (false, 25, false, json!({"tickets": false, "groups": true})),
+            (false, 20, true, json!({"tickets": true, "groups": false})),
         ] {
-            let (base, seen) = crowded(more_mine, groups);
+            let row = format!("{more_mine} {groups} {extra}");
+            let (base, seen) = crowded(more_mine, groups, extra);
             let reply = crate::tickets::fetch(&account(&base, &vault), &none).unwrap();
-            assert_eq!(reply["tickets"].as_array().unwrap().len(), 100);
-            assert_eq!(reply["truncated"], expected, "{more_mine} {groups}");
+            let tickets = reply["tickets"].as_array().unwrap();
+            assert_eq!(tickets.len(), 100, "{row}");
+            assert_eq!(reply["truncated"], expected, "{row}");
+            if extra {
+                let ids: Vec<&str> = tickets.iter().map(|t| t["id"].as_str().unwrap()).collect();
+                assert_eq!(ids[0], "1000", "the newest first");
+                // Ticket 60 is the only one updated at minute 00: the oldest.
+                assert!(!ids.contains(&"60"), "the oldest one is the one cut");
+            }
+            let seen = seen.lock().unwrap();
             let searches = seen
-                .lock()
-                .unwrap()
                 .iter()
                 .filter(|request| request.1.contains("assignee%3Anone"))
                 .count();
-            assert_eq!(searches, 20, "at most 20 group searches");
+            assert_eq!(searches, 20, "at most 20 group searches, {row}");
+            let fetches = seen
+                .iter()
+                .filter(|request| request.1.contains("/comments.json"))
+                .count();
+            assert_eq!(fetches, 25, "at most 25 comment fetches per run, {row}");
+            let deferred = tickets.iter().filter(|t| t["deferred"] == true).count();
+            assert_eq!(deferred, 75, "the rest come next run, {row}");
         }
     }
 
     #[test]
     fn one_run_sends_about_8_mb_of_comments_and_defers_the_rest() {
         // Ten changed tickets with 20 comments of 16384 four-byte characters
-        // each: about 1.3 MB of comments per ticket, 13 MB in all.
+        // each: about 1.3 MB of comments per ticket, 13 MB in all. A higher id
+        // is a newer ticket, so only the helper's sort puts ticket 10 first.
         let (base, _) = fake(Box::new(|_, path, _| {
             let path = path.to_string();
             if path == "/api/v2/users/me.json" {
@@ -1144,7 +1179,7 @@ mod tests {
             } else if path.contains("assignee%3Ame") {
                 let page: Vec<Value> = (1..=10u64)
                     .map(|id| json!({"id": id, "result_type": "ticket", "subject": "T", "status": "open", "assignee_id": 7,
-                                     "requester_id": 7, "updated_at": format!("2026-11-06T09:{:02}:00Z", 60 - id)}))
+                                     "requester_id": 7, "updated_at": format!("2026-11-06T09:{:02}:00Z", 40 + id)}))
                     .collect();
                 (200, json!({"results": page, "count": 10}))
             } else if path.contains("/comments.json") {
@@ -1171,7 +1206,7 @@ mod tests {
             .filter(|t| t["comments"].is_array())
             .map(|t| t["id"].as_str().unwrap())
             .collect();
-        assert_eq!(with, ["1", "2", "3", "4", "5", "6"], "the newest first");
+        assert_eq!(with, ["10", "9", "8", "7", "6", "5"], "the newest first");
         assert!(tickets[6..].iter().all(|t| t["deferred"] == true));
         let size = reply.to_string().len();
         assert!(
@@ -1254,6 +1289,31 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(failure.code, "SIGNED_OUT");
+    }
+
+    /// On `EXPIRED` the panel asks for a new sign-in; the other refusals are
+    /// shown as they are.
+    #[test]
+    fn fetch_maps_zendesk_s_refusals_to_codes() {
+        for (status, code) in [
+            (401u16, "EXPIRED"),
+            (403, "FORBIDDEN"),
+            (429, "RATE_LIMITED"),
+            (503, "HTTP"),
+        ] {
+            let (base, _) = fake(Box::new(move |_, _, _| (status, json!({}))));
+            let vault = Memory::default();
+            // No `expires_at`: no renewal, so the first request (users/me) gets the status.
+            vault
+                .put(&json!({"access_token": "A1"}).to_string())
+                .unwrap();
+            let failure = crate::tickets::fetch(&account(&base, &vault), &serde_json::Map::new())
+                .unwrap_err();
+            assert_eq!(failure.code, code, "HTTP {status}");
+            if status == 503 {
+                assert_eq!(failure.message, "Zendesk answered HTTP %1.\u{1f}503");
+            }
+        }
     }
 
     #[test]
@@ -1722,7 +1782,6 @@ mod tests {
                 fetched == "LOCK_UNAVAILABLE" || fetched == "SIGNED_OUT",
                 "{what}: {fetched}"
             );
-            std::thread::sleep(Duration::from_millis(400));
             assert!(
                 vault.get().unwrap().is_none(),
                 "{what}: no sign-in survives"

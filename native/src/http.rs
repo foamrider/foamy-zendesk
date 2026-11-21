@@ -323,4 +323,67 @@ mod tests {
             started.elapsed()
         );
     }
+
+    /// A reply over 4 MB is refused, a redirect comes back as it is (the
+    /// bearer token never follows it elsewhere), and a body that is not JSON
+    /// is `Null`.
+    #[test]
+    fn replies_are_bounded_never_followed_and_json_or_null() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let paths = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&paths);
+        // One connection at a time; every reply closes its connection.
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let mut stream = stream.unwrap();
+                let mut head = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") && stream.read(&mut byte).unwrap_or(0) == 1 {
+                    head.push(byte[0]);
+                }
+                let head = String::from_utf8_lossy(&head).into_owned();
+                let path = head.split(' ').nth(1).unwrap_or("").to_string();
+                seen.lock().unwrap().push(path.clone());
+                match path.as_str() {
+                    "/big" => {
+                        let _ = stream.write_all(
+                            b"HTTP/1.1 200 OK\r\nContent-Length: 10000000\r\nConnection: close\r\n\r\n",
+                        );
+                        // Until the client gives up reading.
+                        let chunk = vec![b' '; 64 * 1024];
+                        while stream.write_all(&chunk).is_ok() {}
+                    }
+                    "/moved" => {
+                        let _ = stream.write_all(
+                            b"HTTP/1.1 302 Found\r\nLocation: /elsewhere\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                        );
+                    }
+                    _ => {
+                        let _ = stream.write_all(
+                            b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\nConnection: close\r\n\r\nnot json",
+                        );
+                    }
+                }
+            }
+        });
+        let client = Client::new(base, Duration::from_secs(5));
+        let big = client.request("GET", "/big", None, None);
+        let failure = big.expect_err("a reply over 4 MB is refused");
+        assert_eq!(
+            (failure.code.as_str(), failure.message.as_str()),
+            ("HTTP", "Zendesk sent an oversized reply.")
+        );
+        let moved = client.request("GET", "/moved", Some("A1"), None).unwrap();
+        assert_eq!(moved.status, 302, "the redirect comes back, not followed");
+        let plain = client.request("GET", "/plain", None, None).unwrap();
+        assert_eq!(
+            (plain.status, plain.body),
+            (200, Value::Null),
+            "a body that is not JSON"
+        );
+        // `/plain` was asked after `/moved` returned, so a followed redirect
+        // would be in the list by now.
+        assert_eq!(*paths.lock().unwrap(), ["/big", "/moved", "/plain"]);
+    }
 }

@@ -3,15 +3,19 @@
 //! stand-in `secret-tool` (fake-secret-tool.sh), then with a real
 //! gnome-keyring in a private D-Bus session of its own (real-keyring.sh;
 //! skipped without dbus-run-session, gnome-keyring-daemon or secret-tool).
-//! Zendesk is a closed loopback port: nothing leaves the machine.
+//! Zendesk is a closed loopback port: nothing leaves the machine. `fetch`
+//! runs the same way against a loopback Zendesk: `known` on stdin and the
+//! private read-state path.
 
 use std::fs;
+use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
 
-use serde_json::Value;
+use serde_json::{Value, json};
 
 const HELPER: &str = env!("CARGO_BIN_EXE_foamy-zendesk-helper");
 
@@ -66,13 +70,19 @@ fn last_reply(stdout: &[u8]) -> Value {
     serde_json::from_str(text.lines().last().unwrap_or("")).unwrap_or(Value::Null)
 }
 
-#[test]
-fn sign_out_with_a_locked_keyring_keeps_the_sign_in_and_says_so() {
-    let dir = Dir::new("fake");
+/// The stand-in `secret-tool` in `dir/bin`, which also holds its state.
+fn fake_secret_tool(dir: &Dir) -> PathBuf {
     let bin = dir.0.join("bin");
     let tool = bin.join("secret-tool");
     fs::write(&tool, include_str!("fake-secret-tool.sh")).unwrap();
     fs::set_permissions(&tool, fs::Permissions::from_mode(0o700)).unwrap();
+    bin
+}
+
+#[test]
+fn sign_out_with_a_locked_keyring_keeps_the_sign_in_and_says_so() {
+    let dir = Dir::new("fake");
+    let bin = fake_secret_tool(&dir);
     let run = |command: &str| {
         let mut helper = Command::new(HELPER);
         helper.args([command, "--address", "acme", "--client-id", "foamy"]);
@@ -98,6 +108,132 @@ fn sign_out_with_a_locked_keyring_keeps_the_sign_in_and_says_so() {
     assert_eq!(run("auth-logout")["state"], "signed_out");
     assert!(!bin.join("item").exists());
     assert_eq!(run("auth-status")["state"], "signed_out");
+}
+
+/// A Zendesk on loopback with one ticket (5, by Maria, assigned to Alex)
+/// and its one comment, recording each request's path. One connection at a
+/// time; every reply closes its connection.
+fn zendesk() -> (String, Arc<Mutex<Vec<String>>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let paths = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&paths);
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let mut stream = stream.unwrap();
+            let mut head = Vec::new();
+            let mut byte = [0u8; 1];
+            while !head.ends_with(b"\r\n\r\n") && stream.read(&mut byte).unwrap_or(0) == 1 {
+                head.push(byte[0]);
+            }
+            let head = String::from_utf8_lossy(&head).into_owned();
+            let path = head.split(' ').nth(1).unwrap_or("").to_string();
+            let body = if path == "/api/v2/users/me.json" {
+                json!({"user": {"id": 7, "name": "Alex"}})
+            } else if path.contains("groups.json") {
+                json!({"groups": []})
+            } else if path.starts_with("/api/v2/search.json") {
+                json!({"results": [{"id": 5, "result_type": "ticket", "subject": "VPN", "status": "open",
+                "assignee_id": 7, "requester_id": 9, "updated_at": "2026-11-06T09:40:00Z"}], "count": 1})
+            } else if path.starts_with("/api/v2/tickets/5/comments.json") {
+                json!({"comments": [{"id": 51, "author_id": 9, "public": true, "plain_body": "Hi",
+                "created_at": "2026-11-06T09:40:00Z"}]})
+            } else if path.starts_with("/api/v2/users/show_many.json") {
+                json!({"users": [{"id": 7, "name": "Alex"}, {"id": 9, "name": "Maria"}]})
+            } else {
+                json!({"error": path})
+            }
+            .to_string();
+            seen.lock().unwrap().push(path);
+            let _ = write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+        }
+    });
+    (base, paths)
+}
+
+/// The panel sends the tickets it has comments for on stdin; the reply
+/// names the read-state file in a private state directory.
+#[test]
+fn fetch_takes_known_on_stdin_and_names_a_private_read_file() {
+    let dir = Dir::new("fetch");
+    let bin = fake_secret_tool(&dir);
+    // No `expires_at`: nothing is renewed.
+    fs::write(bin.join("item"), r#"{"access_token":"A1"}"#).unwrap();
+    let (base, paths) = zendesk();
+    let fetch = |state: &Path, stdin: &str| -> Value {
+        let mut helper = Command::new(HELPER);
+        helper.args(["fetch", "--address", "acme", "--client-id", "foamy"]);
+        environment(
+            &mut helper,
+            &dir.0,
+            &format!("{}:/usr/bin:/bin", bin.display()),
+        );
+        // A relative state directory, if it were used, lands in `dir`.
+        helper
+            .env("FOAMY_ZENDESK_BASE_URL", &base)
+            .env("XDG_STATE_HOME", state)
+            .current_dir(&dir.0)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped());
+        let mut child = helper.spawn().unwrap();
+        // Closed after writing: the helper reads stdin to its end.
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(stdin.as_bytes())
+            .unwrap();
+        last_reply(&child.wait_with_output().unwrap().stdout)
+    };
+    let private = dir.0.join("home/state");
+
+    // Known at this `updated_at`: no comments are asked for.
+    let reply = fetch(&private, r#"{"known":{"5":"2026-11-06T09:40:00Z"}}"#);
+    assert_eq!(reply["tickets"][0]["unchanged"], true, "{reply}");
+    assert!(
+        !paths
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|path| path.contains("/comments.json")),
+        "no comments for a known ticket"
+    );
+
+    // Not JSON: nothing is known, so the comments come.
+    let reply = fetch(&private, "not json");
+    assert_eq!(reply["tickets"][0]["comments"][0]["body"], "Hi", "{reply}");
+    assert_eq!(
+        reply["state_path"],
+        private
+            .join("foamy-zendesk/read-acme.zendesk.com.json")
+            .to_string_lossy()
+            .as_ref()
+    );
+    let mode = fs::metadata(private.join("foamy-zendesk"))
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(
+        format!("{:o}", mode & 0o777),
+        "700",
+        "the read state is private"
+    );
+
+    // A relative XDG_STATE_HOME is ignored, as the spec says.
+    let reply = fetch(Path::new("relative/state"), "{}");
+    assert_eq!(
+        reply["state_path"],
+        dir.0
+            .join("home/.local/state/foamy-zendesk/read-acme.zendesk.com.json")
+            .to_string_lossy()
+            .as_ref(),
+        "{reply}"
+    );
+    assert!(!dir.0.join("relative").exists());
 }
 
 fn installed(program: &str) -> bool {
