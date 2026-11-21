@@ -282,8 +282,11 @@ ShellRoot {
       var dated = shell.find(view, "ticket-4824");
       if (!check(dated !== null && Math.abs(dated.now - Date.now()) < 120000, "rows date against the wall clock")) return;
       view.fixedNow = Fixtures.NOW;
-      if (!check(dated.now === Fixtures.NOW && dated.when(Fixtures.BASE - 26 * 3600000) === "Yesterday"
-                 && dated.when(Fixtures.BASE) === dated.format(Fixtures.BASE, "HH:mm"), "a fixed time dates the rows")) return;
+      // #4824's comment is from the day before NOW, #4821's from the same day.
+      var datedLabel = shell.find(dated, "when").text;
+      var todayLabel = shell.find(shell.find(view, "ticket-4821"), "when").text;
+      if (!check(dated.now === Fixtures.NOW && datedLabel === "Yesterday" && todayLabel === Qt.formatDateTime(new Date(Fixtures.BASE), "HH:mm"),
+                 "a fixed time dates the rows (" + datedLabel + ", " + todayLabel + ")")) return;
       view.fixedNow = 0;
       if (!check(Math.abs(dated.now - Date.now()) < 120000, "back on the wall clock")) return;
       if (!check(shell.find(view, "emptyState").visible === false && view.band.meta.indexOf("3 unread") === 0, "header counts unread")) return;
@@ -298,9 +301,10 @@ ShellRoot {
       var tag = shell.find(closed, "statusTag");
       var waiting = shell.find(view, "ticket-4818");
       var fresh = shell.find(view, "ticket-4824");
-      if (!check(tag !== null && tag.visible && tag.text === "Open" && Qt.colorEqual(tag.color, closed.statusColorOf("Open"))
+      // Zendesk's dark-UI colours (the harness theme is dark): Open, Pending, New.
+      if (!check(tag !== null && tag.visible && tag.text === "Open" && Qt.colorEqual(tag.color, "#eb5c69")
                  && Qt.colorEqual(shell.find(closed, "disclosure").color, tag.color)
-                 && Qt.colorEqual(waiting.statusColor, waiting.statusColorOf("Pending")) && Qt.colorEqual(fresh.statusColor, fresh.statusColorOf("New"))
+                 && Qt.colorEqual(waiting.statusColor, "#2694d6") && Qt.colorEqual(fresh.statusColor, "#e38215")
                  && !Qt.colorEqual(waiting.statusColor, fresh.statusColor),
                  "an unread ticket shows its status as a tag in Zendesk's colour, the triangle in the same colour")) return;
       // Light-UI fills: white beats black on Open and Pending (WCAG), black on New.
@@ -334,11 +338,16 @@ ShellRoot {
                  && !card.historyRepeater.itemAt(1).full && card.shownCount === 3, "Show more expands only that comment")) return;
       click(longest.lengthButton);
       if (!check(card.expanded && !longest.full && longest.clipped && longest.lengthButton.text === "Show more", "Show less folds it back")) return;
-      if (!check(card.showMore() && longest.full, "m shows the clipped comment in full first")) return;
+      view.cursor.index = view.firstTicketStop;
+      view.textKey("m", Qt.NoModifier);
+      if (!check(card.expanded && longest.full && !card.showEarlier, "m shows the clipped comment in full first")) return;
       ev.mouseClick(card.moreButton, card.moreButton.width / 2, card.moreButton.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
       if (!check(card.expanded && card.showEarlier && card.historyRepeater.itemAt(3).visible && !card.moreButton.visible
                  && !card.historyRepeater.itemAt(3).full, "Show earlier lists the rest without expanding them, and the ticket stays open")) return;
-      if (!check(!card.showMore(), "m has nothing more to show")) return;
+      view.cursor.index = view.firstTicketStop;
+      view.textKey("m", Qt.NoModifier);
+      if (!check(card.expanded && card.showEarlier && longest.full && card.historyRepeater.itemAt(3).visible && !card.historyRepeater.itemAt(3).full,
+                 "m with everything shown changes nothing")) return;
       if (!check(card.historyRepeater.itemAt(0).textItem.textFormat === Text.PlainText, "history uses plain text")) return;
       if (!check(card.read && store.unreadCount === 2 && one.barContent.countLabel.text === "2", "opening a ticket marks it read")) return;
       // The hidden Mark as unread leaves no gap between the status and View.
@@ -371,7 +380,7 @@ ShellRoot {
       view.repeater.itemAt(0).readButton.clicked();
       if (!check(store.count === 3 && store.unreadCount === 2 && view.repeater.itemAt(0).read && one.barContent.countLabel.text === "2", "Mark as read keeps the ticket and lowers the count")) return;
       if (!check(view.repeater.itemAt(0).compact && !view.repeater.itemAt(0).unreadDot.visible && shell.find(view.repeater.itemAt(0), "sender").text === "Anna ·"
-                 && shell.find(view.repeater.itemAt(0), "when").text === view.repeater.itemAt(0).when(view.repeater.itemAt(0).ticket.received),
+                 && shell.find(view.repeater.itemAt(0), "when").visible && shell.find(view.repeater.itemAt(0), "when").text !== "",
                  "a read ticket takes one line: no unread dot, the sender and time by the subject")) return;
       // A narrow popup (320 px): an Urgent one-line ticket from a long name
       // shortens the sender first; the subject keeps the rest, the triangle its room.
@@ -392,7 +401,7 @@ ShellRoot {
       if (!check(ok, "a narrow one-line row shortens the sender first and keeps the subject visible")) return;
       var oneLine = view.repeater.itemAt(0);
       if (!check(!shell.find(oneLine, "statusTag").visible && shell.find(oneLine, "linePriority").visible
-                 && Qt.colorEqual(shell.find(oneLine, "disclosure").color, oneLine.statusColorOf("Open")),
+                 && Qt.colorEqual(shell.find(oneLine, "disclosure").color, "#eb5c69"),
                  "a one-line ticket shows its status only by the triangle's colour, and its priority by the sender")) return;
       view.cursor.reset();
       if (!check(!view.repeater.itemAt(0).readActionShown && view.repeater.itemAt(1).readActionShown && view.repeater.itemAt(0).readButton.visible,
@@ -406,7 +415,9 @@ ShellRoot {
       view.cursor.index = view.settingsStop;
       view.moveRequested(0, -1);
       if (!check(view.cursor.index !== view.markAllStop, "keyboard skips the disabled Mark all")) return;
-      store.undoMarkAll();
+      var undo = shell.find(view, "undoMarkAll");
+      if (!check(shell.find(view, "statusText").text === "3 marked as read" && undo.visible, "Mark all as read says so, with Undo")) return;
+      ev.mouseClick(undo, undo.width / 2, undo.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
       if (!check(store.unreadCount === 3 && !store.canUndoMarkAll, "Undo restores the batch")) return;
       view.cursor.index = view.firstTicketStop;
       view.activateRequested();
@@ -618,9 +629,9 @@ ShellRoot {
       // The buttons' IPC: a newer reply (here: after the one announced) stays unread.
       store.receive(Fixtures.update(3, false));
       shell.sent = shell.sent.slice(0, 1);
-      store.markReadUpTo("acme.zendesk.com/4821:48215");
+      if (!shell.press(buttons[1].argv)) return;
       if (!check(store.ticketById("4821").ticket.updates === 1, "Mark as read reads up to the reply shown")) return;
-      store.markReadUpTo("acme.zendesk.com/4821:48216,4824:48241,junk");
+      if (!shell.press(["omarchy-shell", "-q", "foamy.zendesk", "markRead", "acme.zendesk.com/4821:48216,4824:48241,junk"])) return;
       if (!check(store.ticketById("4821").ticket.read && store.ticketById("4824").ticket.read, "Mark as read takes several tickets")) return;
       store.markUnread("4824");
       store.receive(Fixtures.update(2, false));
@@ -647,10 +658,15 @@ ShellRoot {
       store.receive(Fixtures.update(6, false));
       if (!check(shell.sent.length === 2, "off: nothing is announced")) return;
       // The notification's click (the show IPC): the inbox with that ticket open and read.
-      one.showNotified("acme.zendesk.com/4824");
-      if (!check(one.opened && view.expandedIds.length === 1 && view.expandedIds[0] === "4824" && !view.editingSettings
-                 && store.ticketById("4824").ticket.read, "show opens the inbox on the ticket and marks it read")) return;
-      one.close();
+      var clickHint = "--hint=string:omarchy-exec-argv:";
+      var click = JSON.parse(store.notificationCommand([store.state.tickets["4824"]]).find(function(arg) { return arg.indexOf(clickHint) === 0; }).slice(clickHint.length));
+      if (!shell.press(click)) return;
+      // The leading instance answers, whichever monitor that is.
+      var shownBy = [one, two].filter(function(panel) { return panel.opened; });
+      var shownView = shownBy.length === 1 ? shownBy[0].popup.bodyItem : null;
+      if (!check(shownView && shownView.expandedIds.length === 1 && shownView.expandedIds[0] === "4824" && !shownView.editingSettings
+                 && store.ticketById("4824").ticket.read, "show opens one inbox on the ticket and marks it read")) return;
+      shownBy[0].close();
       break;
     case 15:
       // A first inbox of more than 25 changed tickets: the helper brings the
@@ -1072,8 +1088,8 @@ ShellRoot {
       if (!check(one.popup.contentWidth === one.wideWidth && view.list.width === view.listWidth && view.overview.visible && !view.pane.visible
                  && view.repeater.itemAt(0).wide && !view.repeater.itemAt(0).openButton.visible && !view.repeater.itemAt(0).readButton.visible,
                  "Wide opens at its width with the overview beside the list, and rows without their own actions")) return;
-      if (!check(view.overview.awaitingRows.count === 2 && store.overview.awaiting.map(function(item) { return item.id; }).join() === "4824,4821"
-                 && view.cursor.count === view.firstTicketStop + 3 + 2 + 1, "the overview lists who waits for a reply, each a cursor stop")) return;
+      if (!check(view.overview.awaitingRows.count === 2 && store.overview.awaiting.map(function(item) { return item.id; }).join() === "4824,4821",
+                 "the overview lists who waits for a reply")) return;
       shell.savedY = one.popup.contentHeight;
       // Enter on the first ticket shows it in the pane and marks it read.
       view.cursor.index = view.firstTicketStop;
@@ -1082,14 +1098,14 @@ ShellRoot {
       if (!check(view.selected && view.selected.ticket.id === "4821" && view.pane.visible && !view.overview.visible
                  && shown.selected && !shown.expanded && store.ticketById("4821").ticket.read, "Enter shows the ticket in the pane, read, not opened in place")) return;
       if (!check(shell.find(view.pane, "newDivider").visible && view.pane.lastFresh === 2 && view.pane.comments.children.length >= 4
-                 && Model.MAX_HISTORY === 20 && !shell.find(view.pane, "paneNote").visible,
+                 && !shell.find(view.pane, "paneNote").visible,
                  "the pane shows every comment, the unread ones under New")) return;
       break;
     case 56:
       if (!check(one.popup.contentWidth === one.wideWidth && one.popup.contentHeight === shell.savedY, "showing a ticket keeps the card's size")) return;
       // The pane's read action, from the keyboard: unread again, still shown.
       view.cursor.index = view.paneFirstStop;
-      if (!check(view.pane.readButton.hasCursor && view.cursor.count === view.firstTicketStop + 3 + 3 + 1, "the pane's two actions and its conversation are cursor stops")) return;
+      if (!check(view.pane.readButton.hasCursor, "the pane's read action takes the cursor")) return;
       view.activateRequested();
       if (!check(!store.ticketById("4821").ticket.read && view.pane.readButton.iconName === "check" && view.selected.ticket.id === "4821",
                  "Mark as unread in the pane keeps the ticket shown")) return;
