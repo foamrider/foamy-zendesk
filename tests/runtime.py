@@ -654,8 +654,14 @@ ShellRoot {
       if (!check(shell.sent.length === 2 && tail[0] === "2 updated Zendesk tickets" && hint("omarchy-actions").length === 1
                  && hint("omarchy-actions")[0].label === "Mark all as read" && hint("omarchy-actions")[0].argv[4] === "acme.zendesk.com/4905:49005,4904:49004"
                  && hint("omarchy-exec-argv")[3] === "open", "several at once are one notification that opens the inbox")) return;
+      // Snoozed: a new reply (newer than any announced above) stays quiet.
+      store.toggleSnooze();
+      store.receive(Fixtures.update(8, false));
+      if (!check(store.snoozed && shell.sent.length === 2, "snoozed: nothing is announced (" + shell.sent.length + ")")) return;
+      store.toggleSnooze();
+      // Off: a reply newer than any announced above stays quiet.
       one.prefs.save("notify", "off");
-      store.receive(Fixtures.update(6, false));
+      store.receive(Fixtures.update(9, false));
       if (!check(shell.sent.length === 2, "off: nothing is announced")) return;
       // The notification's click (the show IPC): the inbox with that ticket open and read.
       var clickHint = "--hint=string:omarchy-exec-argv:";
