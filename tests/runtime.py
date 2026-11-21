@@ -776,11 +776,11 @@ ShellRoot {
     case 22:
       if (!check(account.state === "signed_in" && account.user && account.user.name === "New" && account.address === "newco",
                  "a sign-in stopped by another address never signs that address in; the new address is checked (" + account.state + ", " + JSON.stringify(account.user) + ")")) return;
-      // A read-state file that can't be read (here a directory): the inbox
-      // starts unread and nothing is saved over it.
+      // A read-state file that can't be read (the script made it write-only):
+      // the inbox starts unread, and nothing is saved over the file (the
+      // script checks it after the run).
       store.helperCommand = function(args) {
         var reply = shell.inboxReply("broken", 9001);
-        reply.state_path = Quickshell.env("FOAMY_OUT");
         shell.fetches = shell.fetches.concat(["broken"]);
         return shell.fake("now", reply);
       };
@@ -794,6 +794,8 @@ ShellRoot {
       break;
     case 24:
       if (!check(store.unreadCount === 0 && store.error === "", "the next fetch keeps what was read this session (" + store.unreadCount + " unread)")) return;
+      if (!check(shell.footer().status === "Can't save read markers" && shell.footer().statusTooltip === "Kept only until the shell restarts.",
+                 "the footer says the read markers can't be saved (" + shell.footer().status + ")")) return;
       break;
     case 25:
       // An account check asked for while the last one's reply is on its way.
@@ -1266,8 +1268,20 @@ esac
 exit 0
 """
 
+# The read file the "broken" account names (steps 22 to 24): it holds a
+# marker but can't be read. Write-only, so an atomic save could still replace
+# it (a file that can't be written can't be). Root reads it anyway, so the
+# steps would prove nothing.
+BROKEN_READ = '{"version":1,"read":{"9001":{"revision":90010,"at":1}}}\n'
+if os.geteuid() == 0:
+    print("FAIL: run tests/runtime.py as a normal user; root can read a write-only file")
+    sys.exit(1)
+
 run = harness.Run("4.5", SHELL, plugin=plugin, prefix="foamy-zendesk-runtime-", fakebin={"xdg-open": FAKE_OPENER})
+broken = run.out / "read-broken.json"
 try:
+    broken.write_text(BROKEN_READ)
+    broken.chmod(0o200)
     # The read-only state folder for the failed saves (steps 27 to 32), and
     # the one the fake opener locks (steps 42 to 46).
     (run.out / "locked").mkdir(mode=0o555)
@@ -1284,9 +1298,18 @@ try:
     if refused:
         print("FAIL: the plugin ran host commands:", *refused, sep="\n  ")
         sys.exit(1)
+    if run.ok:
+        # An atomic save would have replaced the file (and its mode).
+        mode = broken.stat().st_mode & 0o777
+        broken.chmod(0o600)
+        if mode != 0o200 or broken.read_text() != BROKEN_READ:
+            print("FAIL: the unreadable read file was written over")
+            sys.exit(1)
     print(run.log if not run.ok else "PASS: real plugin runtime interactions")
     sys.exit(0 if run.ok else 1)
 finally:
     # The fake opener may have left it read-only, with the read file inside.
     (run.out / "lockable").chmod(0o755)
+    if broken.exists():
+        broken.chmod(0o600)
     run.cleanup()
