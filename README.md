@@ -293,9 +293,9 @@ and view offscreen, and runs the real helper (which finds no keyring there);
 the inbox comes from `preview/Fixtures.js` (fictional tickets, used only by
 the preview and tests) and tickets open in a fake `xdg-open` (which can also
 fail); a stand-in helper also covers switching accounts mid fetch and mid
-sign-in, failed and refused fetches, sign-out races and a missing helper. The helper's own tests
-use a fake Zendesk on loopback and an in-memory keyring; nothing touches a
-real account.
+sign-in, failed and refused fetches, sign-out races and a missing helper. The
+helper's own tests use a fake Zendesk on loopback and an in-memory keyring;
+nothing touches a real account.
 
 ```sh
 mise install            # once: the linters and node that mise.toml pins

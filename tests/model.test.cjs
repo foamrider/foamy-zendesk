@@ -224,9 +224,10 @@ test('a read-state file over the limit keeps the most recently marked tickets', 
 test('a hostile or broken reply is refused whole, bounded and defaulted', () => {
   assert.throws(() => Model.applySnapshot(Model.empty(), 'nope'));
   assert.throws(() => Model.applySnapshot(Model.empty(), [{ id: '__proto__' }]));
-  // One bad ticket refuses the whole reply: the previous inbox stays.
+  // One bad ticket refuses the whole reply: the previous inbox stays, and the
+  // valid new ticket before the bad one is not applied either.
   const state = seeded();
-  assert.throws(() => Model.applySnapshot(state, Fixtures.tickets().concat([{ id: '12a' }])));
+  assert.throws(() => Model.applySnapshot(state, [{ id: '5000' }, { id: '12a' }]));
   assert.deepEqual(ids(state), ['4821', '4818', '4824']);
   // Ticket ids have at most 15 digits.
   assert.throws(() => Model.applySnapshot(Model.empty(), [{ id: '1'.repeat(16) }]));
@@ -304,11 +305,16 @@ test('ticket links use the configured account only', () => {
     ['ACME', 'acme.zendesk.com'],
     ['https://acme.zendesk.com/', 'acme.zendesk.com'],
     [' Acme ', 'acme.zendesk.com'],
+    ['ACME.zendesk.com', 'acme.zendesk.com'],
     ['a'.repeat(63), 'a'.repeat(63) + '.zendesk.com'],
     ['evil.com', ''],
     ['acme.zendesk.com.evil.com', ''],
     ['http://acme.zendesk.com', ''],
     ['acme/x', ''],
+    ['a/b', ''],
+    ['ac me', ''],
+    ['acme.example.com', ''],
+    ['https://evil.com/x.zendesk.com', ''],
     ['-acme', ''],
     ['acme-', ''],
     ['a'.repeat(64), ''],
