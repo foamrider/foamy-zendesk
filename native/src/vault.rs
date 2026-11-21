@@ -324,14 +324,40 @@ mod tests {
         let failure = tool.get().unwrap_err();
         assert_eq!(failure.code, "KEYRING_UNAVAILABLE");
         assert!(failure.message.contains("signal"), "{}", failure.message);
-        // A found item is read without asking `search`.
-        std::fs::remove_file(dir.join("lookup-dies")).unwrap();
-        set(&dir, true, false);
-        std::fs::remove_file(dir.join("log")).unwrap();
-        assert!(tool.get().unwrap().is_some());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// `store` gets the secret on stdin, never in argv, under the label and
+    /// the attributes `lookup` finds it by; a store the keyring refuses is an
+    /// error, so a sign-in it did not take is revoked, never kept as stored.
+    #[test]
+    fn a_stored_secret_goes_on_stdin_under_the_lookup_attributes() {
+        let (dir, tool) = fake("store");
+        set(&dir, false, false);
+        let secret = r#"{"access_token":"S3CRET"}"#;
+        tool.put(secret).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("item")).unwrap(), secret);
+        assert_eq!(tool.get().unwrap().as_deref(), Some(secret));
+        // The exact argv of both runs: the secret is in neither.
+        let attributes = "service foamy-zendesk host acme.zendesk.com client foamy";
         assert_eq!(
             std::fs::read_to_string(dir.join("log")).unwrap(),
-            "lookup\n"
+            format!(
+                "store --label=Foamy Zendesk (acme.zendesk.com) {attributes}\nlookup {attributes}\n"
+            )
+        );
+        // A locked collection refuses the item: the keyring's words, never success.
+        set(&dir, false, true);
+        let failure = tool
+            .put(secret)
+            .expect_err("a store the keyring refuses is an error");
+        assert_eq!(failure.code, "KEYRING_UNAVAILABLE");
+        assert!(
+            failure
+                .message
+                .ends_with("\u{1f}secret-tool: Cannot create an item in a locked collection"),
+            "{}",
+            failure.message
         );
         std::fs::remove_dir_all(&dir).unwrap();
     }

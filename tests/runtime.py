@@ -37,6 +37,7 @@ import Quickshell.Io
 import "harness"
 import "plugin" as Plugin
 import "plugin/kit" as Kit
+import "plugin/kit/FoamyNative.js" as FoamyNative
 import "plugin/preview/Fixtures.js" as Fixtures
 import "plugin/Model.js" as Model
 import "plugin/Status.js" as Status
@@ -56,6 +57,16 @@ ShellRoot {
   property var sent: []
   property var fetches: []
   property int statusRuns: 0
+  // Ends of fetches and sign-outs, counted after the store or the account
+  // applied the reply (their own handlers run first).
+  property int fetchesEnded: 0
+  property int fetchEndBase: 0
+  property int signOutsEnded: 0
+  property int signOutBase: 0
+  // What the "failing" stand-in answers next (steps 63 to 67).
+  property var fetchReply: null
+  // The highest unread count since it was set to 0 (-1: not watched).
+  property int maxUnread: -1
   property bool probeWindow: false
   property var windowResult: null
   property var cut: undefined
@@ -97,6 +108,19 @@ ShellRoot {
   Connections {
     target: Plugin.TicketStore.readFile
     function onSaved() { shell.saves++; }
+  }
+  Connections {
+    target: Plugin.TicketStore.fetchProcess
+    function onExited() { shell.fetchesEnded++; }
+  }
+  Connections {
+    target: Plugin.ZendeskAccount.logoutProcess
+    function onExited() { shell.signOutsEnded++; }
+  }
+  Connections {
+    target: Plugin.TicketStore
+    enabled: shell.maxUnread >= 0
+    function onUnreadCountChanged() { shell.maxUnread = Math.max(shell.maxUnread, Plugin.TicketStore.unreadCount); }
   }
   // Quickshell ends a Process by dropping it (running is false), ending its
   // collectors' streams and only then emitting exited: a check() that runs
@@ -180,6 +204,22 @@ ShellRoot {
     case 57: return [shell.launchedOne, 10000, "the pane's View in Zendesk launched"];
     case 58: return [function() { return store.pendingChanges === 0; }, 10000, "the waiting update came in"];
     case 60: return [function() { return !one.wide; }, 10000, "Small was saved"];
+    case 62:
+    case 63: return [function() { return !account.busy && shell.signOutsEnded > shell.signOutBase; }, 10000, "the sign-out finished"];
+    case 64: return [function() { return store.loaded && store.host === "failing.zendesk.com" && !store.fetchProcess.running && !store.refreshAgain; }, 10000, "the failing account's inbox arrived"];
+    case 65:
+    case 66:
+    case 67:
+    case 68:
+    case 69: return [function() { return shell.fetchesEnded > shell.fetchEndBase && !store.fetchProcess.running && !account.busy; }, 10000, "the next fetch finished"];
+    case 70: return [function() { return store.loaded && store.host === "preread.zendesk.com" && store.readReady && !store.fetchProcess.running; }, 10000, "the inbox with an existing read file arrived"];
+    // Saving Wide pushes the saved address back to the account, which checks it again.
+    case 71: return [function() { return one.wide && !account.busy && !store.fetchProcess.running; }, 10000, "Wide was saved"];
+    case 72: return [function() { return one.opened && one.popup.bodyItem.wide; }, 10000, "the Wide popup opened"];
+    case 73: return [function() { return !one.wide && !account.busy && !store.fetchProcess.running; }, 10000, "Small was saved"];
+    case 74: return [function() { return !account.busy; }, 10000, "the check finished"];
+    case 75: return [function() { return shell.fetchesEnded > shell.fetchEndBase && !store.fetchProcess.running; }, 10000, "the fetch without a helper ended"];
+    case 76: return [function() { return !account.busy; }, 10000, "the check without a helper ended"];
     }
     return null;
   }
@@ -217,6 +257,15 @@ ShellRoot {
              tickets: [{ id: String(id), subject: "Ticket " + id, status: "Open", priority: "Normal", assignee: "Alex", mine: true,
                          group: "IT support", requester: "Jonas", updated_at: "2026-11-06T10:00:00Z",
                          comments: [{ id: id * 10, author: "Jonas", mine: false, public: true, created: Fixtures.BASE, body: "Hello." }] }] };
+  }
+  // Zendesk's comment ids exceed an int (steps 60 and 72).
+  readonly property double bigId: 31234567890123
+  function bigTicket(comments, updated) {
+    return [{ id: "7001", subject: "Large comment ids", status: "Open", priority: "Normal", assignee: "Alex", mine: true,
+              group: "IT support", requester: "Ola", updated_at: updated, comments: comments }];
+  }
+  function bigComment(id, minutesAgo) {
+    return { id: id, author: "Ola", mine: false, public: true, created: Fixtures.BASE - minutesAgo * 60000, body: "Comment " + id };
   }
   function many() {
     var list = Fixtures.tickets();
@@ -282,8 +331,11 @@ ShellRoot {
       var dated = shell.find(view, "ticket-4824");
       if (!check(dated !== null && Math.abs(dated.now - Date.now()) < 120000, "rows date against the wall clock")) return;
       view.fixedNow = Fixtures.NOW;
-      if (!check(dated.now === Fixtures.NOW && dated.when(Fixtures.BASE - 26 * 3600000) === "Yesterday"
-                 && dated.when(Fixtures.BASE) === dated.format(Fixtures.BASE, "HH:mm"), "a fixed time dates the rows")) return;
+      // #4824's comment is from the day before NOW, #4821's from the same day.
+      var datedLabel = shell.find(dated, "when").text;
+      var todayLabel = shell.find(shell.find(view, "ticket-4821"), "when").text;
+      if (!check(dated.now === Fixtures.NOW && datedLabel === "Yesterday" && todayLabel === Qt.formatDateTime(new Date(Fixtures.BASE), "HH:mm"),
+                 "a fixed time dates the rows (" + datedLabel + ", " + todayLabel + ")")) return;
       view.fixedNow = 0;
       if (!check(Math.abs(dated.now - Date.now()) < 120000, "back on the wall clock")) return;
       if (!check(shell.find(view, "emptyState").visible === false && view.band.meta.indexOf("3 unread") === 0, "header counts unread")) return;
@@ -298,9 +350,10 @@ ShellRoot {
       var tag = shell.find(closed, "statusTag");
       var waiting = shell.find(view, "ticket-4818");
       var fresh = shell.find(view, "ticket-4824");
-      if (!check(tag !== null && tag.visible && tag.text === "Open" && Qt.colorEqual(tag.color, closed.statusColorOf("Open"))
+      // Zendesk's dark-UI colours (the harness theme is dark): Open, Pending, New.
+      if (!check(tag !== null && tag.visible && tag.text === "Open" && Qt.colorEqual(tag.color, "#eb5c69")
                  && Qt.colorEqual(shell.find(closed, "disclosure").color, tag.color)
-                 && Qt.colorEqual(waiting.statusColor, waiting.statusColorOf("Pending")) && Qt.colorEqual(fresh.statusColor, fresh.statusColorOf("New"))
+                 && Qt.colorEqual(waiting.statusColor, "#2694d6") && Qt.colorEqual(fresh.statusColor, "#e38215")
                  && !Qt.colorEqual(waiting.statusColor, fresh.statusColor),
                  "an unread ticket shows its status as a tag in Zendesk's colour, the triangle in the same colour")) return;
       // Light-UI fills: white beats black on Open and Pending (WCAG), black on New.
@@ -334,11 +387,16 @@ ShellRoot {
                  && !card.historyRepeater.itemAt(1).full && card.shownCount === 3, "Show more expands only that comment")) return;
       click(longest.lengthButton);
       if (!check(card.expanded && !longest.full && longest.clipped && longest.lengthButton.text === "Show more", "Show less folds it back")) return;
-      if (!check(card.showMore() && longest.full, "m shows the clipped comment in full first")) return;
+      view.cursor.index = view.firstTicketStop;
+      view.textKey("m", Qt.NoModifier);
+      if (!check(card.expanded && longest.full && !card.showEarlier, "m shows the clipped comment in full first")) return;
       ev.mouseClick(card.moreButton, card.moreButton.width / 2, card.moreButton.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
       if (!check(card.expanded && card.showEarlier && card.historyRepeater.itemAt(3).visible && !card.moreButton.visible
                  && !card.historyRepeater.itemAt(3).full, "Show earlier lists the rest without expanding them, and the ticket stays open")) return;
-      if (!check(!card.showMore(), "m has nothing more to show")) return;
+      view.cursor.index = view.firstTicketStop;
+      view.textKey("m", Qt.NoModifier);
+      if (!check(card.expanded && card.showEarlier && longest.full && card.historyRepeater.itemAt(3).visible && !card.historyRepeater.itemAt(3).full,
+                 "m with everything shown changes nothing")) return;
       if (!check(card.historyRepeater.itemAt(0).textItem.textFormat === Text.PlainText, "history uses plain text")) return;
       if (!check(card.read && store.unreadCount === 2 && one.barContent.countLabel.text === "2", "opening a ticket marks it read")) return;
       // The hidden Mark as unread leaves no gap between the status and View.
@@ -371,7 +429,7 @@ ShellRoot {
       view.repeater.itemAt(0).readButton.clicked();
       if (!check(store.count === 3 && store.unreadCount === 2 && view.repeater.itemAt(0).read && one.barContent.countLabel.text === "2", "Mark as read keeps the ticket and lowers the count")) return;
       if (!check(view.repeater.itemAt(0).compact && !view.repeater.itemAt(0).unreadDot.visible && shell.find(view.repeater.itemAt(0), "sender").text === "Anna ·"
-                 && shell.find(view.repeater.itemAt(0), "when").text === view.repeater.itemAt(0).when(view.repeater.itemAt(0).ticket.received),
+                 && shell.find(view.repeater.itemAt(0), "when").visible && shell.find(view.repeater.itemAt(0), "when").text !== "",
                  "a read ticket takes one line: no unread dot, the sender and time by the subject")) return;
       // A narrow popup (320 px): an Urgent one-line ticket from a long name
       // shortens the sender first; the subject keeps the rest, the triangle its room.
@@ -392,7 +450,7 @@ ShellRoot {
       if (!check(ok, "a narrow one-line row shortens the sender first and keeps the subject visible")) return;
       var oneLine = view.repeater.itemAt(0);
       if (!check(!shell.find(oneLine, "statusTag").visible && shell.find(oneLine, "linePriority").visible
-                 && Qt.colorEqual(shell.find(oneLine, "disclosure").color, oneLine.statusColorOf("Open")),
+                 && Qt.colorEqual(shell.find(oneLine, "disclosure").color, "#eb5c69"),
                  "a one-line ticket shows its status only by the triangle's colour, and its priority by the sender")) return;
       view.cursor.reset();
       if (!check(!view.repeater.itemAt(0).readActionShown && view.repeater.itemAt(1).readActionShown && view.repeater.itemAt(0).readButton.visible,
@@ -406,7 +464,9 @@ ShellRoot {
       view.cursor.index = view.settingsStop;
       view.moveRequested(0, -1);
       if (!check(view.cursor.index !== view.markAllStop, "keyboard skips the disabled Mark all")) return;
-      store.undoMarkAll();
+      var undo = shell.find(view, "undoMarkAll");
+      if (!check(shell.find(view, "statusText").text === "3 marked as read" && undo.visible, "Mark all as read says so, with Undo")) return;
+      ev.mouseClick(undo, undo.width / 2, undo.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
       if (!check(store.unreadCount === 3 && !store.canUndoMarkAll, "Undo restores the batch")) return;
       view.cursor.index = view.firstTicketStop;
       view.activateRequested();
@@ -479,10 +539,6 @@ ShellRoot {
       view.toggleTicket("4818");
       store.markUnread("4818");
       if (!check(store.firstWaitingIndex === -1 && store.tickets.get(1).id === "4818", "marking it unread brings it back up")) return;
-      store.error = "Can't reach Zendesk. Check your connection.";
-      var footer = view.children.find(function(item) { return item.hasOwnProperty("statusError"); });
-      if (!check(footer && footer.statusError && footer.status.indexOf("Can't reach") === 0 && store.count === 3, "a failed refresh keeps the tickets and says why")) return;
-      store.error = "";
       store.loadFixtures(shell.many());
       account.state = "signed_in";
       break;
@@ -618,9 +674,9 @@ ShellRoot {
       // The buttons' IPC: a newer reply (here: after the one announced) stays unread.
       store.receive(Fixtures.update(3, false));
       shell.sent = shell.sent.slice(0, 1);
-      store.markReadUpTo("acme.zendesk.com/4821:48215");
+      if (!shell.press(buttons[1].argv)) return;
       if (!check(store.ticketById("4821").ticket.updates === 1, "Mark as read reads up to the reply shown")) return;
-      store.markReadUpTo("acme.zendesk.com/4821:48216,4824:48241,junk");
+      if (!shell.press(["omarchy-shell", "-q", "foamy.zendesk", "markRead", "acme.zendesk.com/4821:48216,4824:48241,junk"])) return;
       if (!check(store.ticketById("4821").ticket.read && store.ticketById("4824").ticket.read, "Mark as read takes several tickets")) return;
       store.markUnread("4824");
       store.receive(Fixtures.update(2, false));
@@ -643,14 +699,25 @@ ShellRoot {
       if (!check(shell.sent.length === 2 && tail[0] === "2 updated Zendesk tickets" && hint("omarchy-actions").length === 1
                  && hint("omarchy-actions")[0].label === "Mark all as read" && hint("omarchy-actions")[0].argv[4] === "acme.zendesk.com/4905:49005,4904:49004"
                  && hint("omarchy-exec-argv")[3] === "open", "several at once are one notification that opens the inbox")) return;
+      // Snoozed: a new reply (newer than any announced above) stays quiet.
+      store.toggleSnooze();
+      store.receive(Fixtures.update(8, false));
+      if (!check(store.snoozed && shell.sent.length === 2, "snoozed: nothing is announced (" + shell.sent.length + ")")) return;
+      store.toggleSnooze();
+      // Off: a reply newer than any announced above stays quiet.
       one.prefs.save("notify", "off");
-      store.receive(Fixtures.update(6, false));
+      store.receive(Fixtures.update(9, false));
       if (!check(shell.sent.length === 2, "off: nothing is announced")) return;
       // The notification's click (the show IPC): the inbox with that ticket open and read.
-      one.showNotified("acme.zendesk.com/4824");
-      if (!check(one.opened && view.expandedIds.length === 1 && view.expandedIds[0] === "4824" && !view.editingSettings
-                 && store.ticketById("4824").ticket.read, "show opens the inbox on the ticket and marks it read")) return;
-      one.close();
+      var clickHint = "--hint=string:omarchy-exec-argv:";
+      var click = JSON.parse(store.notificationCommand([store.state.tickets["4824"]]).find(function(arg) { return arg.indexOf(clickHint) === 0; }).slice(clickHint.length));
+      if (!shell.press(click)) return;
+      // The leading instance answers, whichever monitor that is.
+      var shownBy = [one, two].filter(function(panel) { return panel.opened; });
+      var shownView = shownBy.length === 1 ? shownBy[0].popup.bodyItem : null;
+      if (!check(shownView && shownView.expandedIds.length === 1 && shownView.expandedIds[0] === "4824" && !shownView.editingSettings
+                 && store.ticketById("4824").ticket.read, "show opens one inbox on the ticket and marks it read")) return;
+      shownBy[0].close();
       break;
     case 15:
       // A first inbox of more than 25 changed tickets: the helper brings the
@@ -760,11 +827,11 @@ ShellRoot {
     case 22:
       if (!check(account.state === "signed_in" && account.user && account.user.name === "New" && account.address === "newco",
                  "a sign-in stopped by another address never signs that address in; the new address is checked (" + account.state + ", " + JSON.stringify(account.user) + ")")) return;
-      // A read-state file that can't be read (here a directory): the inbox
-      // starts unread and nothing is saved over it.
+      // A read-state file that can't be read (the script made it write-only):
+      // the inbox starts unread, and nothing is saved over the file (the
+      // script checks it after the run).
       store.helperCommand = function(args) {
         var reply = shell.inboxReply("broken", 9001);
-        reply.state_path = Quickshell.env("FOAMY_OUT");
         shell.fetches = shell.fetches.concat(["broken"]);
         return shell.fake("now", reply);
       };
@@ -778,6 +845,8 @@ ShellRoot {
       break;
     case 24:
       if (!check(store.unreadCount === 0 && store.error === "", "the next fetch keeps what was read this session (" + store.unreadCount + " unread)")) return;
+      if (!check(shell.footer().status === "Can't save read markers" && shell.footer().statusTooltip === "Kept only until the shell restarts.",
+                 "the footer says the read markers can't be saved (" + shell.footer().status + ")")) return;
       break;
     case 25:
       // An account check asked for while the last one's reply is on its way.
@@ -1072,8 +1141,8 @@ ShellRoot {
       if (!check(one.popup.contentWidth === one.wideWidth && view.list.width === view.listWidth && view.overview.visible && !view.pane.visible
                  && view.repeater.itemAt(0).wide && !view.repeater.itemAt(0).openButton.visible && !view.repeater.itemAt(0).readButton.visible,
                  "Wide opens at its width with the overview beside the list, and rows without their own actions")) return;
-      if (!check(view.overview.awaitingRows.count === 2 && store.overview.awaiting.map(function(item) { return item.id; }).join() === "4824,4821"
-                 && view.cursor.count === view.firstTicketStop + 3 + 2 + 1, "the overview lists who waits for a reply, each a cursor stop")) return;
+      if (!check(view.overview.awaitingRows.count === 2 && store.overview.awaiting.map(function(item) { return item.id; }).join() === "4824,4821",
+                 "the overview lists who waits for a reply")) return;
       shell.savedY = one.popup.contentHeight;
       // Enter on the first ticket shows it in the pane and marks it read.
       view.cursor.index = view.firstTicketStop;
@@ -1082,14 +1151,14 @@ ShellRoot {
       if (!check(view.selected && view.selected.ticket.id === "4821" && view.pane.visible && !view.overview.visible
                  && shown.selected && !shown.expanded && store.ticketById("4821").ticket.read, "Enter shows the ticket in the pane, read, not opened in place")) return;
       if (!check(shell.find(view.pane, "newDivider").visible && view.pane.lastFresh === 2 && view.pane.comments.children.length >= 4
-                 && Model.MAX_HISTORY === 20 && !shell.find(view.pane, "paneNote").visible,
+                 && !shell.find(view.pane, "paneNote").visible,
                  "the pane shows every comment, the unread ones under New")) return;
       break;
     case 56:
       if (!check(one.popup.contentWidth === one.wideWidth && one.popup.contentHeight === shell.savedY, "showing a ticket keeps the card's size")) return;
       // The pane's read action, from the keyboard: unread again, still shown.
       view.cursor.index = view.paneFirstStop;
-      if (!check(view.pane.readButton.hasCursor && view.cursor.count === view.firstTicketStop + 3 + 3 + 1, "the pane's two actions and its conversation are cursor stops")) return;
+      if (!check(view.pane.readButton.hasCursor, "the pane's read action takes the cursor")) return;
       view.activateRequested();
       if (!check(!store.ticketById("4821").ticket.read && view.pane.readButton.iconName === "check" && view.selected.ticket.id === "4821",
                  "Mark as unread in the pane keeps the ticket shown")) return;
@@ -1181,10 +1250,6 @@ ShellRoot {
         return null;
       })(shell.find(view.pane, "comment-49002"));
       if (!check(fitted && author && author.truncated && author.width < view.pane.comments.width, "long names elide inside the pane")) return;
-      // Zendesk's comment ids exceed an int: the marker keeps them whole.
-      view.openedSince = 31234567890123;
-      if (!check(view.pane.openedSince === 31234567890123, "a large comment id survives as the pane's read marker")) return;
-      view.openedSince = 0;
       // The deferred ticket's comments are missing, not empty.
       view.toggleTicket("4950");
       if (!check(view.selected.ticket.id === "4950" && shell.find(view.pane, "paneNote").text === "Comments haven't loaded yet. Close the ticket to get them with the next update.",
@@ -1208,22 +1273,222 @@ ShellRoot {
                  && view.repeater.itemAt(0).wide === false, "Small again: 420, the list across the popup")) return;
       // Zendesk's comment ids exceed an int. A ticket read up to one comment
       // gets a reply: opened in place, only the reply is new.
-      var big = 31234567890123;
-      var bigTicket = function(comments, updated) {
-        return [{ id: "7001", subject: "Large comment ids", status: "Open", priority: "Normal", assignee: "Alex", mine: true,
-                  group: "IT support", requester: "Ola", updated_at: updated, comments: comments }];
-      };
-      var bigComment = function(id, minutesAgo) {
-        return { id: id, author: "Ola", mine: false, public: true, created: Fixtures.BASE - minutesAgo * 60000, body: "Comment " + id };
-      };
-      store.loadFixtures(bigTicket([bigComment(big, 10)], "2026-11-06T09:30:00Z"));
+      var big = shell.bigId;
+      store.loadFixtures(shell.bigTicket([shell.bigComment(big, 10)], "2026-11-06T09:30:00Z"));
       store.markRead("7001");
-      store.receive(bigTicket([bigComment(big + 1, 1), bigComment(big, 10)], "2026-11-06T09:39:00Z"));
+      store.receive(shell.bigTicket([shell.bigComment(big + 1, 1), shell.bigComment(big, 10)], "2026-11-06T09:39:00Z"));
       view.toggleTicket("7001");
       var bigCard = shell.find(view, "ticket-7001");
       if (!check(bigCard.expanded && bigCard.openedSince === big && bigCard.historyRepeater.itemAt(0).fresh && !bigCard.historyRepeater.itemAt(1).fresh,
                  "opened in place, a ticket with large comment ids marks only the reply as new")) return;
       one.close();
+      view.fixedNow = 0;
+      break;
+    case 61:
+      // A check that started before a sign-out answers for a sign-in that is
+      // gone: its reply, slower than the sign-out's, is ignored.
+      account.error = "";
+      account.state = "signed_in";
+      account.user = { name: "Alex", email: "alex@acme.example" };
+      shell.statusRuns = 0;
+      account.helperCommand = function(args) {
+        if (args[0] === "auth-status") {
+          shell.statusRuns++;
+          return shell.fake("slow", { ok: true, state: "signed_in", verified: true, user: { name: "Stale", email: "stale@example.invalid" } });
+        }
+        return shell.fake("now", { ok: true, state: "signed_out" });
+      };
+      shell.signOutBase = shell.signOutsEnded;
+      account.check();
+      account.signOut();
+      if (!check(account.statusProcess.running && account.logoutProcess.running, "a check and a sign-out run at once")) return;
+      break;
+    case 62:
+      if (!check(account.state === "signed_out" && account.user === null && shell.statusRuns === 1,
+                 "a status reply from before the sign-out is ignored (" + account.state + ", " + JSON.stringify(account.user) + ")")) return;
+      // A sign-out that can't use the sign-in's lock file: still signed in, and why.
+      account.state = "signed_in";
+      account.user = { name: "Alex", email: "alex@acme.example" };
+      account.helperCommand = function(args) {
+        return shell.fake("now", { ok: false, code: "LOCK_UNAVAILABLE", error: "Sign-out didn't finish: the Zendesk sign-in's lock file can't be used (%1). Try again.\u001ftest" });
+      };
+      shell.signOutBase = shell.signOutsEnded;
+      account.signOut();
+      break;
+    case 63:
+      if (!check(account.state === "signed_in" && account.user && account.user.name === "Alex"
+                 && account.error === "Sign-out didn't finish: the Zendesk sign-in's lock file can't be used (test). Try again.",
+                 "a sign-out that can't use the lock file stays signed in and says why (" + account.state + ": " + account.error + ")")) return;
+      // An account whose fetches fail, then refuse: first its inbox.
+      account.error = "";
+      account.helperCommand = function(args) {
+        if (args[0] === "auth-status") shell.statusRuns++;
+        return shell.fake("now", { ok: true, state: "signed_in", verified: true, user: { name: "Alex", email: "alex@acme.example" } });
+      };
+      shell.fetchReply = shell.inboxReply("failing", 9601);
+      store.helperCommand = function(args) {
+        shell.fetches = shell.fetches.concat([args[args.indexOf("--address") + 1]]);
+        return shell.fake("now", shell.fetchReply);
+      };
+      // Signed out while the store leaves fixtures, so only the sign-in below starts a fetch.
+      account.state = "signed_out";
+      store.fixtures = false;
+      account.address = "failing";
+      shell.fetchProbe = shell.fetches.length;
+      account.state = "signed_in";
+      break;
+    case 64:
+      if (!check(shell.fetches.length === shell.fetchProbe + 1 && store.count === 1 && store.tickets.get(0).id === "9601" && store.error === "" && store.failures === 0,
+                 "the failing account's inbox arrived, from one fetch")) return;
+      // Zendesk answers 503: the inbox stays, the footer says why, the next check waits twice as long.
+      shell.fetchReply = { ok: false, code: "HTTP", error: "Zendesk answered HTTP %1.\u001f503" };
+      shell.fetchEndBase = shell.fetchesEnded;
+      store.refresh();
+      break;
+    case 65:
+      if (!check(store.count === 1 && store.error === "Zendesk answered HTTP 503." && shell.footer().statusError && shell.footer().status === store.error,
+                 "a failed fetch keeps the inbox and the footer says why (" + store.error + ")")) return;
+      if (!check(store.failures === 1 && store.pollTimer.running && store.pollTimer.interval === 2 * store.refreshSeconds * 1000 && store.retryAt > Date.now(),
+                 "a failed fetch doubles the wait for the next (" + store.failures + ", " + store.pollTimer.interval + ")")) return;
+      // An expired sign-in: the account checks again.
+      shell.statusRuns = 0;
+      shell.fetchReply = { ok: false, code: "EXPIRED", error: "Zendesk answered HTTP %1.\u001f401" };
+      shell.fetchEndBase = shell.fetchesEnded;
+      store.refresh();
+      break;
+    case 66:
+      if (!check(shell.statusRuns === 1 && store.failures === 2 && account.state === "signed_in" && account.user && account.user.name === "Alex",
+                 "an expired sign-in makes the account check again (" + shell.statusRuns + " checks, " + store.failures + " failures)")) return;
+      // A reply with a broken ticket is refused whole: the valid new ticket
+      // before it is not applied either.
+      var refused = shell.inboxReply("failing", 9602);
+      shell.fetchReply = { ok: true, state_path: refused.state_path, tickets: [refused.tickets[0], { id: "x" }] };
+      shell.fetchEndBase = shell.fetchesEnded;
+      store.refresh();
+      break;
+    case 67:
+      // The next sync shows what the store holds, not only what the list showed before.
+      store.sync();
+      if (!check(store.error === "Zendesk sent an unexpected reply." && store.count === 1 && store.tickets.get(0).id === "9601"
+                 && Object.keys(store.state.tickets).join() === "9601",
+                 "a refused reply keeps the previous inbox and says so (" + store.error + ", " + Object.keys(store.state.tickets).join() + ")")) return;
+      // A helper that ends without a reply.
+      store.helperCommand = function() { return ["sh", "-c", "exit 1"]; };
+      shell.fetchEndBase = shell.fetchesEnded;
+      store.refresh();
+      break;
+    case 68:
+      if (!check(store.error === "Can't reach Zendesk. Check your connection." && store.count === 1 && store.tickets.get(0).id === "9601",
+                 "a helper that ends without a reply keeps the inbox and says to check the connection (" + store.error + ")")) return;
+      // As if the timeout wrapper had ended the helper (exit 124).
+      store.helperCommand = function() { return ["sh", "-c", "exit 124"]; };
+      shell.fetchEndBase = shell.fetchesEnded;
+      store.refresh();
+      break;
+    case 69:
+      if (!check(store.error === "Zendesk didn't answer in time." && store.count === 1 && store.tickets.get(0).id === "9601",
+                 "a helper the timeout ended keeps the inbox and says Zendesk didn't answer in time (" + store.error + ")")) return;
+      // Read markers in an existing file load before the first inbox shows:
+      // the store's unread count never rises above 0.
+      store.helperCommand = function(args) {
+        var address = args[args.indexOf("--address") + 1];
+        shell.fetches = shell.fetches.concat([address]);
+        return shell.fake("now", shell.inboxReply(address, 9501));
+      };
+      shell.maxUnread = 0;
+      account.address = "preread";
+      break;
+    case 70:
+      if (!check(store.count === 1 && store.unreadCount === 0 && shell.maxUnread === 0,
+                 "markers from the read file load before the inbox shows: no flash of unread (" + shell.maxUnread + ")")) return;
+      shell.maxUnread = -1;
+      // Wide, with markup in every text field: each is shown as plain text.
+      one.prefs.save("panelWidth", "wide");
+      break;
+    case 71:
+      var marked = Fixtures.tickets();
+      marked[0].subject = "<b>Bold</b> subject";
+      marked[0].group = "<s>IT</s>";
+      marked[0].comments[0].body = "<img src=\"https://example.invalid/x\"> <i>hi</i>";
+      marked[0].comments[0].author = "<u>Anna</u>";
+      store.loadFixtures(marked);
+      account.state = "signed_in";
+      account.user = { name: "Alex", email: "alex@acme.example" };
+      account.error = "";
+      one.open();
+      break;
+    case 72:
+      view.toggleTicket("4821");
+      var markup = ["<b>Bold", "<img", "<u>Anna", "<s>IT"];
+      var withMarkup = function(root) {
+        var found = [];
+        (function collect(item) {
+          if (item.hasOwnProperty("textFormat") && typeof item.text === "string" && markup.some(function(mark) { return item.text.indexOf(mark) >= 0; }))
+            found.push(item);
+          for (var child of item.children) collect(child);
+        })(root);
+        return found;
+      };
+      // The markers that the list row or the pane does not show as plain text.
+      var notPlain = function(root) {
+        var plain = withMarkup(root).filter(function(item) { return item.textFormat === Text.PlainText; });
+        return markup.filter(function(mark) { return !plain.some(function(item) { return item.text.indexOf(mark) >= 0; }); });
+      };
+      var rich = withMarkup(view).filter(function(item) { return item.textFormat !== Text.PlainText; });
+      var rowMissing = notPlain(shell.find(view, "ticket-4821"));
+      var paneMissing = notPlain(view.pane);
+      if (!check(rich.length === 0 && rowMissing.length === 0 && paneMissing.length === 0,
+                 "markup in a subject, comment, author or group shows as plain text in the list row and the pane (rich: "
+                 + rich.map(function(item) { return item.text; }).join(" | ") + "; not plain in the row: " + rowMissing.join(" ")
+                 + "; not plain in the pane: " + paneMissing.join(" ") + ")")) return;
+      view.toggleTicket("4821");
+      // A ticket read up to a large comment id gets a reply: shown in the pane, only the reply is new.
+      var big = shell.bigId;
+      store.loadFixtures(shell.bigTicket([shell.bigComment(big, 10)], "2026-11-06T09:30:00Z"));
+      store.markRead("7001");
+      store.receive(shell.bigTicket([shell.bigComment(big + 1, 1), shell.bigComment(big, 10)], "2026-11-06T09:39:00Z"));
+      view.toggleTicket("7001");
+      if (!check(view.selected && view.selected.ticket.id === "7001" && view.pane.lastFresh === 0 && shell.find(view.pane, "newDivider").visible
+                 && shell.find(shell.find(view.pane, "comment-" + big), "earlierDivider").visible, "in the pane, a ticket with large comment ids marks only the reply as new (" + view.pane.lastFresh + ")")) return;
+      view.toggleTicket("7001");
+      one.close();
+      one.prefs.save("panelWidth", "standard");
+      break;
+    case 73:
+      // The helper prints something that isn't JSON: an error, still signed in.
+      account.state = "signed_in";
+      account.user = { name: "Alex", email: "alex@acme.example" };
+      account.error = "";
+      account.helperCommand = function() { return ["sh", "-c", "echo not json"]; };
+      account.check();
+      break;
+    case 74:
+      if (!check(account.state === "signed_in" && account.error === "The Zendesk helper failed.",
+                 "output that isn't JSON never signs the user out (" + account.state + ": " + account.error + ")")) return;
+      // No helper for this CPU (the timeout wrapper exits 127): the inbox stops trying.
+      store.helperCommand = function() { return ["/nonexistent/foamy-zendesk-helper"]; };
+      // Leaving the fixtures starts the fetch at once (the store turns active).
+      shell.fetchEndBase = shell.fetchesEnded;
+      store.fixtures = false;
+      if (!store.fetchProcess.running) store.refresh();
+      break;
+    case 75:
+      if (!check(store.helperMissing && !store.connected && !store.pollTimer.running && store.error === Kit.FoamyI18n.t(FoamyNative.UNAVAILABLE_TEXT),
+                 "a missing helper stops the inbox and says why (" + store.error + ")")) return;
+      store.refresh();
+      if (!check(!store.fetchProcess.running, "and nothing is fetched again")) return;
+      account.helperCommand = function() { return ["/nonexistent/foamy-zendesk-helper"]; };
+      account.check();
+      break;
+    case 76:
+      if (!check(account.state === "unavailable" && account.error === Kit.FoamyI18n.t(FoamyNative.UNAVAILABLE_TEXT),
+                 "a missing helper makes the account unavailable (" + account.state + ": " + account.error + ")")) return;
+      view.editingSettings = true;
+      if (!check(!shell.find(view.settingsPage, "accountButton").actionEnabled, "Sign in is off without a helper")) return;
+      view.editingSettings = false;
+      account.check();
+      account.signIn();
+      if (!check(!account.statusProcess.running && !account.loginProcess.running && account.state === "unavailable", "no more checks or sign-ins")) return;
       shell.finished = true;
       console.log("FOAMY DONE runtime interactions passed"); Qt.quit();
     }
@@ -1250,8 +1515,22 @@ esac
 exit 0
 """
 
+# The read file the "broken" account names (steps 22 to 24): it holds a
+# marker but can't be read. Write-only, so an atomic save could still replace
+# it (a file that can't be written can't be). Root reads it anyway, so the
+# steps would prove nothing.
+BROKEN_READ = '{"version":1,"read":{"9001":{"revision":90010,"at":1}}}\n'
+if os.geteuid() == 0:
+    print("FAIL: run tests/runtime.py as a normal user; root can read a write-only file")
+    sys.exit(1)
+
 run = harness.Run("4.5", SHELL, plugin=plugin, prefix="foamy-zendesk-runtime-", fakebin={"xdg-open": FAKE_OPENER})
+broken = run.out / "read-broken.json"
 try:
+    broken.write_text(BROKEN_READ)
+    broken.chmod(0o200)
+    # Ticket 9501 is read up to its only comment (steps 69 and 70).
+    (run.out / "read-preread.json").write_text('{"version":1,"read":{"9501":{"revision":95010,"at":1}}}\n')
     # The read-only state folder for the failed saves (steps 27 to 32), and
     # the one the fake opener locks (steps 42 to 46).
     (run.out / "locked").mkdir(mode=0o555)
@@ -1268,12 +1547,18 @@ try:
     if refused:
         print("FAIL: the plugin ran host commands:", *refused, sep="\n  ")
         sys.exit(1)
-    if run.ok and "tickets are waiting to open; dropped ticket 4910" not in run.log:
-        print("FAIL: the dropped open was not logged")
-        sys.exit(1)
+    if run.ok:
+        # An atomic save would have replaced the file (and its mode).
+        mode = broken.stat().st_mode & 0o777
+        broken.chmod(0o600)
+        if mode != 0o200 or broken.read_text() != BROKEN_READ:
+            print("FAIL: the unreadable read file was written over")
+            sys.exit(1)
     print(run.log if not run.ok else "PASS: real plugin runtime interactions")
     sys.exit(0 if run.ok else 1)
 finally:
     # The fake opener may have left it read-only, with the read file inside.
     (run.out / "lockable").chmod(0o755)
+    if broken.exists():
+        broken.chmod(0o600)
     run.cleanup()

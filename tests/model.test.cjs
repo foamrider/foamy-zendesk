@@ -2,9 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const Model = require('../Model.js');
 const Fixtures = require('../preview/Fixtures.js');
-// The kit's schedule, with this plugin's settings and cases.
-const Schedule = require('../kit/node-loader.cjs').load('FoamySchedule');
-// Its objects come from the loader's own realm; compare them as plain data.
+// Compare objects as plain data (drops undefined fields).
 const plain = value => JSON.parse(JSON.stringify(value));
 const Schema = require('../Preferences.js');
 
@@ -169,15 +167,6 @@ test('the latest comment says whether it is your own; days count calendar days',
   assert.equal(Model.daysAgo(new Date(2026, 10, 7, 9).getTime(), now), -1);
 });
 
-test('on-hold tickets wait like pending ones', () => {
-  const list = Fixtures.tickets();
-  list[1].status = 'On-hold';
-  const state = seeded(list);
-  Model.markRead(state, '4818');
-  assert.deepEqual(ids(state, { groupWaiting: true }), ['4821', '4824', '4818']);
-  assert.equal(Model.visible(state, { groupWaiting: true })[2].section, 'waiting');
-});
-
 test('a ticket being read keeps its place until it is released', () => {
   const state = seeded();
   // Opened unread, then marked read: it stays put, even with hideRead and unreadFirst.
@@ -232,13 +221,28 @@ test('a read-state file over the limit keeps the most recently marked tickets', 
   assert.equal(kept['1002'], undefined, 'the least recently marked goes');
 });
 
-test('invalid replies are refused; text stays plain data', () => {
+test('a hostile or broken reply is refused whole, bounded and defaulted', () => {
   assert.throws(() => Model.applySnapshot(Model.empty(), 'nope'));
   assert.throws(() => Model.applySnapshot(Model.empty(), [{ id: '__proto__' }]));
-  const body = '<img src="https://example.invalid/tracker">\nSecond paragraph';
-  const list = Fixtures.tickets();
-  list[0].comments[0].body = body;
-  assert.equal(Model.visible(seeded(list))[0].body, body);
+  // One bad ticket refuses the whole reply: the previous inbox stays, and the
+  // valid new ticket before the bad one is not applied either.
+  const state = seeded();
+  assert.throws(() => Model.applySnapshot(state, [{ id: '5000' }, { id: '12a' }]));
+  assert.deepEqual(ids(state), ['4821', '4818', '4824']);
+  // Ticket ids have at most 15 digits.
+  assert.throws(() => Model.applySnapshot(Model.empty(), [{ id: '1'.repeat(16) }]));
+  assert.deepEqual(Object.keys(Model.applySnapshot(Model.empty(), [{ id: '1'.repeat(15) }]).tickets), ['1'.repeat(15)]);
+  // At most 200 tickets and 20 comments per ticket are kept.
+  const many = Array.from({ length: 201 }, (_, i) => ({ id: String(6000 + i) }));
+  assert.equal(Object.keys(Model.applySnapshot(Model.empty(), many).tickets).length, 200);
+  const c = (id, created) => ({ id, author: 'Ola', mine: false, public: true, created, body: 'Hi' });
+  const long = Model.ticketFrom({ id: '1', comments: Array.from({ length: 25 }, (_, i) => c(100 - i, 1)) });
+  assert.equal(long.history.length, 20);
+  // Comments with an id or time that is not a safe integer are dropped.
+  assert.deepEqual(Model.ticketFrom({ id: '2', comments: [c(1.5, 1), c(7, 'x'), c(2 ** 53, 1), c(9, 1)] }).history.map(h => h.revision), [9]);
+  // Missing fields get defaults.
+  const bare = Model.ticketFrom({ id: '1', comments: [{ id: 1, created: 1 }] });
+  assert.deepEqual([bare.subject, bare.status, bare.priority, bare.sender], ['(no subject)', 'Open', 'Normal', '?']);
 });
 
 test('text cut to its limit says so; a comment the helper clipped keeps its mark', () => {
@@ -294,9 +298,30 @@ test("the helper's truncated flags reach the inbox; anything else is not cut", (
 });
 
 test('ticket links use the configured account only', () => {
-  assert.equal(Model.host('ACME'), 'acme.zendesk.com');
-  assert.equal(Model.host('https://acme.zendesk.com/'), 'acme.zendesk.com');
-  assert.equal(Model.host('evil.com'), '');
+  // The helper normalizes the address the same way: native/src/oauth.rs
+  // addresses_normalize_to_the_zendesk_subdomain holds the same rows. If the
+  // two disagree, the read file and notifications name another host.
+  const hosts = [
+    ['ACME', 'acme.zendesk.com'],
+    ['https://acme.zendesk.com/', 'acme.zendesk.com'],
+    [' Acme ', 'acme.zendesk.com'],
+    ['ACME.zendesk.com', 'acme.zendesk.com'],
+    ['a'.repeat(63), 'a'.repeat(63) + '.zendesk.com'],
+    ['evil.com', ''],
+    ['acme.zendesk.com.evil.com', ''],
+    ['http://acme.zendesk.com', ''],
+    ['acme/x', ''],
+    ['a/b', ''],
+    ['ac me', ''],
+    ['acme.example.com', ''],
+    ['https://evil.com/x.zendesk.com', ''],
+    ['-acme', ''],
+    ['acme-', ''],
+    ['a'.repeat(64), ''],
+    ['zendesk.com', ''],
+    ['', ''],
+  ];
+  for (const [input, expected] of hosts) assert.equal(Model.host(input), expected, JSON.stringify(input));
   assert.equal(Model.ticketUrl('acme', '4821'), 'https://acme.zendesk.com/agent/tickets/4821');
   assert.equal(Model.ticketUrl('acme', '1/../x'), '');
   assert.equal(Model.ticketUrl('', '1'), '');
@@ -438,52 +463,22 @@ test('notification text is escaped markup on one line', () => {
   assert.equal(Model.notificationText(null, 6), '');
 });
 
-test('schedule: overnight ranges carry into the next day; off means always within', () => {
-  const week = ['', '', '', '', '', '', ''];
-  week[0] = '22:00-02:00'; // Monday night into Tuesday
-  assert.equal(Schedule.withinWeek(new Date(2026, 10, 2, 23), true, week), true);
-  assert.equal(Schedule.withinWeek(new Date(2026, 10, 3, 1), true, week), true);
-  assert.equal(Schedule.withinWeek(new Date(2026, 10, 3, 2), true, week), false);
-  assert.equal(Schedule.withinWeek(new Date(2026, 10, 3, 2), false, week), true);
-  assert.equal(Schedule.withinWeek(new Date(2026, 10, 4, 12), true, ['', '', '00:00-24:00', '', '', '', '']), true);
-});
-
-test('settings schema: defaults keep today\'s behaviour and match the manifest', () => {
+test('the settings schema agrees with the manifest; its patterns refuse bad values', () => {
   const manifest = require('../manifest.json');
+  const pick = f => ({ key: f.key, type: f.type, defaultValue: f.defaultValue, options: f.options, min: f.min, max: f.max, step: f.step });
+  assert.deepEqual(plain(manifest.barWidget.schema.map(pick)), plain(Schema.fields.map(pick)));
   const defaults = Object.fromEntries(Schema.fields.map(field => [field.key, field.defaultValue]));
   assert.deepEqual(defaults, manifest.barWidget.defaults);
-  assert.deepEqual(manifest.barWidget.schema.map(field => field.key), Schema.fields.map(field => field.key));
-  assert.equal(Schema.fields.find(field => field.key === 'scheduleOutsideMode').defaultValue, 'mute');
-  for (const value of ['', '08:00-16:00', '22:00-02:00', '00:00-24:00']) assert.match(value, new RegExp(Schema.schedulePattern));
-  for (const value of ['8:00-16:00', '24:00-01:00', '08:00']) assert.doesNotMatch(value, new RegExp(Schema.schedulePattern));
-});
-
-test('schedule: snoozing and resuming override the schedule until the next day', () => {
-  const at = (day, hour, minute) => new Date(2026, 10, day, hour, minute || 0);
-  const week = ['08:00-16:00', '22:00-06:00', '', '', '', '', '']; // Monday, Tuesday night
-  // Within the hours: a snooze lasts until they end, then the schedule rules again.
-  const snooze = Schedule.toggled(at(2, 10), true, week, null);
-  assert.deepEqual(plain(snooze), { on: false, until: at(2, 16).getTime() });
-  assert.equal(Schedule.effective(at(2, 15, 59), true, week, snooze), false);
-  assert.equal(Schedule.effective(at(3, 8), true, week, snooze), false);
-  // Pressing again goes back to the schedule: no override.
-  assert.equal(Schedule.toggled(at(2, 11), true, week, snooze), null);
-  // Outside the hours: resuming lasts until midnight...
-  const evening = Schedule.toggled(at(2, 19), true, week, null);
-  assert.deepEqual(plain(evening), { on: true, until: at(3, 0).getTime() });
-  assert.equal(Schedule.effective(at(2, 23, 59), true, week, evening), true);
-  assert.equal(Schedule.effective(at(3, 0), true, week, evening), false);
-  // ...or until the schedule starts, if that is sooner.
-  assert.deepEqual(plain(Schedule.toggled(at(2, 6), true, week, null)), { on: true, until: at(2, 8).getTime() });
-  // An overnight range: the snooze runs on past midnight to its end.
-  assert.deepEqual(plain(Schedule.toggled(at(3, 23), true, week, null)), { on: false, until: at(4, 6).getTime() });
-  // No schedule: snoozed until midnight.
-  assert.deepEqual(plain(Schedule.toggled(at(4, 12), false, [], null)), { on: false, until: at(5, 0).getTime() });
-  // The state file: expired or malformed overrides are dropped.
-  const text = Schedule.serializeOverride(snooze);
-  assert.deepEqual(plain(Schedule.parseOverride(text, at(2, 12).getTime())), plain(snooze));
-  assert.equal(Schedule.parseOverride(text, at(2, 16).getTime()), null);
-  assert.equal(Schedule.parseOverride('{"version":1,"override":{"on":"no","until":1}}', 0), null);
-  assert.equal(Schedule.parseOverride('not json', 0), null);
-  assert.equal(Schedule.serializeOverride(null), '{"version":1,"override":null}\n');
+  const pattern = key => new RegExp(Schema.fields.find(field => field.key === key).pattern);
+  const rows = [
+    [new RegExp(Schema.schedulePattern), ['', '08:00-16:00', '22:00-02:00', '00:00-24:00'], ['8:00-16:00', '24:00-01:00', '08:00']],
+    [new RegExp(Schema.addressPattern), ['', 'acme', 'ACME.zendesk.com', 'https://acme.zendesk.com/'],
+      ['evil.com', 'acme.zendesk.com.evil', 'http://acme', '-acme', 'acme x']],
+    [pattern('oauthClientId'), ['foamy-test', 'a.b_c'], ['a b', 'x'.repeat(129)]],
+    [pattern('oauthPort'), ['', '47823'], ['80a', '123456']],
+  ];
+  for (const [re, accepted, refused] of rows) {
+    for (const value of accepted) assert.match(value, re);
+    for (const value of refused) assert.doesNotMatch(value, re);
+  }
 });

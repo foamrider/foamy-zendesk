@@ -4,9 +4,9 @@
 # real-keyring.sh). Its state is files next to it: `item` is the stored
 # secret and `locked` locks its keyring, every unlock prompt dismissed.
 # `search-fails` makes `search` fail and `lookup-dies` kills `lookup`.
-# Each run's verb is appended to `log`.
+# Each run's arguments are appended to `log`, one line per run.
 d=$(dirname "$0")
-echo "$1" >>"$d/log"
+echo "$*" >>"$d/log"
 readable() { [ -f "$d/item" ] && [ ! -e "$d/locked" ]; }
 case $1 in
   lookup)
