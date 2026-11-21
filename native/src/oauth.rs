@@ -209,17 +209,30 @@ mod tests {
         ] {
             assert_eq!(normalize_address(input).unwrap(), "acme.zendesk.com");
         }
+        // The longest DNS label is accepted. Model.host in the panel must give
+        // the same answers for these rows: both must agree on the host.
+        let longest = "a".repeat(63);
+        assert_eq!(
+            normalize_address(&longest).unwrap(),
+            format!("{longest}.zendesk.com")
+        );
+        let too_long = "a".repeat(64);
         for input in [
             "",
             "-acme",
+            "acme-",
+            too_long.as_str(),
+            "zendesk.com",
+            "http://acme.zendesk.com",
+            "acme.zendesk.com.evil.com",
             "acme.example.com",
             "ac me",
             "https://evil.com/x.zendesk.com",
             "a/b",
         ] {
             assert_eq!(
-                normalize_address(input).unwrap_err().code,
-                "INVALID_ARGUMENT",
+                normalize_address(input).map_err(|failure| failure.code),
+                Err("INVALID_ARGUMENT".to_string()),
                 "{input}"
             );
         }
