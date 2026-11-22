@@ -185,7 +185,7 @@ Item {
             onHovered: overview.hovered(index)
             onClicked: overview.selectRequested(modelData.id)
             Accessible.role: Accessible.Button
-            Accessible.name: modelData.subject + ", " + FoamyI18n.t(modelData.status) + ", " + age.text
+            Accessible.name: (modelData.subject || FoamyI18n.t("(no subject)")) + ", " + FoamyI18n.t(modelData.status) + ", " + age.text
             Accessible.onPressAction: overview.selectRequested(modelData.id)
             StatusLabel {
               id: tag
@@ -205,7 +205,7 @@ Item {
               spacing: 1
               PlainText {
                 width: parent.width
-                text: row.modelData.subject
+                text: row.modelData.subject || FoamyI18n.t("(no subject)")
                 wrapMode: Text.NoWrap
                 elide: Text.ElideRight
               }

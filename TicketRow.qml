@@ -235,7 +235,7 @@ Item {
         }
         Accessible.role: Accessible.Button
         // A one-line ticket shows its status only by colour: name it here.
-        Accessible.name: ticketRow.ticket.subject + ", " + FoamyI18n.t(ticketRow.ticket.status) + (ticketRow.flagged ? ", " + FoamyI18n.t(ticketRow.ticket.priority) : "") + (ticketRow.read ? "" : ", " + FoamyI18n.t("unread"))
+        Accessible.name: (ticketRow.ticket.subject || FoamyI18n.t("(no subject)")) + ", " + FoamyI18n.t(ticketRow.ticket.status) + (ticketRow.flagged ? ", " + FoamyI18n.t(ticketRow.ticket.priority) : "") + (ticketRow.read ? "" : ", " + FoamyI18n.t("unread"))
         Accessible.description: ticketRow.wide ? (ticketRow.selected ? FoamyI18n.t("Hide ticket") : FoamyI18n.t("Show ticket")) : ticketRow.expanded ? FoamyI18n.t("Collapse ticket") : FoamyI18n.t("Expand ticket")
         Accessible.onPressAction: ticketRow.toggleRequested()
       }
@@ -270,7 +270,7 @@ Item {
             x: ticketRow.indent
             anchors.verticalCenter: parent.verticalCenter
             width: Math.max(0, Math.min(implicitWidth, lead.x - x - FoamyStyle.gap))
-            text: ticketRow.ticket.subject
+            text: ticketRow.ticket.subject || FoamyI18n.t("(no subject)")
             font.pixelSize: ticketRow.oneLine ? FoamyStyle.font.body : FoamyStyle.font.subtitle
             font.weight: ticketRow.read ? Font.Normal : Font.DemiBold
             color: ticketRow.muted ? FoamyPalette.secondaryText : FoamyPalette.text

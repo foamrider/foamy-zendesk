@@ -240,9 +240,9 @@ test('a hostile or broken reply is refused whole, bounded and defaulted', () => 
   assert.equal(long.history.length, 20);
   // Comments with an id or time that is not a safe integer are dropped.
   assert.deepEqual(Model.ticketFrom({ id: '2', comments: [c(1.5, 1), c(7, 'x'), c(2 ** 53, 1), c(9, 1)] }).history.map(h => h.revision), [9]);
-  // Missing fields get defaults.
+  // Missing fields get defaults; a missing subject stays empty (the views name it).
   const bare = Model.ticketFrom({ id: '1', comments: [{ id: 1, created: 1 }] });
-  assert.deepEqual([bare.subject, bare.status, bare.priority, bare.sender], ['(no subject)', 'Open', 'Normal', '?']);
+  assert.deepEqual([bare.subject, bare.status, bare.priority, bare.sender], ['', 'Open', 'Normal', '?']);
 });
 
 test('text cut to its limit says so; a comment the helper clipped keeps its mark', () => {

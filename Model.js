@@ -48,7 +48,9 @@ function ticketFrom(raw, previous) {
   var updated = Date.parse(raw.updated_at);
   return {
     id: String(raw.id),
-    subject: shown(raw.subject, 512) || "(no subject)",
+    // Empty when Zendesk gives none: the views show "(no subject)" in the
+    // reader's language.
+    subject: shown(raw.subject, 512),
     status: text(raw.status, 32) || "Open",
     priority: text(raw.priority, 32) || "Normal",
     // `unassigned` from the helper, not a name: an agent may be called "Unassigned".

@@ -126,7 +126,7 @@ Item {
         anchors.rightMargin: FoamyStyle.gap
         anchors.top: parent.top
         anchors.topMargin: Math.max(0, (actions.height - font.pixelSize * 1.4) / 2)
-        text: pane.ticket ? pane.ticket.subject : ""
+        text: pane.ticket ? pane.ticket.subject || FoamyI18n.t("(no subject)") : ""
         font.pixelSize: FoamyStyle.font.heading
         font.weight: Font.DemiBold
         maximumLineCount: 3

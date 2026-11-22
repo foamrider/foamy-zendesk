@@ -85,6 +85,18 @@ ShellRoot {
   // What the fake xdg-open does next (see FAKE_OPENER).
   FileView { id: openerMode; path: Quickshell.env("FOAMY_OUT") + "/xdg-open.mode"; blockWrites: true; printErrors: false }
   FileView { id: openerRelease; path: Quickshell.env("FOAMY_OUT") + "/xdg-open.release"; blockWrites: true; printErrors: false }
+  // The Omarchy language picker's file: writing it switches the language live.
+  FileView { id: languageFile; path: Quickshell.env("OMARCHY_LANGUAGE_FILE"); blockWrites: true; printErrors: false }
+  // Every text and accessible name under an item.
+  function shownTexts(item) {
+    var found = [];
+    (function collect(node) {
+      if (typeof node.text === "string") found.push(node.text);
+      if (node.Accessible && node.Accessible.name) found.push(node.Accessible.name);
+      for (var child of node.children) collect(child);
+    })(item);
+    return found;
+  }
   // Every View in Zendesk asked for has ended (launched or failed).
   function launchesDone() { return !Plugin.TicketStore.launching && Plugin.TicketStore.launches.length === 0; }
   function launchedOne() { return shell.opened().length > shell.openBase && shell.launchesDone(); }
@@ -220,6 +232,9 @@ ShellRoot {
     case 74: return [function() { return !account.busy; }, 10000, "the check finished"];
     case 75: return [function() { return shell.fetchesEnded > shell.fetchEndBase && !store.fetchProcess.running; }, 10000, "the fetch without a helper ended"];
     case 76: return [function() { return !account.busy; }, 10000, "the check without a helper ended"];
+    case 77: return [function() { return Kit.FoamyI18n.language === "no"; }, 10000, "Norwegian was picked"];
+    case 78: return [function() { return one.wide && !account.busy; }, 10000, "Wide was saved"];
+    case 79: return [function() { return one.opened && one.popup.bodyItem.wide; }, 10000, "the Wide popup opened"];
     }
     return null;
   }
@@ -1489,6 +1504,33 @@ ShellRoot {
       account.check();
       account.signIn();
       if (!check(!account.statusProcess.running && !account.loginProcess.running && account.state === "unavailable", "no more checks or sign-ins")) return;
+      languageFile.setText("no\n");
+      break;
+    case 77:
+      one.prefs.save("panelWidth", "wide");
+      break;
+    case 78:
+      // Tickets without a subject (none given, or an empty one), in Norwegian.
+      var untitled = Fixtures.tickets();
+      delete untitled[0].subject;
+      untitled[2].subject = "";
+      store.loadFixtures(untitled);
+      account.state = "signed_in";
+      account.user = { name: "Alex", email: "alex@acme.example" };
+      account.error = "";
+      one.open();
+      break;
+    case 79:
+      var none = "(uten emne)";
+      var named = function(item) { return item !== null && shell.shownTexts(item).some(function(text) { return text.indexOf(none) === 0; }); };
+      var sent = function(list) { var argv = store.notificationCommand(list); return argv.slice(argv.indexOf("--") + 1); };
+      var vpn = store.state.tickets["4821"], display = store.state.tickets["4824"];
+      if (!check(named(shell.find(view, "ticket-4821")) && named(shell.find(view, "ticket-4824")), "a list row names a ticket without a subject in the reader's language")) return;
+      if (!check(named(shell.find(view.overview, "awaiting-4821")) && named(shell.find(view.overview, "awaiting-4824")), "so does the overview")) return;
+      if (!check(sent([vpn])[0] === none && sent([vpn, display])[1].split("\n").slice(0, 2).join("|") === none + "|" + none,
+                 "and its notification (" + JSON.stringify(sent([vpn])[0]) + ")")) return;
+      view.toggleTicket("4821");
+      if (!check(shell.find(view.pane, "paneSubject").text === none, "and the reading pane (" + shell.find(view.pane, "paneSubject").text + ")")) return;
       shell.finished = true;
       console.log("FOAMY DONE runtime interactions passed"); Qt.quit();
     }
