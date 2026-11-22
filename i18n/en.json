@@ -250,5 +250,13 @@
   "%1 more may be waiting: their comments haven't loaded yet": {
     "one": "%1 more may be waiting: its comments haven't loaded yet",
     "other": "%1 more may be waiting: their comments haven't loaded yet"
-  }
+  },
+  "Redo": "Redo",
+  "Cut": "Cut",
+  "Copy": "Copy",
+  "Paste": "Paste",
+  "Select all": "Select all",
+  "Clipboard paste timed out. Copy the text again.": "Clipboard paste timed out. Copy the text again.",
+  "Clipboard text is too large or contains invalid characters.": "Clipboard text is too large or contains invalid characters.",
+  "Could not paste clipboard text. Copy plain text and try again.": "Could not paste clipboard text. Copy plain text and try again."
 }
