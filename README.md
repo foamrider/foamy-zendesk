@@ -138,8 +138,8 @@ expire, and the new pair is stored before it is used (Zendesk invalidates the
 old one). An expired refresh token shows "Sign-in expired". A new pair the
 keyring can't store, at sign-in or on a refresh, is revoked at once: sign-in
 then says why, and a refresh shows "Sign-in expired", since the stored pair
-was already spent. So is a new pair at sign-in when Zendesk then doesn't
-return the signed-in user. **Sign out**
+was already spent. A new pair at sign-in is also revoked when Zendesk then
+doesn't return the signed-in user. **Sign out**
 removes the token from the keyring and revokes it; a refresh still running
 finishes first (up to 30 seconds), so the pair it stores is the one removed.
 If it takes longer, sign-out still clears the keyring but says it didn't
