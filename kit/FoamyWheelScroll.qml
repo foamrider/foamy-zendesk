@@ -1,4 +1,4 @@
-// foamy-kit 0.13.0 0753d87fd7cecbb50bc9e5d7d4f256916ac668180f2a565585d316853a0acacf — do not edit; change foamy-kit and run sync
+// foamy-kit 0.13.1 edd03f728467480de6d505bebdc099e6a9c9bae4d1ce830f3db6adf717bf8219 — do not edit; change foamy-kit and run sync
 import QtQuick
 
 // Normal wheel and touchpad scrolling for a Flickable (ListView, GridView…),
@@ -67,6 +67,17 @@ QtObject {
   function clamp(y) {
     return Math.max(minY, Math.min(maxY, y))
   }
+
+  // A glide's end is clamped when it starts. The bounds can shrink while it
+  // runs (a popup body that grows to fit its content does so after the
+  // content grew), and the animation would then write a place past the new
+  // end over the view's own clamp: aim it inside the bounds again.
+  function _keepInBounds() {
+    if (animation.running && Math.abs(clamp(animation.to) - animation.to) > 0.01)
+      scrollTo(animation.to, true)
+  }
+  onMinYChanged: _keepInBounds()
+  onMaxYChanged: _keepInBounds()
 
   // Scroll by `dy` content px. animate: glide there (wheel notches).
   function scrollBy(dy, animate) {
@@ -150,6 +161,16 @@ QtObject {
     _followMargin = margin
     followTimer.restart()
     _place(item, margin)
+  }
+
+  // The content grows only after the followed item has (a Column lays out
+  // later), so a place on the item's height alone stops short at the old
+  // end of the content.
+  property Connections _followContent: Connections {
+    target: root._following ? root.target : null
+    function onContentHeightChanged() {
+      root._refollow()
+    }
   }
 
   property Timer _followTimer: Timer {

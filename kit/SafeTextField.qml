@@ -1,4 +1,4 @@
-// foamy-kit 0.13.0 98517bded6d6b9c07f25c4080f3ae267b50505930cc3a6813988dbe8df7bb4aa — do not edit; change foamy-kit and run sync
+// foamy-kit 0.13.1 0d7078393e52566a2f63761ae4600e515047bd8b0b1a9e6db315cf5e08db315c — do not edit; change foamy-kit and run sync
 import QtQuick
 import QtQuick.Controls as Controls
 import Quickshell.Io
@@ -27,7 +27,9 @@ import qs.Ui
 // alignment, never background. `quiet: true` is for text edited in place
 // (an editor's title that reads as text): no fill or border at rest, the
 // usual field under the pointer or the cursor and with the focus. clipboardScript resolves relative to this
-// file (kit/clipboard.sh by default) unless absolute.
+// file (kit/clipboard.sh by default) unless absolute. A field that hides
+// gives up the focus (keys never edit hidden text), which ends the edit:
+// editingFinished.
 //
 // Secrets (API tokens, passwords): `masked: true`, set at creation.
 //
@@ -76,7 +78,10 @@ import qs.Ui
 //   swallowed); nothing is written to the clipboard or the primary
 //   selection (the editor is read-only and selects nothing itself), nor to
 //   logs. Input methods are off (read-only editor, hidden-text hints).
-//   Accessibility reports a password edit whose value is the mask.
+//   Accessibility reports a password edit whose value is the mask; the
+//   field's Accessible.name is its description too (Qt hides a password
+//   edit's name). Without a name, the description is the field's own
+//   Accessible.description, else its placeholder, as in normal mode.
 // - Only the field writes the editor: assigning `text`, or a change made by
 //   an assistive tool, clears the field. Changing `masked` after creation
 //   clears it too (nothing typed in one mode shows in the other).
@@ -89,6 +94,7 @@ Flickable {
   property color accent: Commons.Color.accent
   property string clipboardScript: "clipboard.sh"
   // Longest text the field keeps (typing and paste), like TextField.maximumLength.
+  // A cut to fit never splits a surrogate pair.
   property int maximumLength: 32767
   // Password-style entry, set at creation (header: "Masked contract").
   property bool masked: false
@@ -125,7 +131,9 @@ Flickable {
   property alias cursorPosition: editor.cursorPosition
   property alias font: editor.font
   property alias horizontalAlignment: editor.horizontalAlignment
-  readonly property bool inputActiveFocus: editor.activeFocus
+  // An alias, not a binding: editingFinished is emitted from the editor's
+  // focus change, before a binding on activeFocus would have updated.
+  readonly property alias inputActiveFocus: editor.activeFocus
   // The editor itself (tests, glyph geometry).
   readonly property Item editorItem: editor
   property alias padding: editor.padding
@@ -208,7 +216,7 @@ Flickable {
       if (value === "" && pasteStart === pasteEnd)
         return
       // Keep maximumLength (TextInput's 32767 by default), including repeated pastes.
-      value = value.slice(0, Math.max(0, root.maximumLength - editor.length + pasteEnd - pasteStart))
+      value = value.slice(0, _cutAt(value, Math.max(0, root.maximumLength - editor.length + pasteEnd - pasteStart)))
       if (value === "" && pasteStart === pasteEnd)
         return
       // These fields are not file-backed. Reset the document's modified
@@ -225,6 +233,16 @@ Flickable {
   }
   function focusInput() {
     editor.forceActiveFocus()
+  }
+  // Where to cut `text` so it keeps at most `limit` UTF-16 units without
+  // splitting a surrogate pair. No JS globals (see onMaximumLengthChanged).
+  function _cutAt(text, limit) {
+    if (limit >= text.length)
+      return text.length
+    if (limit <= 0)
+      return 0
+    var code = text.charCodeAt(limit - 1)
+    return code >= 0xd800 && code < 0xdc00 ? limit - 1 : limit
   }
   // The masked value split into code points (a surrogate pair stays whole),
   // one per mask glyph. No JS globals (see onMaximumLengthChanged).
@@ -505,8 +523,14 @@ Flickable {
     id: editor
     objectName: "safeEditor"
 
-    // The editor is the tab stop: it carries the field's name and its role.
+    // The editor is the tab stop: it carries the field's name, description
+    // and role. Qt reports no name for a password edit (Qt 6.12), so a
+    // masked editor gives the name as its description, which Qt keeps; drop
+    // that when Qt reports the name of a password edit. Setting the
+    // description stops Qt from showing the placeholder as the description,
+    // so the placeholder is the fallback here.
     Accessible.name: root.Accessible.name
+    Accessible.description: root.masked && root.Accessible.name !== "" ? root.Accessible.name : (root.Accessible.description !== "" ? root.Accessible.description : root.placeholderText)
     Accessible.role: Accessible.EditableText
     Accessible.passwordEdit: root.masked
     activeFocusOnTab: true
@@ -569,7 +593,9 @@ Flickable {
 
         onTriggered: {
           editMenu.close()
-          root.focusInput()
+          // A hidden field takes no keys, also from a menu still closing.
+          if (root.visible)
+            root.focusInput()
           root.requestPaste(false)
         }
       }
@@ -636,7 +662,7 @@ Flickable {
       var wanted = root.maximumLength
       var limit = wanted > 32767 ? 32767 : (wanted > 0 ? wanted : 0)
       if (length > limit)
-        remove(limit, length)
+        remove(root._cutAt(text, limit), length)
       root.revision++
       root.pasteError = ""
     }
@@ -804,7 +830,7 @@ Flickable {
       return
     }
     if (editor.length > limit)
-      editor.remove(limit, editor.length)
+      editor.remove(_cutAt(editor.text, limit), editor.length)
   }
   Component.onDestruction: cancelPaste()
   onActiveFocusChanged: if (activeFocus)
@@ -814,6 +840,11 @@ Flickable {
   onVisibleChanged: if (!visible) {
     cancelPaste()
     pasteError = ""
+    // Qt keeps the active focus on a hidden item, so keys would still edit
+    // text the user cannot see. Losing it ends the edit (editingFinished).
+    // An open menu would give the focus back on Esc or Paste: close it first.
+    editMenu.close()
+    editor.focus = false
   }
 
   // Private: the masked value, and whether the field itself is writing the mask.
