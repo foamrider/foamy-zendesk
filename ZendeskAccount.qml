@@ -95,8 +95,12 @@ QtObject {
     error = ""
     state = "waiting"
     loginProcess.lastLine = ""
-    // The helper waits five minutes for the browser.
-    start(loginProcess, "auth-login", ["--port", String(port)], "330s")
+    // The helper waits up to five minutes for the browser, then for the
+    // token lock (15 s), the keyring (up to three calls of 60 s) and Zendesk
+    // (up to three requests of 20 s): about 560 s in all. Stopped after the
+    // code exchange, it would leave a new sign-in valid at Zendesk that
+    // nobody holds, so the limit is above that.
+    start(loginProcess, "auth-login", ["--port", String(port)], "600s")
   }
   function cancelSignIn() {
     loginProcess.running = false

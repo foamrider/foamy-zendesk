@@ -713,24 +713,54 @@ mod tests {
         (base, seen)
     }
 
+    /// A directory that is removed when dropped, also when the test fails.
+    struct Dir(PathBuf);
+
+    impl Drop for Dir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// An [`Account`] that owns its lock directory: the directory goes when
+    /// the account does, so no test run leaves one behind.
+    struct Helper<'a> {
+        account: Account<'a>,
+        _locks: Dir,
+    }
+
+    impl<'a> std::ops::Deref for Helper<'a> {
+        type Target = Account<'a>;
+        fn deref(&self) -> &Account<'a> {
+            &self.account
+        }
+    }
+
+    impl std::ops::DerefMut for Helper<'_> {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.account
+        }
+    }
+
     /// Like one helper process: its own account, with a lock directory of
     /// its own, so tests running in parallel don't wait for each other
     /// (tests that race helpers share one, see `locked`).
-    fn account<'a>(base: &str, vault: &'a Memory) -> Account<'a> {
+    fn account<'a>(base: &str, vault: &'a Memory) -> Helper<'a> {
         static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let locks = std::env::temp_dir()
-            .join(format!(
-                "foamy-zendesk-test-{}-accounts",
-                std::process::id()
-            ))
-            .join(n.to_string());
+        let locks = std::env::temp_dir().join(format!(
+            "foamy-zendesk-test-{}-account-{n}",
+            std::process::id()
+        ));
         std::fs::create_dir_all(&locks).unwrap();
-        Account {
-            client_id: "foamy".into(),
-            client: Client::new(base.into(), Duration::from_secs(5)),
-            vault,
-            locks: Ok(locks),
+        Helper {
+            account: Account {
+                client_id: "foamy".into(),
+                client: Client::new(base.into(), Duration::from_secs(5)),
+                vault,
+                locks: Ok(locks.clone()),
+            },
+            _locks: Dir(locks),
         }
     }
 
@@ -1622,7 +1652,7 @@ mod tests {
     }
 
     /// Another helper process: its own account, the same keyring and locks.
-    fn locked<'a>(base: &str, vault: &'a Memory, dir: &Path) -> Account<'a> {
+    fn locked<'a>(base: &str, vault: &'a Memory, dir: &Path) -> Helper<'a> {
         let mut account = account(base, vault);
         account.locks = Ok(dir.to_owned());
         account
@@ -1866,7 +1896,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
-    fn without_locks<'a>(base: &str, vault: &'a Memory, locks: &Locks) -> Account<'a> {
+    fn without_locks<'a>(base: &str, vault: &'a Memory, locks: &Locks) -> Helper<'a> {
         let mut account = account(base, vault);
         account.locks = locks.clone();
         account

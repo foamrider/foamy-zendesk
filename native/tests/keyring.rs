@@ -19,6 +19,12 @@ use serde_json::{Value, json};
 
 const HELPER: &str = env!("CARGO_BIN_EXE_foamy-zendesk-helper");
 
+/// The longest directory a bus can listen in: dbus-daemon refuses a socket
+/// path over 99 bytes, and names its socket `dbus-` and ten random
+/// characters. gnome-keyring's `keyring/control` there is as long, within
+/// the kernel's 107.
+const MAX_SOCKET_DIR: usize = 99 - "/dbus-0123456789".len();
+
 /// A private temporary directory, removed when dropped.
 struct Dir(PathBuf);
 
@@ -31,6 +37,22 @@ impl Dir {
         }
         fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
         fs::set_permissions(path.join("run"), fs::Permissions::from_mode(0o700)).unwrap();
+        Dir(path)
+    }
+
+    /// A private directory for a bus's and a keyring's sockets: in the
+    /// temporary directory, or in /tmp when a long TMPDIR leaves no room for
+    /// the bus's socket name (dbus-daemon then stops with "Socket name too
+    /// long" and the session runs nothing).
+    fn sockets(tag: &str) -> Dir {
+        let name = format!("fzk-{tag}-{}", std::process::id());
+        let mut path = std::env::temp_dir().join(&name);
+        if path.as_os_str().len() > MAX_SOCKET_DIR {
+            path = Path::new("/tmp").join(name);
+        }
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir_all(&path).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
         Dir(path)
     }
 }
@@ -268,6 +290,8 @@ fn a_real_locked_gnome_keyring_is_not_a_sign_out() {
         return;
     }
     let dir = Dir::new("real");
+    // The session's runtime directory, where the bus and the keyring listen.
+    let run = Dir::sockets("real-run");
     // A session bus of its own: no activatable services (an empty service
     // directory), so no unlock prompter can start, and nothing reaches the
     // desktop's bus or keyring.
@@ -279,7 +303,7 @@ fn a_real_locked_gnome_keyring_is_not_a_sign_out() {
 <busconfig><type>session</type><listen>unix:dir={run}</listen><servicedir>{services}</servicedir>
 <policy context="default"><allow send_destination="*" eavesdrop="true"/><allow eavesdrop="true"/><allow own="*"/></policy></busconfig>
 "#,
-            run = dir.0.join("run").display(),
+            run = run.0.display(),
             services = dir.0.join("services").display(),
         ),
     )
@@ -293,6 +317,7 @@ fn a_real_locked_gnome_keyring_is_not_a_sign_out() {
         .arg(&script)
         .arg(HELPER);
     environment(&mut session, &dir.0, "/usr/bin:/bin");
+    session.env("XDG_RUNTIME_DIR", &run.0);
     // The keyrings live here.
     session
         .env("XDG_DATA_HOME", dir.0.join("home/data"))
