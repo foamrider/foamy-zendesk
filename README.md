@@ -131,7 +131,9 @@ integrations › APIs › OAuth clients: kind **Public**, redirect URL
 
 **Sign in** (it saves fields still being typed) opens the browser; the helper
 listens on `127.0.0.1` only, checks the `state` value, exchanges the code at
-once and shows who is signed in. Tokens are stored in the Secret Service
+once and shows who is signed in. While the sign-in waits for the browser,
+the connection fields are dimmed and take no input; to change them, press
+**Cancel** first. Tokens are stored in the Secret Service
 keyring (through `secret-tool`), never in the plugin settings, a file or a
 log; the panel only learns the outcome. Access tokens are refreshed when they
 expire, and the new pair is stored before it is used (Zendesk invalidates the

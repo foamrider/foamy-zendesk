@@ -73,6 +73,10 @@ ShellRoot {
   // What the "big" stand-in says of ticket 9301 (steps 33 to 35): its first
   // comment, then a change whose comments are "deferred", then those comments.
   property string bigChange: ""
+  // The saved address (steps 80 to 85), and what the address field showed
+  // after a key typed while a sign-in waited (steps 81 and 82).
+  property string savedAddress: ""
+  property string typedWhileWaiting: ""
   readonly property string lockedSignOut: "Sign-out didn't finish: the keyring is locked, so the Zendesk sign-in is still stored. Unlock the keyring and sign out again."
   readonly property string lockedKeyring: "The keyring that holds the Zendesk sign-in is locked. Unlock it and try again."
   // The shell reflects saved settings back to every instance, like the host.
@@ -85,6 +89,8 @@ ShellRoot {
   // What the fake xdg-open does next (see FAKE_OPENER).
   FileView { id: openerMode; path: Quickshell.env("FOAMY_OUT") + "/xdg-open.mode"; blockWrites: true; printErrors: false }
   FileView { id: openerRelease; path: Quickshell.env("FOAMY_OUT") + "/xdg-open.release"; blockWrites: true; printErrors: false }
+  // Lets the "held" stand-in sign-in finish (see fake()).
+  FileView { id: loginRelease; path: Quickshell.env("FOAMY_OUT") + "/login.release"; blockWrites: true; printErrors: false }
   // The Omarchy language picker's file: writing it switches the language live.
   FileView { id: languageFile; path: Quickshell.env("OMARCHY_LANGUAGE_FILE"); blockWrites: true; printErrors: false }
   // Every View in Zendesk asked for has ended (launched or failed).
@@ -148,6 +154,10 @@ ShellRoot {
     for (var child of item.children) { var hit = find(child, name); if (hit) return hit; }
     return null;
   }
+  // The settings page scrolled to its end, where the Zendesk section is.
+  function toEnd(page) { page.flickable.contentY = Math.max(0, page.flickable.contentHeight - page.flickable.height); }
+  // Whether all of the item shows in the page's scrolled view, so that a real click lands on it.
+  function onPage(page, item) { var top = item.mapToItem(page.flickable, 0, 0).y; return item.visible && top >= 0 && top + item.height <= page.flickable.height; }
   function check(ok, message) {
     if (!ok && !shell.finished) { shell.finished = true; console.log("FOAMY FAIL " + message); Qt.quit(); }
     return ok;
@@ -225,6 +235,10 @@ ShellRoot {
     case 77: return [function() { return Kit.FoamyI18n.language === "no"; }, 10000, "Norwegian was picked"];
     case 78: return [function() { return one.wide && !account.busy; }, 10000, "Wide was saved"];
     case 79: return [function() { return one.opened && one.popup.bodyItem.wide; }, 10000, "the Wide popup opened"];
+    case 81: return [function() { return account.loginProcess.running; }, 10000, "the sign-in from Settings started"];
+    case 82: return [function() { return checked() && account.state !== "waiting"; }, 10000, "the sign-in from Settings ended"];
+    case 84: return [function() { return account.loginProcess.running; }, 10000, "the sign-in to cancel started"];
+    case 85: return [function() { return !account.busy && account.state === "signed_out"; }, 10000, "the cancelled sign-in ended"];
     }
     return null;
   }
@@ -250,10 +264,12 @@ ShellRoot {
   }
   // A stand-in helper: "now" replies at once, "slow" after a second;
   // "late" replies only when stopped (a full reply already on its way),
-  // "stopped" then exits 143 with nothing.
+  // "stopped" then exits 143 with nothing; "held" replies once the test
+  // writes login.release (without it, it exits 124 after 10 s).
   function fake(mode, reply) {
     var script = mode === "now" ? "printf '%s\\n' \"$1\""
       : mode === "slow" ? "sleep 1; printf '%s\\n' \"$1\""
+      : mode === "held" ? "i=0; while [ ! -e \"$FOAMY_OUT/login.release\" ] && [ \"$i\" -lt 200 ]; do sleep 0.05; i=$((i + 1)); done; [ -e \"$FOAMY_OUT/login.release\" ] || exit 124; printf '%s\\n' \"$1\""
       : "trap 'kill $! 2>/dev/null; " + (mode === "late" ? "printf \"%s\\n\" \"$1\"; exit 0" : "exit 143") + "' TERM; sleep 30 & wait";
     return ["sh", "-c", script, "fake", JSON.stringify(reply)];
   }
@@ -1527,6 +1543,70 @@ ShellRoot {
                  "and its notification (" + JSON.stringify(sent([vpn])[0]) + ")")) return;
       view.toggleTicket("4821");
       if (!check(shell.find(view.pane, "paneSubject").text === none, "and the reading pane (" + shell.find(view.pane, "paneSubject").text + ")")) return;
+      // Signed out, on Settings. The sign-in's stand-in waits in the
+      // "browser" until the test lets it finish; an account check finds
+      // any address signed out.
+      account.helperCommand = function(args) {
+        if (args[0] !== "auth-login") return shell.fake("now", { ok: true, state: "signed_out" });
+        return shell.fake("held", { ok: true, state: "signed_in", verified: true, user: { name: "Waited", email: "waited@example.invalid" } });
+      };
+      account.state = "signed_out";
+      account.user = null;
+      account.error = "";
+      view.editingSettings = true;
+      break;
+    case 80:
+      var page = view.settingsPage;
+      shell.toEnd(page);
+      var address = shell.find(page, "addressField");
+      var signIn = shell.find(page, "accountButton");
+      shell.savedAddress = one.prefs.value("zendeskAddress");
+      if (!check(shell.onPage(page, signIn) && shell.onPage(page, address) && address.field.text === shell.savedAddress && account.address === shell.savedAddress,
+                 "signed out, Sign in and the address field with the saved address are on screen")) return;
+      ev.mouseClick(signIn, signIn.width / 2, signIn.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
+      if (!check(account.state === "waiting", "a click on Sign in starts the sign-in (" + account.state + ")")) return;
+      break;
+    case 81:
+      // While it waits in the browser: a real click into the address field
+      // and a key, then the sign-in finishes.
+      var address = shell.find(view.settingsPage, "addressField");
+      ev.mouseClick(address.field, address.field.width / 2, address.field.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
+      ev.keyClick(Qt.Key_X, Qt.NoModifier, -1);
+      shell.typedWhileWaiting = address.field.text;
+      loginRelease.setText("go\n");
+      break;
+    case 82:
+      if (!check(account.signedIn && account.user && account.user.name === "Waited" && one.prefs.value("zendeskAddress") === shell.savedAddress && account.address === shell.savedAddress,
+                 "a key typed into the address field while the sign-in waits is not saved when it ends, and the user who signed in stays signed in ("
+                 + account.state + ", " + JSON.stringify(account.user) + ", saved address " + one.prefs.value("zendeskAddress") + ")")) return;
+      // A field that takes no key while the sign-in waits has no draft to
+      // save when the browser takes the focus either.
+      if (!check(shell.typedWhileWaiting === shell.savedAddress, "the address field takes no key while the sign-in waits (" + shell.typedWhileWaiting + ")")) return;
+      // Then Sign in and Cancel: this stand-in waits until it is stopped.
+      account.helperCommand = function(args) {
+        return shell.fake(args[0] === "auth-login" ? "stopped" : "now", { ok: true, state: "signed_out" });
+      };
+      account.state = "signed_out";
+      account.user = null;
+      break;
+    case 83:
+      var page = view.settingsPage;
+      shell.toEnd(page);
+      var signIn = shell.find(page, "accountButton");
+      if (!check(shell.onPage(page, signIn) && shell.onPage(page, shell.find(page, "addressField")), "signed out again, Sign in and the address field are on screen")) return;
+      ev.mouseClick(signIn, signIn.width / 2, signIn.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
+      break;
+    case 84:
+      var cancel = shell.find(view.settingsPage, "accountButton");
+      ev.mouseClick(cancel, cancel.width / 2, cancel.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
+      break;
+    case 85:
+      // Cancelled, the address field takes typing again; Esc drops the draft.
+      var address = shell.find(view.settingsPage, "addressField");
+      ev.mouseClick(address.field, address.field.width / 2, address.field.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
+      ev.keyClick(Qt.Key_X, Qt.NoModifier, -1);
+      if (!check(address.editing && address.field.text === shell.savedAddress + "x", "after Cancel the address field takes typing again (" + address.field.text + ")")) return;
+      ev.keyClick(Qt.Key_Escape, Qt.NoModifier, -1);
       shell.finished = true;
       console.log("FOAMY DONE runtime interactions passed"); Qt.quit();
     }
