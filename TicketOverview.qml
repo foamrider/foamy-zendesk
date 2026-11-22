@@ -204,6 +204,7 @@ Item {
               anchors.verticalCenter: parent.verticalCenter
               spacing: 1
               PlainText {
+                objectName: "subject"
                 width: parent.width
                 text: row.modelData.subject || FoamyI18n.t("(no subject)")
                 wrapMode: Text.NoWrap
