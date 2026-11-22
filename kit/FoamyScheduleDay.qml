@@ -1,4 +1,4 @@
-// foamy-kit 0.13.1 93cb4938ac301db0528c6e283af2e4999fd28b1809909107e567b6b96b2e2f05 — do not edit; change foamy-kit and run sync
+// foamy-kit 0.13.1 c458ce7c07bb3ef9ced7a178cc8d33e421c68faba6c3d972fb3b7f10aa738689 — do not edit; change foamy-kit and run sync
 import QtQuick
 import QtQuick.Layouts
 import qs.Commons
@@ -30,10 +30,13 @@ import "FoamySchedule.js" as Schedule
 // with its last range. A time field commits on editing finished: a valid
 // range that differs from `value` emits changed(range), once until the next
 // edit or `value` change (Enter and the focus loss after it are one
-// commit); an invalid one emits invalid(). Escape restores the field.
+// commit); an invalid one emits invalid(). Escape restores the field. A
+// refused paste into a time field (too large, timed out, not plain text)
+// says why in an error line under the row, through FoamyI18n.t, until that
+// field's next edit, as FoamyNumberField does.
 // `labelComponent` is any Component whose root has a `text` property
 // (default: a plain-text body label); `labelItem` is it.
-RowLayout {
+ColumnLayout {
   id: root
   property string label: ""
   property string fromLabel: "From"
@@ -46,9 +49,13 @@ RowLayout {
   // The range this row last emitted, until an edit or a new `value`: a
   // caller's value may catch up later, and the same commit must not repeat.
   property string _lastCommitted: ""
+  // The time field of the last refused paste: its pasteError is the error
+  // line (cleared by its next edit), so the newest paste always shows.
+  property SafeTextField _pasteField: null
+  readonly property string _pasteMessage: dayEnabled && _pasteField !== null && _pasteField.pasteError !== "" ? FoamyI18n.t(_pasteField.pasteError) : ""
   signal changed(string value)
   signal invalid
-  spacing: FoamyStyle.gap
+  spacing: FoamyStyle.gapSmall
 
   function restoreInputs(force) {
     if (value !== "" && Schedule.validRange(value))
@@ -89,73 +96,95 @@ RowLayout {
       horizontalAlignment: Text.AlignLeft
     }
   }
-  Loader {
-    id: labelLoader
+  RowLayout {
     Layout.fillWidth: true
-    sourceComponent: root.labelComponent
-    onLoaded: item.text = Qt.binding(function () {
-      return root.label
-    })
-  }
-  ToggleSwitch {
-    id: daySwitch
-    objectName: "daySwitch"
-    checked: root.dayEnabled
-    trackHeight: Style.space(17)
-    foreground: Commons.Color.popups.text
-    activeFocusOnTab: true
-    Accessible.role: Accessible.CheckBox
-    Accessible.name: root.label
-    Accessible.checked: checked
-    Accessible.onToggleAction: toggled()
-    Keys.onSpacePressed: toggled()
-    Keys.onReturnPressed: toggled()
-    Keys.onEnterPressed: toggled()
-    onToggled: root.changed(checked ? "" : root.lastRange)
-    Rectangle {
-      anchors.fill: parent
-      color: "transparent"
-      radius: FoamyStyle.radius
-      border.width: daySwitch.activeFocus ? 1 : 0
-      border.color: Commons.Color.accent
+    spacing: FoamyStyle.gap
+    Loader {
+      id: labelLoader
+      Layout.fillWidth: true
+      sourceComponent: root.labelComponent
+      onLoaded: item.text = Qt.binding(function () {
+        return root.label
+      })
     }
-  }
-  SafeTextField {
-    id: fromInput
-    objectName: "fromTime"
-    Layout.preferredWidth: Style.space(64)
-    enabled: root.dayEnabled
-    opacity: enabled ? 1 : FoamyStyle.disabledOpacity
-    horizontalAlignment: Text.AlignHCenter
-    maximumLength: 5
-    translate: FoamyI18n.t
-    Accessible.name: root.label + " · " + root.fromLabel
-    onTextEdited: root._lastCommitted = ""
-    onEditingFinished: root.saveInputs()
-    onKeyPressed: function (event) {
-      if (event.key === Qt.Key_Escape) {
-        root.restoreInputs(true)
-        event.accepted = true
+    ToggleSwitch {
+      id: daySwitch
+      objectName: "daySwitch"
+      checked: root.dayEnabled
+      trackHeight: Style.space(17)
+      foreground: Commons.Color.popups.text
+      activeFocusOnTab: true
+      Accessible.role: Accessible.CheckBox
+      Accessible.name: root.label
+      Accessible.checked: checked
+      Accessible.onToggleAction: toggled()
+      Keys.onSpacePressed: toggled()
+      Keys.onReturnPressed: toggled()
+      Keys.onEnterPressed: toggled()
+      onToggled: root.changed(checked ? "" : root.lastRange)
+      Rectangle {
+        anchors.fill: parent
+        color: "transparent"
+        radius: FoamyStyle.radius
+        border.width: daySwitch.activeFocus ? 1 : 0
+        border.color: Commons.Color.accent
+      }
+    }
+    SafeTextField {
+      id: fromInput
+      objectName: "fromTime"
+      Layout.preferredWidth: Style.space(64)
+      enabled: root.dayEnabled
+      opacity: enabled ? 1 : FoamyStyle.disabledOpacity
+      horizontalAlignment: Text.AlignHCenter
+      maximumLength: 5
+      translate: FoamyI18n.t
+      Accessible.name: root.label + " · " + root.fromLabel
+      onTextEdited: root._lastCommitted = ""
+      onEditingFinished: root.saveInputs()
+      onPasteErrorChanged: if (pasteError !== "")
+        root._pasteField = fromInput
+      onKeyPressed: function (event) {
+        if (event.key === Qt.Key_Escape) {
+          root.restoreInputs(true)
+          event.accepted = true
+        }
+      }
+    }
+    SafeTextField {
+      id: toInput
+      objectName: "toTime"
+      Layout.preferredWidth: Style.space(64)
+      enabled: root.dayEnabled
+      opacity: enabled ? 1 : FoamyStyle.disabledOpacity
+      horizontalAlignment: Text.AlignHCenter
+      maximumLength: 5
+      translate: FoamyI18n.t
+      Accessible.name: root.label + " · " + root.toLabel
+      onTextEdited: root._lastCommitted = ""
+      onEditingFinished: root.saveInputs()
+      onPasteErrorChanged: if (pasteError !== "")
+        root._pasteField = toInput
+      onKeyPressed: function (event) {
+        if (event.key === Qt.Key_Escape) {
+          root.restoreInputs(true)
+          event.accepted = true
+        }
       }
     }
   }
-  SafeTextField {
-    id: toInput
-    objectName: "toTime"
-    Layout.preferredWidth: Style.space(64)
-    enabled: root.dayEnabled
-    opacity: enabled ? 1 : FoamyStyle.disabledOpacity
-    horizontalAlignment: Text.AlignHCenter
-    maximumLength: 5
-    translate: FoamyI18n.t
-    Accessible.name: root.label + " · " + root.toLabel
-    onTextEdited: root._lastCommitted = ""
-    onEditingFinished: root.saveInputs()
-    onKeyPressed: function (event) {
-      if (event.key === Qt.Key_Escape) {
-        root.restoreInputs(true)
-        event.accepted = true
-      }
-    }
+  Text {
+    objectName: "schedulePasteError"
+    visible: root._pasteMessage !== ""
+    Layout.fillWidth: true
+    text: root._pasteMessage
+    textFormat: Text.PlainText
+    horizontalAlignment: Text.AlignLeft
+    wrapMode: Text.WordWrap
+    color: FoamyPalette.onSurface(FoamyPalette.error)
+    font.family: FoamyStyle.fontFamily
+    font.pixelSize: FoamyStyle.font.caption
+    Accessible.role: Accessible.AlertMessage
+    Accessible.name: text
   }
 }
