@@ -1,4 +1,4 @@
-// foamy-kit 0.13.0 50b9da7f244dd539019507df83a32a2ee07828ee9798e81ac29dbd5e5547dedd — do not edit; change foamy-kit and run sync
+// foamy-kit 0.13.1 93cb4938ac301db0528c6e283af2e4999fd28b1809909107e567b6b96b2e2f05 — do not edit; change foamy-kit and run sync
 import QtQuick
 import QtQuick.Layouts
 import qs.Commons
@@ -27,10 +27,12 @@ import "FoamySchedule.js" as Schedule
 //
 // `value` follows the setting; the row never assigns it. The switch emits
 // changed("") to turn a day off and changed(lastRange) to turn it back on
-// with its last range. A time field commits on editing finished: a valid,
-// different range emits changed(range), an invalid one invalid(); Escape
-// restores the field. `labelComponent` is any Component whose root has a
-// `text` property (default: a plain-text body label); `labelItem` is it.
+// with its last range. A time field commits on editing finished: a valid
+// range that differs from `value` emits changed(range), once until the next
+// edit or `value` change (Enter and the focus loss after it are one
+// commit); an invalid one emits invalid(). Escape restores the field.
+// `labelComponent` is any Component whose root has a `text` property
+// (default: a plain-text body label); `labelItem` is it.
 RowLayout {
   id: root
   property string label: ""
@@ -41,6 +43,9 @@ RowLayout {
   property Component labelComponent: defaultLabel
   readonly property Item labelItem: labelLoader.item
   readonly property bool dayEnabled: value !== ""
+  // The range this row last emitted, until an edit or a new `value`: a
+  // caller's value may catch up later, and the same commit must not repeat.
+  property string _lastCommitted: ""
   signal changed(string value)
   signal invalid
   spacing: FoamyStyle.gap
@@ -62,10 +67,15 @@ RowLayout {
       invalid()
       return
     }
-    if (range !== value)
+    if (range !== value && range !== _lastCommitted) {
+      _lastCommitted = range
       changed(range)
+    }
   }
-  onValueChanged: restoreInputs()
+  onValueChanged: {
+    _lastCommitted = ""
+    restoreInputs()
+  }
   Component.onCompleted: restoreInputs()
 
   Component {
@@ -120,6 +130,7 @@ RowLayout {
     maximumLength: 5
     translate: FoamyI18n.t
     Accessible.name: root.label + " · " + root.fromLabel
+    onTextEdited: root._lastCommitted = ""
     onEditingFinished: root.saveInputs()
     onKeyPressed: function (event) {
       if (event.key === Qt.Key_Escape) {
@@ -138,6 +149,7 @@ RowLayout {
     maximumLength: 5
     translate: FoamyI18n.t
     Accessible.name: root.label + " · " + root.toLabel
+    onTextEdited: root._lastCommitted = ""
     onEditingFinished: root.saveInputs()
     onKeyPressed: function (event) {
       if (event.key === Qt.Key_Escape) {

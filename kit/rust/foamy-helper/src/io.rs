@@ -1,4 +1,4 @@
-// foamy-kit 0.13.0 9a9f20618fae90ac83706a645329ac25fe6180ed841d9004b3e0f759c29a6af4 — do not edit; change foamy-kit and run sync
+// foamy-kit 0.13.1 111a50e13415ed5ca0fee6b226b655db8cf67ea266fcfd485e01cbe0c03f7b05 — do not edit; change foamy-kit and run sync
 //! Bounded reads: whole streams with a byte cap, and lines with a maximum
 //! length that skip (rather than buffer) an overlong line.
 
@@ -41,11 +41,18 @@ impl fmt::Display for LineTooLong {
 
 impl Error for LineTooLong {}
 
-/// Whether `error` reports input over a cap ([`TooLarge`] or [`LineTooLong`]).
+/// Whether `error` reports input over a cap ([`TooLarge`] or [`LineTooLong`]),
+/// also when the cap error is the source of the error inside it (as with
+/// [`crate::fs::read_file_limited`], which adds the path to the message).
 pub fn is_over_limit(error: &io::Error) -> bool {
-    error
-        .get_ref()
-        .is_some_and(|inner| inner.is::<TooLarge>() || inner.is::<LineTooLong>())
+    let mut next = error.get_ref().map(|inner| inner as &(dyn Error + 'static));
+    while let Some(inner) = next {
+        if inner.is::<TooLarge>() || inner.is::<LineTooLong>() {
+            return true;
+        }
+        next = inner.source();
+    }
+    false
 }
 
 /// Reads `reader` to its end, failing with [`TooLarge`] (kind

@@ -1,4 +1,4 @@
-// foamy-kit 0.13.0 0753d87fd7cecbb50bc9e5d7d4f256916ac668180f2a565585d316853a0acacf — do not edit; change foamy-kit and run sync
+// foamy-kit 0.13.1 b15ed41bafb7a0f25539b344004ed706131515547a38590fb4890b206cca1f98 — do not edit; change foamy-kit and run sync
 import QtQuick
 
 // Normal wheel and touchpad scrolling for a Flickable (ListView, GridView…),
@@ -150,6 +150,16 @@ QtObject {
     _followMargin = margin
     followTimer.restart()
     _place(item, margin)
+  }
+
+  // The content grows only after the followed item has (a Column lays out
+  // later), so a place on the item's height alone stops short at the old
+  // end of the content.
+  property Connections _followContent: Connections {
+    target: root._following ? root.target : null
+    function onContentHeightChanged() {
+      root._refollow()
+    }
   }
 
   property Timer _followTimer: Timer {

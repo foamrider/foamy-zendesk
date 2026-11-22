@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# foamy-kit 0.13.0 11b2d2eae043320ab9d27fd63fdd728e182255f2f1d152e9095e120a27ea8429 — do not edit; change foamy-kit and run sync
+# foamy-kit 0.13.1 824921f5001a1e69101a6dd998f21bee83fe155c3d1ad82aa376aef6d6fbebb4 — do not edit; change foamy-kit and run sync
 """The one validation command of foamy-kit and every Foamy plugin.
 
 Run it as `tests/validate.sh` (sync.sh writes that wrapper and this file into
@@ -480,9 +480,9 @@ def check_qmllint(repo):
         result = subprocess.run(cmd, cwd=cwd, env=repo.env(), capture_output=True, text=True, timeout=900)
         try:
             data = json.loads(report.read_text())
-        except (OSError, ValueError):
+        except (OSError, ValueError) as error:
             show(result.stdout + result.stderr)
-            raise Failure("qmllint wrote no JSON report") from None
+            raise Failure(f"qmllint wrote no JSON report (exit {result.returncode}): {error}") from None
     entries = []
     for item in data.get("files", []):
         rel = os.path.relpath(item["filename"], cwd) if os.path.isabs(item["filename"]) else item["filename"]
@@ -606,6 +606,18 @@ def check_qmlformat(repo):
         )
 
 
+JSON_STRING = r'"(?:[^"\\\n]|\\.)*"'
+JSONC_COMMENT = re.compile(rf"({JSON_STRING})|//[^\n]*|/\*.*?\*/", re.S)
+JSONC_TRAILING_COMMA = re.compile(rf"({JSON_STRING})|,(?=\s*[}}\]])")
+
+
+def read_jsonc(path):
+    """A JSON file that may hold comments and trailing commas, as oxlint
+    reads its config. Strings are matched first, so a // or , in one stays."""
+    text = JSONC_COMMENT.sub(lambda match: match[1] or " ", path.read_text())
+    return json.loads(JSONC_TRAILING_COMMA.sub(lambda match: match[1] or "", text))
+
+
 def check_oxlint(repo):
     files = repo.by_suffix("oxlint", ".js", ".cjs", ".mjs")
     if not files:
@@ -616,7 +628,12 @@ def check_oxlint(repo):
         raise Failure(".oxlintrc.json is missing (foamy-kit sync.sh writes it)")
     local = repo.root / LINT_DIR / "oxlintrc.json"
     if local.is_file():
-        if "../../.oxlintrc.json" not in local.read_text():
+        try:
+            settings = read_jsonc(local)
+        except ValueError as error:
+            raise Failure(f"{LINT_DIR}/oxlintrc.json is not JSON ({error})") from None
+        extends = settings.get("extends") if isinstance(settings, dict) else None
+        if not isinstance(extends, list) or "../../.oxlintrc.json" not in extends:
             raise Failure(
                 f'{LINT_DIR}/oxlintrc.json must extend the kit\'s config: "extends": ["../../.oxlintrc.json"]'
             )
@@ -647,7 +664,7 @@ def check_oxlint(repo):
         data = json.loads(result.stdout[start:])
     except ValueError:
         show(result.stdout + result.stderr)
-        raise Failure("oxlint produced no JSON report") from None
+        raise Failure(f"oxlint produced no JSON report (exit {result.returncode})") from None
     loaded = qml_loaded(repo, files)
     entries, api = [], 0
     for item in data.get("diagnostics", []):
@@ -714,7 +731,7 @@ def check_ruff(repo):
         data = json.loads(result.stdout)
     except ValueError:
         show(result.stdout + result.stderr)
-        raise Failure("ruff check produced no JSON report") from None
+        raise Failure(f"ruff check produced no JSON report (exit {result.returncode})") from None
     entries = [
         finding(
             os.path.relpath(item["filename"], repo.root),
@@ -784,7 +801,7 @@ def check_shellcheck(repo):
         data = json.loads(result.stdout)
     except ValueError:
         show(result.stdout + result.stderr)
-        raise Failure("shellcheck produced no JSON report") from None
+        raise Failure(f"shellcheck produced no JSON report (exit {result.returncode})") from None
     entries = [
         finding(item["file"], f"SC{item['code']}", item["message"], repo, item.get("line"))
         for item in data.get("comments", [])
