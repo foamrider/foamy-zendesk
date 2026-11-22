@@ -423,7 +423,8 @@ impl Account<'_> {
     /// The code is exchanged and the new pair stored under the token lock,
     /// so a refresh of an older pair can't overwrite it; without a usable
     /// lock the browser isn't opened (`LOCK_UNAVAILABLE`). A new pair that
-    /// isn't stored (users/me fails, or the keyring refuses it) is revoked.
+    /// isn't stored (users/me fails, or the keyring refuses it) is revoked,
+    /// and so is a stored pair the new one replaces.
     pub fn login(
         &self,
         port: u16,
@@ -479,6 +480,10 @@ impl Account<'_> {
         drop(listener);
         // Not exchanged without the lock, so no tokens are left unstored.
         let _token_lock = self.token_lock(REFRESH_WAIT).map_err(no_login_lock)?;
+        // The pair this sign-in replaces. Read before the exchange, so a slow
+        // keyring adds no time between getting the new pair and storing it.
+        // Best effort: a keyring that can't be read now leaves it unrevoked.
+        let replaced = self.stored().ok().flatten();
         // Codes live for 120 seconds: exchange at once.
         let reply = self.client.request(
             "POST",
@@ -512,6 +517,10 @@ impl Account<'_> {
         if let Err(failure) = self.vault.put(&record.to_string()) {
             self.revoke(&record);
             return Err(failure);
+        }
+        // Nobody holds the replaced pair any more.
+        if let Some(old) = replaced.filter(|old| !same_pair(old, &record)) {
+            self.revoke(&old);
         }
         Ok(json!({"ok": true, "state": "signed_in", "user": user, "verified": true}))
     }
@@ -874,6 +883,57 @@ mod tests {
             assert_eq!(failure.code, code, "HTTP {status}");
             assert_eq!(revoked(&seen), ["Bearer A1"], "HTTP {status}");
             assert!(vault.held().is_none(), "HTTP {status}");
+        }
+    }
+
+    /// A sign-in over a stored one (the panel offered Sign in because the
+    /// check failed): once the new pair is stored, the replaced pair would
+    /// stay valid at Zendesk with nobody holding it, so it is revoked. When
+    /// the new pair isn't stored, the old one stays and only the new is revoked.
+    #[test]
+    fn a_login_over_a_stored_pair_revokes_the_pair_it_replaces() {
+        for (case, me_status, read_only, result, revokes, kept) in [
+            ("stored", 200u16, false, "signed_in", "Bearer A1", "A2"),
+            (
+                "keyring refuses",
+                200,
+                true,
+                "KEYRING_UNAVAILABLE",
+                "Bearer A2",
+                "A1",
+            ),
+            ("user check fails", 503, false, "HTTP", "Bearer A2", "A1"),
+        ] {
+            let (base, seen) = fake(Box::new(move |method, path, _| match (method, path) {
+                ("POST", "/oauth/tokens") => (
+                    200,
+                    json!({"access_token": "A2", "refresh_token": "R2", "expires_in": 1800}),
+                ),
+                ("GET", "/api/v2/users/me.json") => (
+                    me_status,
+                    json!({"user": {"name": "Alex", "email": "alex@acme.com"}}),
+                ),
+                _ => (204, Value::Null),
+            }));
+            let vault = Memory::default();
+            vault
+                .put(&json!({"access_token": "A1", "refresh_token": "R1"}).to_string())
+                .unwrap();
+            vault.read_only.store(read_only, Ordering::SeqCst);
+            let port = free_port();
+            let answer = account(&base, &vault).login(port, Duration::from_secs(10), |url| {
+                let state = query(url, "state");
+                std::thread::spawn(move || {
+                    browser(port, format!("/callback?code=C1&state={state}"))
+                });
+            });
+            match answer {
+                Ok(reply) => assert_eq!(reply["state"], result, "{case}"),
+                Err(failure) => assert_eq!(failure.code, result, "{case}"),
+            }
+            assert_eq!(revoked(&seen), [revokes], "{case}");
+            let stored: Value = serde_json::from_str(&vault.held().unwrap()).unwrap();
+            assert_eq!(stored["access_token"], kept, "{case}");
         }
     }
 
