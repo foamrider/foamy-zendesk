@@ -1,7 +1,8 @@
 // Every text the plugin can show has an English entry and a Norwegian one with
 // the same placeholders: literals passed to FoamyI18n (the plugin's and the
-// synced kit components'), and the texts passed through as data (ticket
-// statuses and priorities, day names, settings errors and the helper's errors).
+// synced kit components', with SafeTextField's menu labels), and the texts
+// passed through as data (ticket statuses and priorities, day names, settings
+// and paste errors, and the helper's errors).
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -24,6 +25,10 @@ function literals() {
   for (const file of sources) {
     for (const [, fn, key] of code(read(file)).matchAll(/FoamyI18n\.(tn?)\("((?:[^"\\]|\\.)*)"/g))
       found.push({ file, fn, key: JSON.parse(`"${key}"`) });
+    // SafeTextField's context menu labels go through its `translate`, which
+    // the kit's settings fields and schedule days set to FoamyI18n.t.
+    for (const [, key] of code(read(file)).matchAll(/\btranslate\("((?:[^"\\]|\\.)*)"/g))
+      found.push({ file, fn: 't', key: JSON.parse(`"${key}"`) });
     // The kit's FoamyI18n calls its own t/tn.
     if (file.endsWith('FoamyI18n.qml'))
       for (const [, fn, key] of code(read(file)).matchAll(/\breturn (tn?)\("((?:[^"\\]|\\.)*)"/g)) found.push({ file, fn, key });
@@ -68,6 +73,14 @@ function messageConstant(modules, name) {
   return undefined;
 }
 
+// SafeTextField's paste errors, which FoamyTextSettingField shows through
+// FoamyI18n.t: every text set on a `pasteError = ` line.
+function pasteErrors() {
+  const lines = read('kit/SafeTextField.qml').split('\n').filter(line => /\bpasteError = /.test(line));
+  const texts = lines.flatMap(line => [...line.matchAll(/"((?:[^"\\]|\\.)+)"/g)].map(m => JSON.parse(`"${m[1]}"`)));
+  return [...new Set(texts)];
+}
+
 function dataKeys() {
   const tickets = read('native/src/tickets.rs');
   const mapped = name => [...tickets.match(new RegExp(`fn ${name}\\([\\s\\S]*?\\n}`))[0].matchAll(/=> "([^"]+)"/g)].map(m => m[1]);
@@ -79,6 +92,7 @@ function dataKeys() {
     read('kit/FoamyNative.js').match(/UNAVAILABLE_TEXT = "([^"]+)"/)[1],
     ...[...prefs.matchAll(/^var [A-Z_]+ = "([^"]+)"/gm)].map(m => m[1]),
     ...[...queue.matchAll(/error = "([^"]+)"/g)].map(m => m[1]),
+    ...pasteErrors(),
   ];
 }
 
@@ -108,6 +122,7 @@ test('every literal shown through FoamyI18n has an entry; tn keys are plural ent
 test('texts passed as data are catalog keys too', () => {
   const keys = dataKeys();
   assert.ok(keys.includes('On-hold') && keys.includes('Urgent') && keys.includes('Sunday'), keys.join(', '));
+  assert.equal(pasteErrors().length, 3, `paste errors found: ${pasteErrors().join(' | ')}`);
   for (const key of keys) assert.ok(Object.hasOwn(en, key), `missing data key: ${key}`);
 });
 

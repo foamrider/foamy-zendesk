@@ -394,7 +394,7 @@ QtObject {
       var latest = ticket.history.find(function (item) {
         return !item.mine
       })
-      summary = ticket.subject
+      summary = ticket.subject || FoamyI18n.t("(no subject)")
       body = Model.notificationText(latest.sender + ": " + latest.body, 280)
       click = ipc.concat(["show", from(ticket.id)])
       actions = [
@@ -411,7 +411,7 @@ QtObject {
       var shown = list.slice(0, 4)
       summary = FoamyI18n.tn("%1 updated Zendesk tickets", list.length)
       body = shown.map(function (item) {
-        return Model.notificationText(item.subject, 80)
+        return Model.notificationText(item.subject || FoamyI18n.t("(no subject)"), 80)
       }).concat(list.length > shown.length ? [FoamyI18n.tn("and %1 more", list.length - shown.length)] : []).join("\n")
       click = ipc.concat(["open"])
       actions = [

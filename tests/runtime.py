@@ -85,6 +85,8 @@ ShellRoot {
   // What the fake xdg-open does next (see FAKE_OPENER).
   FileView { id: openerMode; path: Quickshell.env("FOAMY_OUT") + "/xdg-open.mode"; blockWrites: true; printErrors: false }
   FileView { id: openerRelease; path: Quickshell.env("FOAMY_OUT") + "/xdg-open.release"; blockWrites: true; printErrors: false }
+  // The Omarchy language picker's file: writing it switches the language live.
+  FileView { id: languageFile; path: Quickshell.env("OMARCHY_LANGUAGE_FILE"); blockWrites: true; printErrors: false }
   // Every View in Zendesk asked for has ended (launched or failed).
   function launchesDone() { return !Plugin.TicketStore.launching && Plugin.TicketStore.launches.length === 0; }
   function launchedOne() { return shell.opened().length > shell.openBase && shell.launchesDone(); }
@@ -220,6 +222,9 @@ ShellRoot {
     case 74: return [function() { return !account.busy; }, 10000, "the check finished"];
     case 75: return [function() { return shell.fetchesEnded > shell.fetchEndBase && !store.fetchProcess.running; }, 10000, "the fetch without a helper ended"];
     case 76: return [function() { return !account.busy; }, 10000, "the check without a helper ended"];
+    case 77: return [function() { return Kit.FoamyI18n.language === "no"; }, 10000, "Norwegian was picked"];
+    case 78: return [function() { return one.wide && !account.busy; }, 10000, "Wide was saved"];
+    case 79: return [function() { return one.opened && one.popup.bodyItem.wide; }, 10000, "the Wide popup opened"];
     }
     return null;
   }
@@ -1489,6 +1494,39 @@ ShellRoot {
       account.check();
       account.signIn();
       if (!check(!account.statusProcess.running && !account.loginProcess.running && account.state === "unavailable", "no more checks or sign-ins")) return;
+      languageFile.setText("no\n");
+      break;
+    case 77:
+      one.prefs.save("panelWidth", "wide");
+      break;
+    case 78:
+      // Tickets without a subject (none given, or an empty one), in Norwegian.
+      var untitled = Fixtures.tickets();
+      delete untitled[0].subject;
+      untitled[2].subject = "";
+      store.loadFixtures(untitled);
+      account.state = "signed_in";
+      account.user = { name: "Alex", email: "alex@acme.example" };
+      account.error = "";
+      one.open();
+      break;
+    case 79:
+      var none = "(uten emne)";
+      // [shown subject, screen-reader name] of each untitled row: each one checked on its own.
+      var listed = ["4821", "4824"].map(function(id) { var row = shell.find(view, "ticket-" + id); return [shell.find(row, "subject").text, row.bodyItem.Accessible.name]; });
+      var awaiting = ["4821", "4824"].map(function(id) { var row = shell.find(view.overview, "awaiting-" + id); return [shell.find(row, "subject").text, row.Accessible.name]; });
+      var shows = function(rows) { return rows.every(function(row) { return row[0] === none; }); };
+      var names = function(rows) { return rows.every(function(row) { return row[1].indexOf(none + ", ") === 0; }); };
+      var sent = function(list) { var argv = store.notificationCommand(list); return argv.slice(argv.indexOf("--") + 1); };
+      var vpn = store.state.tickets["4821"], display = store.state.tickets["4824"];
+      if (!check(shows(listed), "a list row shows a ticket without a subject in the reader's language (" + JSON.stringify(listed) + ")")) return;
+      if (!check(names(listed), "and names it so for screen readers (" + JSON.stringify(listed) + ")")) return;
+      if (!check(shows(awaiting), "so does the overview (" + JSON.stringify(awaiting) + ")")) return;
+      if (!check(names(awaiting), "and its name for screen readers (" + JSON.stringify(awaiting) + ")")) return;
+      if (!check(sent([vpn])[0] === none && sent([vpn, display])[1].split("\n").slice(0, 2).join("|") === none + "|" + none,
+                 "and its notification (" + JSON.stringify(sent([vpn])[0]) + ")")) return;
+      view.toggleTicket("4821");
+      if (!check(shell.find(view.pane, "paneSubject").text === none, "and the reading pane (" + shell.find(view.pane, "paneSubject").text + ")")) return;
       shell.finished = true;
       console.log("FOAMY DONE runtime interactions passed"); Qt.quit();
     }
