@@ -347,6 +347,9 @@ impl Account<'_> {
                             return Ok(json!({"ok": true, "state": "expired"}));
                         }
                         Err(failure) if failure.code == "SIGNED_OUT" => return Ok(signed_out()),
+                        Err(failure) if failure.code == "KEYRING_UNAVAILABLE" => {
+                            return Err(failure);
+                        }
                         Err(failure) => return Ok(offline(&record, failure)),
                     }
                 }
@@ -419,7 +422,8 @@ impl Account<'_> {
     /// then waits (until `wait` passes) for the redirect to the loopback port.
     /// The code is exchanged and the new pair stored under the token lock,
     /// so a refresh of an older pair can't overwrite it; without a usable
-    /// lock the browser isn't opened (`LOCK_UNAVAILABLE`).
+    /// lock the browser isn't opened (`LOCK_UNAVAILABLE`). A new pair that
+    /// isn't stored (users/me fails, or the keyring refuses it) is revoked.
     pub fn login(
         &self,
         port: u16,
@@ -493,9 +497,17 @@ impl Account<'_> {
             return Err(refused(&reply));
         }
         let mut record = tokens_from(&reply.body, None)?;
-        let user = self.me(&text(&record, "access_token").unwrap_or_default())?;
+        // A pair that isn't stored would stay valid at Zendesk with nobody
+        // holding it: revoke it when the user can't be read, and when the
+        // keyring doesn't take it.
+        let user = match self.me(&text(&record, "access_token").unwrap_or_default()) {
+            Ok(user) => user,
+            Err(failure) => {
+                self.revoke(&record);
+                return Err(failure);
+            }
+        };
         record["user"] = user.clone();
-        // Not stored, the new pair would be left valid at Zendesk: revoke it.
         // Nothing changed in the keyring, so the keyring's error says why.
         if let Err(failure) = self.vault.put(&record.to_string()) {
             self.revoke(&record);
@@ -835,6 +847,36 @@ mod tests {
         assert!(vault.held().is_none());
     }
 
+    /// Zendesk issued the pair but users/me fails (Zendesk is down, or it
+    /// refuses the token): the sign-in fails with that error, and the pair,
+    /// never stored, is revoked.
+    #[test]
+    fn a_login_whose_user_check_fails_revokes_the_new_pair() {
+        for (status, code) in [(503u16, "HTTP"), (401, "UNAUTHORIZED")] {
+            let (base, seen) = fake(Box::new(move |method, path, _| match (method, path) {
+                ("POST", "/oauth/tokens") => (
+                    200,
+                    json!({"access_token": "A1", "refresh_token": "R1", "expires_in": 1800}),
+                ),
+                ("GET", "/api/v2/users/me.json") => (status, json!({})),
+                _ => (204, Value::Null),
+            }));
+            let vault = Memory::default();
+            let port = free_port();
+            let failure = account(&base, &vault)
+                .login(port, Duration::from_secs(10), |url| {
+                    let state = query(url, "state");
+                    std::thread::spawn(move || {
+                        browser(port, format!("/callback?code=C1&state={state}"))
+                    });
+                })
+                .unwrap_err();
+            assert_eq!(failure.code, code, "HTTP {status}");
+            assert_eq!(revoked(&seen), ["Bearer A1"], "HTTP {status}");
+            assert!(vault.held().is_none(), "HTTP {status}");
+        }
+    }
+
     #[test]
     fn a_denied_login_reports_it() {
         let (base, _) = fake(Box::new(|_, _, _| (500, json!({}))));
@@ -968,6 +1010,73 @@ mod tests {
                 .status()
                 .unwrap()["state"],
             "signed_out"
+        );
+    }
+
+    /// A keyring that answers its first `readable` reads and then can't be
+    /// read at all (say, secret-tool stopped answering).
+    struct Fading {
+        memory: Memory,
+        readable: usize,
+        reads: std::sync::atomic::AtomicUsize,
+    }
+
+    impl Vault for Fading {
+        fn get(&self) -> Result<Option<String>, Failure> {
+            if self.reads.fetch_add(1, Ordering::SeqCst) >= self.readable {
+                return Err(crate::vault::unavailable("the keyring didn't answer"));
+            }
+            self.memory.get()
+        }
+        fn put(&self, secret: &str) -> Result<(), Failure> {
+            self.memory.put(secret)
+        }
+        fn delete(&self) -> Result<(), Failure> {
+            self.memory.delete()
+        }
+    }
+
+    /// The keyring stops answering before a renewal reads it again: the
+    /// check fails with the keyring's error, whether the renewal was due or
+    /// followed a refused token, and Zendesk is never asked for a new pair.
+    #[test]
+    fn a_keyring_that_stops_answering_during_a_check_is_one_error() {
+        let (base, seen) = fake(Box::new(|method, path, _| match (method, path) {
+            ("POST", "/oauth/tokens") => (
+                200,
+                json!({"access_token": "A2", "refresh_token": "R2", "expires_in": 1800}),
+            ),
+            ("GET", "/api/v2/users/me.json") => (401, json!({"error": "invalid_token"})),
+            _ => (204, Value::Null),
+        }));
+        for (what, expires_in) in [("due", 10), ("refused", 3600)] {
+            let pair =
+                json!({"access_token": "A1", "refresh_token": "R1", "expires_at": now() + expires_in})
+                    .to_string();
+            let vault = Fading {
+                memory: Memory::default(),
+                readable: 1,
+                reads: Default::default(),
+            };
+            vault.memory.put(&pair).unwrap();
+            let unused = Memory::default();
+            let mut helper = account(&base, &unused);
+            helper.vault = &vault;
+            let failure = helper.status().expect_err(what);
+            assert_eq!(failure.code, "KEYRING_UNAVAILABLE", "{what}");
+            assert_eq!(
+                vault.memory.held().as_deref(),
+                Some(pair.as_str()),
+                "{what}"
+            );
+        }
+        assert!(
+            !seen
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|request| request.0 == "POST"),
+            "no pair was spent"
         );
     }
 

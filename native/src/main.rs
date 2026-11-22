@@ -69,8 +69,8 @@
 //! - `auth-login` checks the lock before opening the browser
 //!   (`LOCK_UNAVAILABLE`), and exchanges the code and stores the new pair
 //!   holding it, so a refresh of an older pair can't overwrite it. When
-//!   the keyring doesn't store it, the new pair is revoked and the keyring's
-//!   error is the answer.
+//!   Zendesk doesn't give the user for it, or the keyring doesn't store it,
+//!   the new pair is revoked and that error is the answer.
 //! - `auth-logout` waits up to 30 seconds for the lock, then reads, clears
 //!   and revokes whatever is stored (a refresh that just finished: its new
 //!   pair). Without the lock, still held by then (a refresh hung on Zendesk
