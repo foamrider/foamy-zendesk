@@ -875,6 +875,8 @@ PanelKeyCatcher {
         id: addressField
         objectName: "addressField"
         visible: !ZendeskAccount.signedIn
+        enabled: settingsPage.connectionEditable
+        opacity: enabled ? 1 : FoamyStyle.disabledOpacity
         width: parent.width
         label: FoamyI18n.t("Zendesk address")
         placeholderText: "acme.zendesk.com"
@@ -890,6 +892,8 @@ PanelKeyCatcher {
         id: clientIdField
         objectName: "clientIdField"
         visible: !ZendeskAccount.signedIn
+        enabled: settingsPage.connectionEditable
+        opacity: enabled ? 1 : FoamyStyle.disabledOpacity
         width: parent.width
         label: FoamyI18n.t("OAuth client ID")
         placeholderText: FoamyI18n.t("Unique identifier")
@@ -905,6 +909,8 @@ PanelKeyCatcher {
         id: portField
         objectName: "portField"
         visible: !ZendeskAccount.signedIn
+        enabled: settingsPage.connectionEditable
+        opacity: enabled ? 1 : FoamyStyle.disabledOpacity
         width: parent.width
         label: FoamyI18n.t("Redirect port")
         // Empty means the default; the placeholder shows it.
@@ -946,6 +952,12 @@ PanelKeyCatcher {
 
     // What the fields hold now, saved or still being typed.
     readonly property bool connectionReady: addressField.field.text.trim() !== "" && addressField.problem(addressField.field.text.trim()) === "" && clientIdField.field.text.trim() !== "" && clientIdField.problem(clientIdField.field.text.trim()) === "" && portField.problem(portField.field.text.trim()) === ""
+    // While a sign-in waits in the browser, the connection fields take no
+    // input. A value typed then would be saved when its field loses the
+    // focus (as when the browser takes it), which stops the sign-in, or when
+    // the sign-in ends and the fields hide, which drops the user who just
+    // signed in.
+    readonly property bool connectionEditable: ZendeskAccount.state !== "waiting"
     // Saves any field still being edited; false (with the field's message) when one is invalid.
     function saveConnection() {
       return addressField.commitEdit(false) && clientIdField.commitEdit(false) && portField.commitEdit(false)
