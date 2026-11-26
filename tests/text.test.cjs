@@ -16,7 +16,8 @@ test('a quoted mail at the end of a comment is folded away, with its header', ()
 
 test('a long run of spaces inside a line is split in linear time', { timeout: 2000 }, () => {
   // A mail with thousands of &nbsp; (decoded to spaces) in one line.
-  const body = 'Ok.\n\nOn Thu, 5 Nov 2026 at 16:02, Alex wrote:\n> a' + ' '.repeat(200000) + 'b\n> c';
+  // As long as a comment can be (Model.js MAX_BODY).
+  const body = 'Ok.\n\nOn Thu, 5 Nov 2026 at 16:02, Alex wrote:\n> a' + ' '.repeat(32700) + 'b\n> c';
   const started = process.hrtime.bigint();
   assert.equal(Quote.split(body).text, 'Ok.');
   assert.ok(Number(process.hrtime.bigint() - started) / 1e6 < 500, 'split took too long');

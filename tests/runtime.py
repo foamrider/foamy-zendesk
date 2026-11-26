@@ -1433,6 +1433,12 @@ ShellRoot {
       if (!check(quoteLink.visible && quoteLink.text === "Show quoted text" && !quote.visible && quote.text.indexOf("> The earlier mail.") >= 0
                  && view.pane.showMore() && quote.visible && quoteLink.text === "Hide quoted text",
                  "the quoted mail at a comment's end folds behind Show quoted text")) return;
+      // Shown once, the quote isn't followed: what changes next (here the
+      // quote folding again) leaves the view where the reader put it.
+      view.pane.wheel.scrollTo(0, false);
+      view.pane.showQuote(longEntry, false);
+      view.pane.settle(longEntry);
+      if (!check(conversation.contentY === 0 && isNaN(view.pane.wheel.destination), "nothing pulls the view back to a quote it showed (" + Math.round(conversation.contentY) + ")")) return;
       // Long names stay inside the pane.
       var facts = shell.find(view.pane, "paneFacts");
       var fitted = facts.children.every(function(item) { return !item.visible || item.width <= facts.width; });

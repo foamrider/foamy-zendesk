@@ -104,7 +104,20 @@ Item {
     if (!on)
       return
     settle(entry)
-    conversationWheel.ensureVisible(entry.quoteItem)
+    reveal(entry.quoteItem)
+  }
+  // Scrolls once so `item` shows (its top when it is taller than the view).
+  // Not the wheel's ensureVisible(): that keeps following the item for a
+  // moment, and a second m in that time would be pulled back to it. The
+  // columns are laid out (settle) before this, so one place is enough.
+  function reveal(item: Item) {
+    const top = item.mapToItem(conversationList.contentItem, 0, 0).y
+    const margin = conversationWheel.margin
+    const view = conversationList.contentY
+    if (top - margin < view || item.height + margin * 2 > conversationList.height)
+      conversationWheel.scrollTo(top - margin, true)
+    else if (top + item.height + margin > view + conversationList.height)
+      conversationWheel.scrollTo(top + item.height + margin - conversationList.height, true)
   }
   // One step more of the conversation (`m`): the first comment from the top
   // of the view that holds something back shows it (else the first above
@@ -126,16 +139,9 @@ Item {
     if (!found)
       return false
     if (found.clipped) {
-      // To where the comment is cut, once: the rest shows from there. Not
-      // ensureVisible(), which would follow the link down to the comment's
-      // new end and skip the text that unfolds.
-      const link = found.lengthLinkItem
-      const top = link.mapToItem(conversationList.contentItem, 0, 0).y
-      const margin = conversationWheel.margin
-      if (top + link.height + margin > conversationList.contentY + conversationList.height)
-        conversationWheel.scrollTo(top + link.height + margin - conversationList.height, true)
-      else if (top - margin < conversationList.contentY)
-        conversationWheel.scrollTo(top - margin, true)
+      // To where the comment is cut: the rest shows from there (a follow
+      // would go with the link down to the comment's new end).
+      reveal(found.lengthLinkItem)
       showFull(found, true)
     } else
       showQuote(found, true)

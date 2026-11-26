@@ -43,10 +43,6 @@ function trimEnd(text) {
   return text.slice(0, end)
 }
 
-function clean(line) {
-  return trimEnd(line)
-}
-
 function attribution(text) {
   return text.length <= MAX_HEADER && (WROTE.test(text) || SKREV.test(text))
 }
@@ -56,7 +52,7 @@ function attribution(text) {
 // lines; a wrapped one must hold a date or a time, as a sentence that only
 // starts with "On" does not.
 function headerLines(lines, at) {
-  var first = clean(lines[at])
+  var first = trimEnd(lines[at])
   if (first === "" || QUOTED_LINE.test(first))
     return 0
   if (ORIGINAL.test(first) || attribution(first))
@@ -64,17 +60,17 @@ function headerLines(lines, at) {
   if (FROM.test(first)) {
     var next = at + 1
     if (!FROM_SENT.test(first)) {
-      if (next >= lines.length || !SENT.test(clean(lines[next])))
+      if (next >= lines.length || !SENT.test(trimEnd(lines[next])))
         return 0
       next++
     }
-    while (next < lines.length && BLOCK_FIELD.test(clean(lines[next])))
+    while (next < lines.length && BLOCK_FIELD.test(trimEnd(lines[next])))
       next++
     return next - at
   }
   var joined = first
   for (var more = 1; more <= 2 && at + more < lines.length; more++) {
-    var line = clean(lines[at + more])
+    var line = trimEnd(lines[at + more])
     if (line === "" || QUOTED_LINE.test(line))
       return 0
     joined += " " + line
@@ -87,7 +83,7 @@ function headerLines(lines, at) {
 function kindsOf(lines) {
   var kinds = []
   for (var i = 0; i < lines.length; i++) {
-    var line = clean(lines[i])
+    var line = trimEnd(lines[i])
     var header = headerLines(lines, i)
     if (header > 0) {
       for (var j = 0; j < header; j++)
