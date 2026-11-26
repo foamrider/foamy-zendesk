@@ -126,8 +126,16 @@ Item {
     if (!found)
       return false
     if (found.clipped) {
-      // To where the comment is cut: the rest shows from there.
-      conversationWheel.ensureVisible(found.lengthLinkItem)
+      // To where the comment is cut, once: the rest shows from there. Not
+      // ensureVisible(), which would follow the link down to the comment's
+      // new end and skip the text that unfolds.
+      const link = found.lengthLinkItem
+      const top = link.mapToItem(conversationList.contentItem, 0, 0).y
+      const margin = conversationWheel.margin
+      if (top + link.height + margin > conversationList.contentY + conversationList.height)
+        conversationWheel.scrollTo(top + link.height + margin - conversationList.height, true)
+      else if (top - margin < conversationList.contentY)
+        conversationWheel.scrollTo(top - margin, true)
       showFull(found, true)
     } else
       showQuote(found, true)

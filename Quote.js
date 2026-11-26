@@ -33,8 +33,18 @@ var SENT = /^(Sent|Sendt):\s*\S/i
 var FROM_SENT = /^(From|Fra):\s.+\s(Sent|Sendt):\s/i
 var BLOCK_FIELD = /^(Sent|Sendt|To|Til|Cc|Kopi|Bcc|Blindkopi|Subject|Emne|Date|Dato|Importance|Viktighet):/i
 
+// `text` without its trailing whitespace. A loop from the end, not
+// /\s+$/: that regex retries from every space of a long run in the middle
+// of a line (mail can hold thousands of &nbsp;), which costs n² steps.
+function trimEnd(text) {
+  var end = text.length
+  while (end > 0 && /\s/.test(text.charAt(end - 1)))
+    end--
+  return text.slice(0, end)
+}
+
 function clean(line) {
-  return line.replace(/\s+$/, "")
+  return trimEnd(line)
 }
 
 function attribution(text) {
@@ -112,11 +122,11 @@ function split(body) {
   // header above it, is not a quoted mail.
   if (quoted === 0 || (kinds[start] === QUOTED && quoted < 2))
     return whole
-  var text = lines.slice(0, start).join("\n").replace(/\s+$/, "")
+  var text = trimEnd(lines.slice(0, start).join("\n"))
   // A comment that is only a quote keeps it in view.
   if (text === "")
     return whole
-  return { text: text, tail: lines.slice(start).join("\n").replace(/\s+$/, "") }
+  return { text: text, tail: trimEnd(lines.slice(start).join("\n")) }
 }
 
 if (typeof module !== "undefined") module.exports = { split }

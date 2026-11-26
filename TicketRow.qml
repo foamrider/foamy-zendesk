@@ -125,13 +125,13 @@ Item {
   readonly property bool oneLine: compact && !unseen && !expanded && !wide
   // The pointer is over the ticket (its actions included).
   readonly property bool pointerOver: rowHover.hovered || readButton.hovered || openButton.hovered
-  // A read ticket can be marked unread only when someone else wrote in it
-  // (Model.markUnread). One without such a comment (never seen and not loaded,
-  // sent without comments, or with the agent's own only) has nothing to
-  // mark: no toggle. Worked out for read tickets only; the first comment
-  // from someone else ends the search.
+  // A read ticket can be marked unread when someone else wrote in it, or
+  // when its comments haven't loaded (Model.markUnread then drops its
+  // marker, so it is unseen again). One sent without comments, or with the
+  // agent's own only, has nothing to mark: no toggle. Worked out for read
+  // tickets only; the first comment from someone else ends the search.
   readonly property bool othersWrote: {
-    if (!read)
+    if (!read || ticket.loaded === false)
       return true
     for (let i = 0; i < historyCount; i++)
       if (ticket.history.get(i).mine !== true)

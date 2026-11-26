@@ -80,10 +80,6 @@ ShellRoot {
   // Step 9's parts, each after the frames of the last: a tall ticket opened,
   // the ticket below it clicked, its place checked.
   property int anchorPhase: 0
-  // Step 58 ran up to the long comment shown in full, and when the pane's
-  // wheel stops following it.
-  property bool paneUnfolded: false
-  property double followEnds: 0
   // Step 59 ran up to the long inbox; the rest runs once it is laid out.
   property bool wideGrown: false
   property string anchorId: ""
@@ -256,7 +252,7 @@ ShellRoot {
     case 54: return [function() { return one.wide && !store.hideRead && !account.busy && !store.fetchProcess.running; }, 10000, "Wide was saved"];
     case 55: return [function() { return one.opened && one.popup.bodyItem.wide; }, 10000, "the Wide popup opened"];
     case 57: return [shell.launchedOne, 10000, "the pane's View in Zendesk launched"];
-    case 58: return [function() { return store.pendingChanges === 0 && Date.now() >= shell.followEnds; }, 10000, "the waiting update came in, and the pane's follow ended"];
+    case 58: return [function() { return store.pendingChanges === 0; }, 10000, "the waiting update came in"];
     case 60: return [function() { return !one.wide; }, 10000, "Small was saved"];
     case 62:
     case 63: return [function() { return !account.busy && shell.signOutsEnded > shell.signOutBase; }, 10000, "the sign-out finished"];
@@ -1117,6 +1113,18 @@ ShellRoot {
       var footerOf = function(id) { return shell.find(view, "ticket-" + id).assignmentText; };
       if (!check(footerOf("4908") === "Assigned to Unassigned" && footerOf("4824") === "Unassigned",
                  "an agent named Unassigned is an assignee (" + footerOf("4908") + "; " + footerOf("4824") + ")")) return;
+      // A ticket whose comments haven't come, marked read: it can be marked
+      // unread again, which makes it unseen.
+      var deferred = Fixtures.tickets();
+      delete deferred[2].comments;
+      deferred[2].deferred = true;
+      store.loadFixtures(deferred);
+      store.markRead("4824");
+      var unloaded = shell.find(view, "ticket-4824");
+      view.cursor.index = view.firstTicketStop + store.ticketById("4824").index * view.stopsPerTicket + 1;
+      if (!check(unloaded.read && unloaded.readActionShown && unloaded.readButton.enabled, "a read ticket whose comments haven't come offers Mark as unread")) return;
+      unloaded.readButton.clicked();
+      if (!check(!store.ticketById("4824").ticket.read && store.ticketById("4824").ticket.unseen, "Mark as unread makes it unseen again")) return;
       store.loadFixtures(Fixtures.tickets());
       break;
     case 37:
@@ -1345,65 +1353,58 @@ ShellRoot {
       if (!check(view.selected === null && view.overview.visible && !view.pane.visible, "a click on the shown ticket closes it")) return;
       break;
     case 58:
-      if (!shell.paneUnfolded) {
-        if (!check(store.ticketById("4821").ticket.history.count === 5, "the update that waited is in")) return;
-        // A click on a waiting ticket in the overview shows it, the cursor on its row.
-        // A new ticket makes three waiting, from a requester with a long name in
-        // a long-named group.
-        var arrival = Fixtures.update(2, true);
-        var longName = Array(40).join("Bergersen-");
-        arrival[0].requester = longName;
-        arrival[0].group = longName;
-        arrival[0].comments[0].author = longName;
-        // A comment taller than the pane, for scrolling it from the keyboard.
-        arrival[0].comments[0].body = Array(80).join("A line of a long comment.\n")
-          + "\nOn Thu, 5 Nov 2026 at 16:02, Alex <alex@acme.example> wrote:\n> The earlier mail.\n> Its second line.";
-        // And one whose comments the helper deferred: it isn't counted as waiting.
-        arrival.push({ id: "4950", subject: "Deferred comments", status: "Open", priority: "Normal", assignee: "Alex", mine: true,
-                       group: "IT support", requester: "Ola", updated_at: "2026-11-06T09:00:00Z", deferred: true });
-        store.receive(arrival);
-        if (!check(view.overview.awaitingRows.count === 3 && store.ticketById("4950") !== null && shell.find(view.overview, "awaitingUnknown").visible
-                   && !shell.find(view.overview, "nobodyWaiting").visible, "a new ticket waits for a reply too; the deferred one may, and the overview says so")) return;
-        // Keyboard on an overview too short for its rows: the cursor's row scrolls into view.
-        var overviewScroll = shell.find(view.overview, "overviewScroll");
-        view.overview.anchors.fill = undefined;
-        view.overview.height = 140;
-        view.cursor.index = view.paneFirstStop - 1;
-        view.moveRequested(0, 1);
-        view.moveRequested(0, 1);
-        view.moveRequested(0, 1);
-        var lastRow = view.overview.awaitingRows.itemAt(2);
-        var rowY = lastRow.mapToItem(overviewScroll.contentItem, 0, 0).y;
-        var revealed = overviewScroll.contentY > 0 && rowY >= overviewScroll.contentY && rowY + lastRow.height <= overviewScroll.contentY + overviewScroll.height;
-        view.overview.anchors.fill = view.overview.parent;
-        if (!check(revealed && view.cursor.index === view.paneFirstStop + 2, "the keyboard scrolls the overview to the waiting ticket under the cursor")) return;
-        // Enter on the last waiting ticket: the selection leaves the pane two
-        // stops, and the cursor lands on the ticket's row.
-        view.activateRequested();
-        if (!check(view.selected && view.selected.ticket.id === "4902" && view.cursor.index === view.firstTicketStop + view.selected.index,
-                   "Enter on the overview's last waiting ticket shows it, the cursor on its row")) return;
-        // The conversation, from the keyboard: Down scrolls it to its end, then
-        // the cursor moves on to Refresh; Up scrolls back to the top, then to View.
-        var conversation = view.pane.conversation;
-        // A comment of over 40 lines is cut, with Show more; m shows it in full.
-        var lengthLink = shell.find(view.pane, "lengthLink");
-        if (!check(lengthLink && lengthLink.visible && view.pane.showMore() && !shell.find(view.pane, "fade").visible,
-                   "a comment of over 40 lines is cut in the pane, and m shows the rest")) return;
-        // The columns lay out before the next frame; the keys come after one.
-        var longEntry = lengthLink;
-        while (longEntry && String(longEntry.objectName).indexOf("comment-") !== 0) longEntry = longEntry.parent;
-        view.pane.settle(longEntry);
-        // The pane's wheel keeps following what m showed for its followMs,
-        // and a key in that time is pulled back to it (FoamyWheelScroll's
-        // scrollBy does not end a follow): the keys come after it.
-        shell.followEnds = Date.now() + view.pane.wheel.followMs + 50;
-        shell.paneUnfolded = true;
-        shell.step--;
-        return;
-      }
+      if (!check(store.ticketById("4821").ticket.history.count === 5, "the update that waited is in")) return;
+      // A click on a waiting ticket in the overview shows it, the cursor on its row.
+      // A new ticket makes three waiting, from a requester with a long name in
+      // a long-named group.
+      var arrival = Fixtures.update(2, true);
+      var longName = Array(40).join("Bergersen-");
+      arrival[0].requester = longName;
+      arrival[0].group = longName;
+      arrival[0].comments[0].author = longName;
+      // A comment taller than the pane, for scrolling it from the keyboard.
+      arrival[0].comments[0].body = Array(80).join("A line of a long comment.\n")
+        + "\nOn Thu, 5 Nov 2026 at 16:02, Alex <alex@acme.example> wrote:\n> The earlier mail.\n> Its second line.";
+      // And one whose comments the helper deferred: it isn't counted as waiting.
+      arrival.push({ id: "4950", subject: "Deferred comments", status: "Open", priority: "Normal", assignee: "Alex", mine: true,
+                     group: "IT support", requester: "Ola", updated_at: "2026-11-06T09:00:00Z", deferred: true });
+      store.receive(arrival);
+      if (!check(view.overview.awaitingRows.count === 3 && store.ticketById("4950") !== null && shell.find(view.overview, "awaitingUnknown").visible
+                 && !shell.find(view.overview, "nobodyWaiting").visible, "a new ticket waits for a reply too; the deferred one may, and the overview says so")) return;
+      // Keyboard on an overview too short for its rows: the cursor's row scrolls into view.
+      var overviewScroll = shell.find(view.overview, "overviewScroll");
+      view.overview.anchors.fill = undefined;
+      view.overview.height = 140;
+      view.cursor.index = view.paneFirstStop - 1;
+      view.moveRequested(0, 1);
+      view.moveRequested(0, 1);
+      view.moveRequested(0, 1);
+      var lastRow = view.overview.awaitingRows.itemAt(2);
+      var rowY = lastRow.mapToItem(overviewScroll.contentItem, 0, 0).y;
+      var revealed = overviewScroll.contentY > 0 && rowY >= overviewScroll.contentY && rowY + lastRow.height <= overviewScroll.contentY + overviewScroll.height;
+      view.overview.anchors.fill = view.overview.parent;
+      if (!check(revealed && view.cursor.index === view.paneFirstStop + 2, "the keyboard scrolls the overview to the waiting ticket under the cursor")) return;
+      // Enter on the last waiting ticket: the selection leaves the pane two
+      // stops, and the cursor lands on the ticket's row.
+      view.activateRequested();
+      if (!check(view.selected && view.selected.ticket.id === "4902" && view.cursor.index === view.firstTicketStop + view.selected.index,
+                 "Enter on the overview's last waiting ticket shows it, the cursor on its row")) return;
+      // The conversation, from the keyboard: Down scrolls it to its end, then
+      // the cursor moves on to Refresh; Up scrolls back to the top, then to View.
       var conversation = view.pane.conversation;
-      // m left the view at the comment's end; the keys start from the top.
-      conversation.contentY = 0;
+      // A comment of over 40 lines is cut, with Show more; m shows it in full.
+      // The columns lay out before the next frame; the keys come after one.
+      var lengthLink = shell.find(view.pane, "lengthLink");
+      var longEntry = lengthLink;
+      while (longEntry && String(longEntry.objectName).indexOf("comment-") !== 0) longEntry = longEntry.parent;
+      view.pane.settle(longEntry);
+      if (!check(lengthLink && lengthLink.visible && view.pane.showMore() && !shell.find(view.pane, "fade").visible,
+                 "a comment of over 40 lines is cut in the pane, and m shows the rest")) return;
+      view.pane.settle(longEntry);
+      // m showed the rest from where the comment was cut, and stays there.
+      var cutAt = isNaN(view.pane.wheel.destination) ? conversation.contentY : view.pane.wheel.destination;
+      if (!check(cutAt > 0 && cutAt < conversation.contentHeight - conversation.height - 100, "m shows the rest from where the comment was cut, not from its end (" + Math.round(cutAt) + ")")) return;
+      view.pane.wheel.scrollTo(0, false);
       view.cursor.index = view.conversationStop;
       if (!check(shell.find(view.pane, "conversationCursor").visible && conversation.contentHeight > conversation.height,
                  "the cursor rings the conversation, which is taller than the pane")) return;

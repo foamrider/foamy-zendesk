@@ -5,7 +5,7 @@ to you, and the unassigned ones in your groups. It signs in with OAuth and
 reads only; nothing in Zendesk changes. Desktop notifications are optional
 (off by default).
 
-![Foamy Zendesk inbox with sample tickets assigned to you, unassigned in your groups and waiting on others](preview.png)
+![Foamy Zendesk in Wide: sample tickets assigned to you, unassigned in your groups and waiting on others, beside the overview of what needs a reply](preview.png)
 
 The bar shows the Zendesk icon followed by a red count of unread tickets,
 like Teams. When something needs you, a small warning sign sits on the icon:
@@ -15,9 +15,11 @@ which ("Zendesk — sign-in expired", "2 unread · not updated since 09:12").
 On a vertical bar, where the count has no room, a dot on the icon says there
 are unread tickets. Click the icon to open the inbox: your tickets under
 **Assigned to you**, then **Unassigned in your groups**, each section header
-with its count.
+with its count. It opens **Wide**, the list beside a reading pane (below);
+**Small** (Settings › Panel › Size) is the list alone, where a ticket opens in
+place, as the next paragraphs describe.
 
-Each row has the same columns, so the eye can run down them: the subject,
+In Small, each row has the same columns, so the eye can run down them: the subject,
 then the unread dot and the time (10:40 today, then Yesterday, a weekday or
 a date), then fixed slots for **Mark as read** and **View in Zendesk**. An
 unread row has a bold subject and a second line: the status as a soft tag
@@ -77,7 +79,7 @@ out**, **Checking the sign-in…**, **Waiting for the browser…** (with
 the reason, each with its own icon. A first load that fails says
 **Couldn't load tickets**, with **Retry**.
 
-**Wide** (Settings › Panel › Size) shows the list and a reading pane side by
+**Wide**, the default size, shows the list and a reading pane side by
 side, 880 wide. It is 640 high, and grows with a longer inbox up to 70 % of
 the screen (never under 640; smaller only where the screen is). The list
 rows are two lines without their own buttons: the subject and the time, then
