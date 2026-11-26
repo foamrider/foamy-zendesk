@@ -106,10 +106,34 @@ function marker(state, id) {
   return entry && Number.isSafeInteger(entry.revision) ? entry.revision : 0;
 }
 
+// The revision up to which the ticket counts as read: the stored marker, or
+// the agent's own newest comment when it is later, because a reply written in
+// Zendesk answers what came before it. Mark as unread stores `ignoreOwn`, the
+// agent's newest comment then, so that reply no longer counts; a later one does.
+function readUpTo(state, ticket) {
+  var since = marker(state, ticket.id);
+  var entry = state.read[ticket.id];
+  var ignored = entry && Number.isSafeInteger(entry.ignoreOwn) ? entry.ignoreOwn : 0;
+  var own = ticket.history.find(function(item) { return item.mine; });
+  return own && own.revision > ignored ? Math.max(since, own.revision) : since;
+}
+
 // Comments from someone else that the agent hasn't read.
 function unread(state, ticket) {
-  var since = marker(state, ticket.id);
+  var since = readUpTo(state, ticket);
   return ticket.history.filter(function(item) { return !item.mine && item.revision > since; }).length;
+}
+
+// A ticket the agent has never seen: its comments haven't come (the helper
+// deferred them) and it has no read marker. It has no comment to count, but
+// it is not read.
+function unseen(state, ticket) {
+  return !ticket.loaded && !Object.prototype.hasOwnProperty.call(state.read, ticket.id);
+}
+
+// Nothing unread, and seen: what the list dims and "Hide read tickets" hides.
+function isRead(state, ticket) {
+  return unread(state, ticket) === 0 && !unseen(state, ticket);
 }
 
 // `placedRead` (see `visible`) keeps a ticket being read where it was.
@@ -139,12 +163,14 @@ function visible(state, options) {
   var list = Object.keys(state.tickets).map(function(id) {
     var ticket = state.tickets[id];
     var count = unread(state, ticket);
-    var since = marker(state, id);
+    var since = readUpTo(state, ticket);
     var history = ticket.history.map(function(item) {
       return Object.assign({}, item, { fresh: !item.mine && item.revision > since });
     });
-    var read = count === 0;
-    return Object.assign({}, ticket, { read: read, updates: count, since: since, history: history,
+    // Never seen counts as unread, with no comment to count (`updates` 0).
+    var never = unseen(state, ticket);
+    var read = count === 0 && !never;
+    return Object.assign({}, ticket, { read: read, unseen: never, updates: count, since: since, history: history,
                                        placedRead: Object.prototype.hasOwnProperty.call(held, id) ? held[id] === true : read });
   })
     .filter(function(ticket) { return !hideRead || !ticket.placedRead; });
@@ -164,19 +190,41 @@ function visible(state, options) {
   return list;
 }
 
-// The Wide panel's overview of a `visible` list: the counts its sections
-// show, the tickets waiting for a reply (New or Open, the latest comment from
-// someone else; the longest wait first) and the tickets per group, yours and
-// unassigned (the most first). The view dates the waits against its clock.
+// The Wide panel's overview of the whole inbox (a `visible` list that hides
+// nothing): the counts the list's sections show, the tickets that need a
+// reply (New or Open, the latest comment from someone else) and the tickets
+// per group, yours and unassigned (the most first). The view dates the waits
+// against its clock.
+// What needs a reply is sorted for triage: Urgent, then High, then the rest;
+// within each, unread before read, then the longest wait. The first five show
+// (`options.all`: every one); `awaitingTotal` counts them all, `awaitingMore`
+// those left out, and `awaitingAll` says the cut was lifted, so the view can
+// offer to fold the list again.
 // A ticket whose comments haven't come (`loaded` false: the helper deferred
-// them) has no known latest author, so it isn't counted as waiting:
-// `unknown` counts the New and Open ones, which may be waiting. The lists
-// are cut at five; `awaitingMore` and `groupsMore` count what was left out.
+// them) has no known latest author, so it isn't listed: `unknown` counts the
+// New and Open ones, which may need a reply. At most five groups show;
+// `groupsMore` counts the rest.
 var MAX_AWAITING = 5
 var MAX_OVERVIEW_GROUPS = 5
 var AWAITING_STATUSES = ["New", "Open"]
+// A row's line of the newest comment, at most this long.
+var MAX_SNIPPET = 280
 
-function overview(list) {
+// Urgent, then High, then the rest: Normal and Low rank alike.
+function priorityRank(priority) {
+  return priority === "Urgent" ? 0 : priority === "High" ? 1 : 2;
+}
+
+// A comment as one line: runs of white space (line breaks too) fold to a space.
+// Only the start of a long body is folded (the line holds `limit` at most),
+// never ending in half a surrogate pair.
+function snippet(value, limit) {
+  var start = String(value || "").slice(0, limit * 4).replace(/[\uD800-\uDBFF]$/, "");
+  return shown(start.replace(/\s+/g, " ").trim(), limit);
+}
+
+function overview(list, options) {
+  var all = !!(options && options.all);
   var counts = { mine: 0, unassigned: 0, waiting: 0 };
   // Group names come from Zendesk: no inherited keys ("constructor", "__proto__").
   var groups = Object.create(null);
@@ -187,12 +235,14 @@ function overview(list) {
     else if (ticket.unassigned) group.unassigned += 1;
   }
   var open = list.filter(function(item) { return AWAITING_STATUSES.indexOf(item.status) >= 0; });
-  var waitingAll = open.filter(function(item) { return item.loaded && !item.senderMine; });
-  var awaiting = waitingAll.sort(function(a, b) {
-    return a.received - b.received || a.id.localeCompare(b.id);
-  }).slice(0, MAX_AWAITING).map(function(item) {
-    return { id: item.id, subject: item.subject, status: item.status, sender: item.sender,
-             unassigned: item.unassigned, received: item.received };
+  var needing = open.filter(function(item) { return item.loaded && !item.senderMine; }).sort(function(a, b) {
+    return priorityRank(a.priority) - priorityRank(b.priority) || (a.read === true) - (b.read === true)
+      || a.received - b.received || a.id.localeCompare(b.id);
+  });
+  var awaiting = (all ? needing : needing.slice(0, MAX_AWAITING)).map(function(item) {
+    return { id: item.id, subject: item.subject, status: item.status, priority: item.priority, read: item.read === true,
+             sender: item.sender, requester: item.requester, unassigned: item.unassigned, received: item.received,
+             body: snippet(item.body, MAX_SNIPPET) };
   });
   var groupsAll = Object.keys(groups).map(function(name) { return groups[name]; })
     .filter(function(group) { return group.mine + group.unassigned > 0; });
@@ -202,7 +252,8 @@ function overview(list) {
   return {
     unread: list.filter(function(item) { return !item.read; }).length,
     mine: counts.mine, unassigned: counts.unassigned, waiting: counts.waiting,
-    awaiting: awaiting, awaitingMore: waitingAll.length - awaiting.length,
+    awaiting: awaiting, awaitingTotal: needing.length, awaitingMore: needing.length - awaiting.length,
+    awaitingAll: all && needing.length > MAX_AWAITING,
     unknown: open.filter(function(item) { return !item.loaded; }).length,
     groups: grouped, groupsMore: groupsAll.length - grouped.length
   };
@@ -282,6 +333,12 @@ function notificationText(value, limit) {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// A date that starts a line ("fredag 6. november"): its first letter capital.
+function capitalized(value) {
+  var text = String(value || "");
+  return text.charAt(0).toLocaleUpperCase() + text.slice(1);
+}
+
 // Whole calendar days from `ms` to `now` in local time: 0 today, 1 yesterday,
 // negative for a time ahead of the clock.
 function daysAgo(ms, now) {
@@ -290,9 +347,11 @@ function daysAgo(ms, now) {
   return Math.round((start(today) - start(day)) / 86400000);
 }
 
+// A ticket never seen (see `unseen`) gets its first marker here, at the newest
+// comment it has (0 without any): the comments that load later are unread.
 function markRead(state, id, now) {
   var ticket = state.tickets[id];
-  if (!ticket || unread(state, ticket) === 0) return false;
+  if (!ticket || isRead(state, ticket)) return false;
   state.read[id] = { revision: ticket.revision, at: now || Date.now() };
   return true;
 }
@@ -305,13 +364,21 @@ function markReadUpTo(state, id, revision, now) {
   return true;
 }
 
-// Makes the newest comment from someone else unread again.
+// Makes the newest comment from someone else unread again. A ticket whose
+// comments haven't come has none: dropping its marker makes it never seen.
 function markUnread(state, id, now) {
   var ticket = state.tickets[id];
-  if (!ticket || unread(state, ticket) > 0) return false;
+  if (!ticket || !isRead(state, ticket)) return false;
   var newest = ticket.history.find(function(item) { return !item.mine; });
-  if (!newest) return false;
-  state.read[id] = { revision: newest.revision - 1, at: now || Date.now() };
+  if (!newest) {
+    if (ticket.loaded) return false;
+    delete state.read[id];
+    return true;
+  }
+  var entry = { revision: newest.revision - 1, at: now || Date.now() };
+  var own = ticket.history.find(function(item) { return item.mine; });
+  if (own) entry.ignoreOwn = own.revision;
+  state.read[id] = entry;
   return true;
 }
 
@@ -347,7 +414,10 @@ function parseReadState(text) {
   });
   valid.sort(function(a, b) { return source[b].at - source[a].at; });
   var read = {};
-  for (var id of valid.slice(0, MAX_MARKERS)) read[id] = { revision: source[id].revision, at: source[id].at };
+  for (var id of valid.slice(0, MAX_MARKERS)) {
+    read[id] = { revision: source[id].revision, at: source[id].at };
+    if (Number.isSafeInteger(source[id].ignoreOwn)) read[id].ignoreOwn = source[id].ignoreOwn;
+  }
   return read;
 }
 
@@ -387,7 +457,8 @@ function fetchOutcome(started, current, text) {
 }
 
 if (typeof module !== "undefined") module.exports = {
-  empty, ticketFrom, applySnapshot, known, unread, waiting, section, visible, overview, daysAgo, markRead, markUnread,
+  empty, ticketFrom, applySnapshot, known, unread, unseen, isRead, waiting, section, visible, overview, snippet, capitalized, daysAgo,
+  markRead, markUnread,
   markReadUpTo, markAllRead, restore, parseReadState, serializeReadState, host, ticketUrl, newestFromOthers, notices,
   arrivals, parseAction, notificationText, fetchOutcome
 };

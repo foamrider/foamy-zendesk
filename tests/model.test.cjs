@@ -15,11 +15,64 @@ test('a snapshot lists tickets newest first; unread counts only comments from ot
   const state = seeded();
   assert.deepEqual(ids(state), ['4821', '4818', '4824']);
   const vpn = Model.visible(state)[0];
-  assert.equal(vpn.updates, 2, "Alex's own reply is never unread");
+  assert.equal(vpn.updates, 1, "Alex's reply answers Anna's comment before it; only her newer one is unread");
   assert.equal(vpn.sender, 'Anna');
   assert.equal(vpn.senderMine, false);
   assert.equal(vpn.history.length, 4);
-  assert.deepEqual(vpn.history.map(item => item.fresh), [true, false, true, false]);
+  assert.deepEqual(vpn.history.map(item => item.fresh), [true, false, false, false]);
+});
+
+// #4824 with Alex's reply (written in Zendesk) after Maria's comment.
+function answered() {
+  const list = Fixtures.tickets();
+  list[2].comments.unshift({ id: 48242, author: 'Alex', mine: true, public: true, created: Fixtures.BASE, body: 'On my way.' });
+  list[2].updated_at = '2026-11-06T09:41:00Z';
+  return list;
+}
+const vpnOf = (state, id) => Model.visible(state).find(t => t.id === id);
+
+test('a ticket I answered in Zendesk is read, though I never opened it here', () => {
+  const state = seeded(answered());
+  const ticket = vpnOf(state, '4824');
+  assert.equal(ticket.read, true);
+  assert.equal(ticket.updates, 0);
+  assert.deepEqual(ticket.history.map(item => item.fresh), [false, false], 'nothing before my reply is new when it opens');
+  // A later comment from Maria makes it unread again.
+  const list = answered();
+  list[2].comments.unshift({ id: 48243, author: 'Maria', mine: false, public: true, created: Fixtures.BASE + 60000, body: 'Thanks, it works.' });
+  list[2].updated_at = '2026-11-06T09:42:00Z';
+  Model.applySnapshot(state, list);
+  assert.equal(vpnOf(state, '4824').updates, 1);
+  assert.deepEqual(vpnOf(state, '4824').history.map(item => item.fresh), [true, false, false]);
+});
+
+test('a ticket whose comments have not come is unseen until it is marked read', () => {
+  const list = Fixtures.tickets();
+  delete list[2].comments;
+  list[2].deferred = true;
+  const state = seeded(list);
+  assert.deepEqual([vpnOf(state, '4824').unseen, vpnOf(state, '4824').read], [true, false]);
+  assert.equal(Model.markRead(state, '4824'), true);
+  assert.deepEqual([vpnOf(state, '4824').unseen, vpnOf(state, '4824').read], [false, true], 'a marker at revision 0 still counts');
+  assert.equal(Model.markUnread(state, '4824'), true);
+  assert.deepEqual([vpnOf(state, '4824').unseen, vpnOf(state, '4824').read], [true, false], 'Mark as unread drops its marker');
+});
+
+test('mark as unread after my own reply keeps the ticket unread until I reply again', () => {
+  const state = seeded(answered());
+  assert.equal(Model.markUnread(state, '4824'), true);
+  assert.equal(vpnOf(state, '4824').read, false);
+  assert.equal(vpnOf(state, '4824').updates, 1);
+  // The marker survives a save and a load with what it ignores.
+  state.read = Model.parseReadState(Model.serializeReadState(state));
+  Model.applySnapshot(state, answered());
+  assert.equal(vpnOf(state, '4824').read, false);
+  // A newer reply of mine answers it again.
+  const list = answered();
+  list[2].comments.unshift({ id: 48244, author: 'Alex', mine: true, public: true, created: Fixtures.BASE + 120000, body: 'Fixed.' });
+  list[2].updated_at = '2026-11-06T09:43:00Z';
+  Model.applySnapshot(state, list);
+  assert.equal(vpnOf(state, '4824').read, true);
 });
 
 test('marking read survives the next snapshot; a new reply from someone else unreads it', () => {
@@ -105,7 +158,7 @@ test('your tickets come first, then unassigned ones, then waiting ones; heads ma
   assert.deepEqual(Model.visible(unassigned).map(t => t.sectionHead), ['unassigned']);
 });
 
-test('the Wide overview counts the sections and lists who waits for a reply, longest first', () => {
+test('the Wide overview counts the sections and lists what needs a reply, by priority, then unread, then the longest wait', () => {
   const list = Fixtures.tickets().concat([
     { id: '4807', subject: 'Teams calls drop', status: 'New', priority: 'Normal', assignee: 'Alex', mine: true,
       group: 'Workplace', requester: 'Sofie', updated_at: '2026-11-02T08:00:00Z',
@@ -118,16 +171,21 @@ test('the Wide overview counts the sections and lists who waits for a reply, lon
   Model.markRead(state, '4802');
   const view = Model.overview(Model.visible(state, { groupWaiting: true }));
   assert.deepEqual([view.unread, view.mine, view.unassigned, view.waiting], [3, 2, 1, 2]);
-  // On-hold and Pending tickets wait on others, not on you; #4821 has Anna's reply after Alex's.
-  assert.deepEqual(view.awaiting.map(item => item.id), ['4807', '4824', '4821']);
-  assert.deepEqual(plain(view.awaiting[1]), { id: '4824', subject: 'Meeting room display is blank', status: 'New', sender: 'Maria',
-    unassigned: true, received: Fixtures.BASE - 26 * 3600000 });
+  // On-hold and Pending tickets wait on others, not on you; #4821 (High) has
+  // Anna's reply after Alex's; #4807 has waited longer than #4824.
+  assert.deepEqual(view.awaiting.map(item => item.id), ['4821', '4807', '4824']);
+  assert.deepEqual(plain(view.awaiting[2]), { id: '4824', subject: 'Meeting room display is blank', status: 'New', priority: 'Normal',
+    read: false, sender: 'Maria', requester: 'Maria', unassigned: true, received: Fixtures.BASE - 26 * 3600000,
+    body: 'The screen stays black when connecting the laptop. We have tried a second cable.' });
+  // A read ticket comes after the unread ones of its priority.
+  Model.markRead(state, '4807');
+  assert.deepEqual(Model.overview(Model.visible(state, { groupWaiting: true })).awaiting.map(item => item.id), ['4821', '4824', '4807']);
   assert.deepEqual(plain(view.groups), [{ name: 'IT support', mine: 2, unassigned: 0 }, { name: '', mine: 1, unassigned: 0 },
     { name: 'Facilities', mine: 0, unassigned: 1 }, { name: 'Workplace', mine: 1, unassigned: 0 }]);
   // Your own reply last: nobody waits on you.
   const replied = seeded([Object.assign(Fixtures.tickets()[0], { comments: Fixtures.tickets()[0].comments.slice(1) })]);
   assert.deepEqual(Model.overview(Model.visible(replied)).awaiting, []);
-  assert.deepEqual(plain(Model.overview([])), { unread: 0, mine: 0, unassigned: 0, waiting: 0, awaiting: [], awaitingMore: 0, unknown: 0, groups: [], groupsMore: 0 });
+  assert.deepEqual(plain(Model.overview([])), { unread: 0, mine: 0, unassigned: 0, waiting: 0, awaiting: [], awaitingTotal: 0, awaitingMore: 0, awaitingAll: false, unknown: 0, groups: [], groupsMore: 0 });
 });
 
 test('the overview leaves out tickets whose comments have not come; group names are plain keys', () => {

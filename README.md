@@ -8,57 +8,106 @@ reads only; nothing in Zendesk changes. Desktop notifications are optional
 ![Foamy Zendesk inbox with sample tickets assigned to you, unassigned in your groups and waiting on others](preview.png)
 
 The bar shows the Zendesk icon followed by a red count of unread tickets,
-like Teams. Click it to open the inbox: your tickets under **Assigned to
-you**, then **Unassigned in your groups**. Unread tickets have a bold
-subject with an accent-coloured dot by the time (10:40 today, then Yesterday, a weekday
-or a date), their status as a tag in Zendesk's colours, the priority (only
-High and Urgent), who wrote last ("You" for your own replies), the latest
-comment, and a footer line with the assignee and the group. Read tickets take
-one line: the subject, the priority, the sender and the time. The disclosure
-triangle always has the status colour, so a read ticket shows its status too.
+like Teams. When something needs you, a small warning sign sits on the icon:
+the sign-in expired or can't be read, or the last checks failed (then the
+icon dims and the count stays, as the last one known). The tooltip says
+which ("Zendesk — sign-in expired", "2 unread · not updated since 09:12").
+On a vertical bar, where the count has no room, a dot on the icon says there
+are unread tickets. Click the icon to open the inbox: your tickets under
+**Assigned to you**, then **Unassigned in your groups**, each section header
+with its count.
 
-Click a ticket to open it; one ticket is open at a time. An open ticket gets
-a frame and a tinted header band: click the band to close it (clicks on the
-comments never do). Its comments show newest first: those that were unread
-and the one before them, and **Show earlier comments** for the rest
-(internal notes labelled). Long comments are clipped at six lines and fade
-out, each with its own **Show more** and **Show less**. Icon buttons in each title row offer **Mark as read** and
-**View in Zendesk** (opens the ticket in the browser and marks it read).
-Notices (Undo, waiting updates) float in a bar above the footer, so they never move the
-ticket being read. The footer shows the account, when the inbox was last
-updated (or why it couldn't be, or when it tries again), and **Refresh**.
+Each row has the same columns, so the eye can run down them: the subject,
+then the unread dot and the time (10:40 today, then Yesterday, a weekday or
+a date), then fixed slots for **Mark as read** and **View in Zendesk**. An
+unread row has a bold subject and a second line: the status as a soft tag
+in Zendesk's colours, the priority (only High and Urgent; Urgent is a solid
+red pill), and "#id · requester"; then the start of the newest comment. That
+preview starts at the message: no greeting ("Hi Alex,"), no quoted mail, a
+URL as its host, your own reply as "You: …". The disclosure triangle has the
+status colour. A read ticket takes one line: the subject, the status unless
+it is Open, the priority, the requester and the time. A read ticket that
+still waits for you (New or Open, someone else wrote last) keeps the normal
+text tones; one that is parked (you wrote last, or it is Pending or On-hold)
+is dimmed. A ticket whose comments haven't loaded yet is drawn as unread and
+says so.
+
+Click a ticket to open it; one ticket is open at a time, and opening one
+below an open one keeps it where you clicked it. An open ticket gets a frame
+and a header band with the whole subject, the solid status tag and the
+priority, "#id · requester" with whose ticket it is ("Assigned to you",
+"Unassigned", "Assigned to …") at the end of the line, and both actions.
+Click the band to close it (clicks on the comments never do), or
+**Collapse** at the end of the card. While the card is taller than the list,
+its header stays at the top of the list. Its comments show newest first:
+those that were unread and the one before them, and **Show earlier
+comments** for the rest. Each comment has its author, an **Internal note**
+label (an internal note lies on a yellow tint), the time and **New**. The
+newest unread comment shows 12 lines and the others 6, then fade out, each
+with its own **Show more** and **Show less**. The read toggle is an
+envelope: open for **Mark as read**, closed for **Mark as unread**.
+
+Notices stand in a bar between the list and the footer, one row each with
+its action: "2 updates waiting" with **Show**, "3 marked as read" with
+**Undo**, a failed refresh with **Retry**, **Can't open the browser**, and a
+save that failed ("Kept only until the shell restarts."). The list ends
+above the bar, so a notice never covers or moves the ticket being read, and
+a click on the bar never reaches a ticket. The footer shows the account,
+how old the inbox is (in red while refreshes fail), and **Refresh**.
 
 Zendesk has no per-agent read state, so reading is kept on this computer. A
 ticket is unread while it has comments from someone else newer than when you
-marked it read; your own replies never make it unread. **Opening a ticket
-marks it read**: the count drops at once, while the open ticket keeps its
-place and its "new" marks until it closes (then it moves, or hides with
-**Hide read tickets**). Read tickets stay listed, dimmed; their **Mark as
-unread** button shows while the pointer or the keyboard cursor is on the
-ticket. The header's **Mark all as read** marks every unread ticket; an
-Undo link restores that batch. **View in Zendesk** marks the ticket read
-too, once `xdg-open` has handed it to your default browser; when that fails
-the ticket stays unread and the notice bar says **Can't open the browser**.
-Nothing in Zendesk changes either way.
+marked it read. Your own replies never make it unread, and a reply you wrote
+in Zendesk answers what came before it: those comments count as read, also
+when you never opened the ticket here. **Mark as unread** after such a reply
+makes it unread again until you reply once more. **Opening a ticket marks it
+read**: the count drops at once, while the open ticket keeps its place and
+its "new" marks until it closes (then it moves, or hides with **Hide read
+tickets**). Read tickets stay listed; their **Mark as unread** button shows
+while the pointer or the keyboard cursor is on the ticket. The header's
+**Mark all as read** (shown only while there is something to mark) marks
+every unread ticket; **Undo** restores that batch. **View in Zendesk** marks
+the ticket read too, once `xdg-open` has handed it to your default browser;
+when that fails the ticket stays unread and the notice bar says **Can't open
+the browser**. Nothing in Zendesk changes either way.
+
+Signed out, or when the sign-in needs you, the list says which: **Signed
+out**, **Checking the sign-in…**, **Waiting for the browser…** (with
+**Cancel**), **Sign-in expired** (with **Sign in**), **Can't sign in** with
+the reason, each with its own icon. A first load that fails says
+**Couldn't load tickets**, with **Retry**.
 
 **Wide** (Settings › Panel › Size) shows the list and a reading pane side by
-side, at one size (880 by 640, smaller only where the screen is). The list
-rows are two lines without their own buttons. Selecting a ticket (a click or
-Enter) shows it in the pane and marks it read: its subject, **Mark as read**
-or **Mark as unread** and **View in Zendesk** as icons, the requester,
-assignment and group, then every comment the helper fetched (the latest 20),
-newest first and in full; those that were unread sit under "New comments".
-Click the selected ticket again to close it. With no ticket selected the pane
-shows an overview: the counts of the list's sections, the tickets waiting for
-a reply (New or Open, the latest comment from someone else; the longest wait
-first, amber after an hour and red after four; click one to show it; tickets
-whose comments haven't loaded yet are counted as "may be waiting") and the
-tickets per group. Settings keep the same size. Where the screen has no room
-for 880, the popup is the standard size.
+side, 880 wide. It is 640 high, and grows with a longer inbox up to 70 % of
+the screen (never under 640; smaller only where the screen is). The list
+rows are two lines without their own buttons: the subject and the time, then
+the tags and "#id · requester". Selecting a ticket (a click or Enter) shows
+it in the pane and marks it read. The pane's header has the subject and three
+actions: **Mark as read** or **Mark as unread**, **View in Zendesk**, and ×
+(**Hide ticket**, back to the overview; a click on the selected row does the
+same). Under it, "#5102 · Anna Lindqvist-Johansen" with the assignment at
+the right end. Then every comment the helper fetched (the latest 20), newest
+first; those that were unread sit under "New comments", your own replies on
+an accent tint. The mail a comment quotes at its end (the "On … wrote:" line
+and the "> " lines under it) folds behind **Show quoted text**; a comment of
+over 40 lines is cut with **Show more**. While a ticket is shown, new
+updates wait in the notice bar until you press **Show**. With no ticket
+selected the pane shows an overview: the counts of the list's sections,
+**Needs a reply** (New or Open tickets where someone else wrote last, by
+priority, then unread, then the longest wait; the wait is red for Urgent and
+High after an hour; click one to show it; "7 more need a reply" shows the
+rest, and tickets whose comments haven't loaded yet are counted as "may need
+a reply"), and the tickets per group. Settings keep the same size. Where the
+screen has no room for 880, the popup is the standard size.
 
-Settings (in the ⋯ menu, `s`, or right-click the bar icon):
+Settings (in the ⋯ menu, `s`, or right-click the bar icon), in this order:
 
-- **Size** (Small): **Wide** adds the reading pane, as above.
+- **Account** (first, so "Open settings" on the first run lands on it):
+  signed in, who you are and **Sign out**. Signed out, what a Zendesk admin
+  must create first, the connection fields below, the redirect URL they
+  give, then the state and **Sign in**.
+- **Size** (Small): **Wide** adds the reading pane, as above. **Refresh
+  every** (1 to 15 minutes, default 1).
 - **Hide read tickets** (off), **Show unread first** (off), and **Group
   waiting tickets** (on): Pending and On-hold tickets you have read move to a
   "Waiting on others" section at the end; a new reply brings them back up.
@@ -78,7 +127,7 @@ Settings (in the ⋯ menu, `s`, or right-click the bar icon):
   came from: while another Zendesk address is set, its buttons do nothing
   and a click only opens the inbox.
   Zendesk can't push to the desktop (its webhooks need a public server and
-  an admin), so a notification comes with the next check: up to **Check
+  an admin), so a notification comes with the next check: up to **Refresh
   every** late, plus however far Zendesk's search lags.
 - **Use a weekly schedule**: per-day working hours (local time; overnight
   ranges carry into the next day), as in Foamy Train. Outside them nothing is
@@ -94,13 +143,12 @@ Settings (in the ⋯ menu, `s`, or right-click the bar icon):
   midnight (or until the schedule starts, if sooner). Either goes back to
   the schedule when pressed again. Snoozing is kept in
   `$XDG_STATE_HOME/foamy-zendesk/schedule-override.json`, never in `shell.json`;
-  when that file can't be written the footer says **Can't save snooze or
+  when that file can't be written the notice bar says **Can't save snooze or
   resume**, and the snooze lasts until the shell restarts.
-- **Zendesk** (at the bottom): the account, and **Check every** (1 to 15
-  minutes, default 1). Signed out, it also holds the connection fields below.
 
 If any monitor has an open ticket, a newer inbox waits until it closes (or
-its panel does), so text and order stay stable while reading.
+its panel does, or you press **Show**), so text and order stay stable while
+reading.
 
 ## Languages
 
@@ -164,7 +212,7 @@ fix the runtime directory and try again.
 
 ## Fetching
 
-Every minute (your **Check every**) while signed in and within the schedule,
+Every minute (your **Refresh every**) while signed in and within the schedule,
 and, in or outside the schedule, when the popup opens on an inbox older than
 30 seconds or on **Refresh**, the helper's `fetch`:
 
@@ -186,7 +234,7 @@ markers live in `$XDG_STATE_HOME/foamy-zendesk/read-<host>.json`, such as
 the inbox are kept 30 days, and at most the 2000 most recently marked are
 loaded. A read file that exists but can't be read is left alone, and one
 that can't be written (a full or read-only disk) isn't saved: either way the
-footer says **Can't save read markers**, and markers last until the shell
+notice bar says **Can't save read markers**, and markers last until the shell
 restarts or the account changes.
 
 Requirements: `secret-tool` (libsecret) with a running keyring (Omarchy's
@@ -205,9 +253,10 @@ Escape closes, and Tab switches shell panels. `r` refreshes, `m` opens the
 ticket under the cursor, then shows one more thing per press (the newest
 clipped comment in full, then the earlier comments), `u` undoes Mark all as read
 and `s` opens settings. In Wide each ticket is one stop, Enter (or `m`)
-selects it, and the pane's stops come after the list: its two actions and
-the conversation (Up and Down scroll it; at its end the cursor moves on), or
-the overview's waiting tickets.
+selects it, and the pane's stops come after the list: its three actions
+(the read toggle, View in Zendesk, Hide ticket) and the conversation (Up and
+Down scroll it; at its end the cursor moves on; `m` opens the next folded
+part), or the overview's tickets that need a reply and its "more" link.
 
 IPC: `omarchy-shell foamy.zendesk <open|close|toggle|settings|snooze>` (`snooze`
 is the ⋯ menu's snooze entry). A notification uses `show <host>/<ticket id>`
@@ -321,7 +370,12 @@ Mark all as read, hidden read tickets, grouped waiting tickets, signed out,
 loading, failed and offline states, an empty inbox, settings (signed in and
 signed out), the schedule, outside the schedule, a narrow popup, keyboard
 focus and scrolling, and Wide: the overview, a selected ticket, a waiting
-update, keyboard focus on the overview and on the conversation, an empty inbox and settings. Render with `--theme light` to check the light palette.
+update, keyboard focus on the overview and on the conversation, an empty
+inbox and settings. The "stress" states load a realistic, untidy inbox
+(`preview/Stress.js`), with more states per part of the UI: the rows and the
+open card, the reading pane (quoted mail, long comments), the overview, each
+account state and every notice. Render with `--theme light` to check the
+light palette.
 `FOAMY_KIT` overrides the kit path used by runtime tests (default: a sibling
 `foamy-kit`, else `~/GitHub/Personal/foamy-kit`).
 
