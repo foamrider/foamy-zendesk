@@ -73,26 +73,20 @@ function messageConstant(modules, name) {
   return undefined;
 }
 
-// SafeTextField's paste errors, which FoamyTextSettingField shows through
-// FoamyI18n.t: every text set on a `pasteError = ` line.
-function pasteErrors() {
-  const lines = read('kit/SafeTextField.qml').split('\n').filter(line => /\bpasteError = /.test(line));
-  const texts = lines.flatMap(line => [...line.matchAll(/"((?:[^"\\]|\\.)+)"/g)].map(m => JSON.parse(`"${m[1]}"`)));
-  return [...new Set(texts)];
+// The texts kit components hand the plugin to translate (the paste errors
+// the settings fields show, the helper's unavailable text, the settings save
+// errors), from the kit's own list of them.
+function kitTexts() {
+  return require('../kit/i18n-texts.json').map(entry => entry.text);
 }
 
 function dataKeys() {
   const tickets = read('native/src/tickets.rs');
   const mapped = name => [...tickets.match(new RegExp(`fn ${name}\\([\\s\\S]*?\\n}`))[0].matchAll(/=> "([^"]+)"/g)].map(m => m[1]);
-  const prefs = read('kit/FoamyPrefs.js');
-  const queue = read('kit/FoamyPrefsQueue.qml');
   return [
     ...mapped('status'), ...mapped('priority'),
     ...Schema.dayLabels,
-    read('kit/FoamyNative.js').match(/UNAVAILABLE_TEXT = "([^"]+)"/)[1],
-    ...[...prefs.matchAll(/^var [A-Z_]+ = "([^"]+)"/gm)].map(m => m[1]),
-    ...[...queue.matchAll(/error = "([^"]+)"/g)].map(m => m[1]),
-    ...pasteErrors(),
+    ...kitTexts(),
   ];
 }
 
@@ -122,7 +116,6 @@ test('every literal shown through FoamyI18n has an entry; tn keys are plural ent
 test('texts passed as data are catalog keys too', () => {
   const keys = dataKeys();
   assert.ok(keys.includes('On-hold') && keys.includes('Urgent') && keys.includes('Sunday'), keys.join(', '));
-  assert.equal(pasteErrors().length, 3, `paste errors found: ${pasteErrors().join(' | ')}`);
   for (const key of keys) assert.ok(Object.hasOwn(en, key), `missing data key: ${key}`);
 });
 

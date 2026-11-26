@@ -130,6 +130,12 @@ ShellRoot {
     enabled: shell.maxUnread >= 0
     function onUnreadCountChanged() { shell.maxUnread = Math.max(shell.maxUnread, Plugin.TicketStore.unreadCount); }
   }
+  // Each save the first panel's settings queue refused, as [key, value].
+  property var refused: []
+  Connections {
+    target: one.prefs
+    function onFailed(key, value) { shell.refused = shell.refused.concat([[key, value]]); }
+  }
   // Quickshell ends a Process by dropping it (running is false), ending its
   // collectors' streams and only then emitting exited: a check() that runs
   // in between (here from the collector's streamFinished) finds no process
@@ -1607,6 +1613,65 @@ ShellRoot {
       ev.keyClick(Qt.Key_X, Qt.NoModifier, -1);
       if (!check(address.editing && address.field.text === shell.savedAddress + "x", "after Cancel the address field takes typing again (" + address.field.text + ")")) return;
       ev.keyClick(Qt.Key_Escape, Qt.NoModifier, -1);
+      // A widget without a bar entry: its settings queue refuses every save.
+      one.moduleName = "";
+      view.settingsPage.resetScroll();
+      break;
+    case 86:
+      var size = shell.find(view.settingsPage, "panelWidth");
+      if (!check(view.editingSettings && shell.onPage(view.settingsPage, size) && size.value === "wide", "Settings shows the saved size, Wide")) return;
+      ev.mouseClick(size.triggerItem, size.triggerItem.width / 2, size.triggerItem.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
+      break;
+    case 87:
+      // Small, picked with the keys, is refused: the dropdown shows the
+      // saved Wide again at once, not Small for its 10 s hold.
+      var size = shell.find(view.settingsPage, "panelWidth");
+      if (!check(size.popupOpen, "a click on the size opens its list")) return;
+      shell.refused = [];
+      ev.keyClick(Qt.Key_Up, Qt.NoModifier, -1);
+      ev.keyClick(Qt.Key_Return, Qt.NoModifier, -1);
+      if (!check(JSON.stringify(shell.refused) === JSON.stringify([["panelWidth", "standard"]]), "the queue refuses the pick of Small (" + JSON.stringify(shell.refused) + ")")) return;
+      if (!check(size.shownValue === "wide", "a refused pick shows the saved size again at once (shows " + size.shownValue + ")")) return;
+      // The schedule on, so that Outside the schedule shows too.
+      one.moduleName = "foamy.zendesk";
+      one.prefs.save("scheduleEnabled", true);
+      one.moduleName = "";
+      // The other three dropdowns, each picked as its list picks (select()):
+      // the queue refuses the pick, and the dropdown shows the saved value
+      // again at once. Check every saves its choice as a number.
+      for (var linked of [["notify", String], ["scheduleOutsideMode", String], ["refreshSeconds", Number]]) {
+        var dropdown = shell.find(view.settingsPage, linked[0]);
+        var savedValue = dropdown.value;
+        var picked = dropdown.options.map(function(option) { return dropdown.optionValue(option); }).find(function(value) { return value !== savedValue; });
+        if (!check(dropdown.visible && picked !== undefined, linked[0] + " shows, with an option other than the saved " + savedValue)) return;
+        shell.refused = [];
+        dropdown.select(picked);
+        if (!check(JSON.stringify(shell.refused) === JSON.stringify([[linked[0], linked[1](picked)]]), "the queue refuses the pick of " + picked + " in " + linked[0] + " (" + JSON.stringify(shell.refused) + ")")) return;
+        if (!check(dropdown.shownValue === savedValue, "a refused pick in " + linked[0] + " shows the saved value again at once (shows " + dropdown.shownValue + ", saved " + savedValue + ")")) return;
+      }
+      // Wednesday's saved range.
+      one.moduleName = "foamy.zendesk";
+      one.prefs.save("scheduleWednesday", "08:00-16:00");
+      break;
+    case 88:
+      var wednesday = shell.find(view.settingsPage, "scheduleWednesday");
+      if (!check(wednesday && shell.find(wednesday, "fromTime").text === "08:00", "Settings shows Wednesday's saved range")) return;
+      one.moduleName = "";
+      view.settingsPage.ensureVisible(wednesday);
+      break;
+    case 89:
+      // A new From time, typed and sent with Return, is refused: the row
+      // shows the saved 08:00 again at once, not the unsaved 09:00.
+      var from = shell.find(shell.find(view.settingsPage, "scheduleWednesday"), "fromTime");
+      if (!check(shell.onPage(view.settingsPage, from), "Wednesday's From time is on screen")) return;
+      ev.mouseClick(from, from.width / 2, from.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
+      ev.keyClick(Qt.Key_A, Qt.ControlModifier, -1);
+      for (var c of "09:00") ev.keyClickChar(c, Qt.NoModifier, -1);
+      shell.refused = [];
+      ev.keyClick(Qt.Key_Return, Qt.NoModifier, -1);
+      if (!check(JSON.stringify(shell.refused) === JSON.stringify([["scheduleWednesday", "09:00-16:00"]]), "the queue refuses Wednesday's new range (" + JSON.stringify(shell.refused) + ")")) return;
+      if (!check(from.text === "08:00", "a refused range shows the saved range again at once (From shows " + from.text + ")")) return;
+      one.moduleName = "foamy.zendesk";
       shell.finished = true;
       console.log("FOAMY DONE runtime interactions passed"); Qt.quit();
     }
