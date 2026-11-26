@@ -1632,6 +1632,29 @@ ShellRoot {
       ev.keyClick(Qt.Key_Return, Qt.NoModifier, -1);
       if (!check(JSON.stringify(shell.refused) === JSON.stringify([["panelWidth", "standard"]]), "the queue refuses the pick of Small (" + JSON.stringify(shell.refused) + ")")) return;
       if (!check(size.shownValue === "wide", "a refused pick shows the saved size again at once (shows " + size.shownValue + ")")) return;
+      // The schedule, with Wednesday's saved range.
+      one.moduleName = "foamy.zendesk";
+      one.prefs.save("scheduleEnabled", true);
+      one.prefs.save("scheduleWednesday", "08:00-16:00");
+      break;
+    case 88:
+      var wednesday = shell.find(view.settingsPage, "scheduleWednesday");
+      if (!check(wednesday && shell.find(wednesday, "fromTime").text === "08:00", "Settings shows Wednesday's saved range")) return;
+      one.moduleName = "";
+      view.settingsPage.ensureVisible(wednesday);
+      break;
+    case 89:
+      // A new From time, typed and sent with Return, is refused: the row
+      // shows the saved 08:00 again at once, not the unsaved 09:00.
+      var from = shell.find(shell.find(view.settingsPage, "scheduleWednesday"), "fromTime");
+      if (!check(shell.onPage(view.settingsPage, from), "Wednesday's From time is on screen")) return;
+      ev.mouseClick(from, from.width / 2, from.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
+      ev.keyClick(Qt.Key_A, Qt.ControlModifier, -1);
+      for (var c of "09:00") ev.keyClickChar(c, Qt.NoModifier, -1);
+      shell.refused = [];
+      ev.keyClick(Qt.Key_Return, Qt.NoModifier, -1);
+      if (!check(JSON.stringify(shell.refused) === JSON.stringify([["scheduleWednesday", "09:00-16:00"]]), "the queue refuses Wednesday's new range (" + JSON.stringify(shell.refused) + ")")) return;
+      if (!check(from.text === "08:00", "a refused range shows the saved range again at once (From shows " + from.text + ")")) return;
       one.moduleName = "foamy.zendesk";
       shell.finished = true;
       console.log("FOAMY DONE runtime interactions passed"); Qt.quit();

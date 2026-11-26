@@ -18,8 +18,9 @@ PanelKeyCatcher {
   property bool saving: false
   property string settingsError: ""
   property bool retryable: false
-  // That queue itself: a dropdown linked to it (queue, queueKey) shows the
-  // saved choice again at once when the queue refuses its pick.
+  // That queue itself: a dropdown or schedule row linked to it (queue,
+  // queueKey) shows the saved value again at once when the queue refuses
+  // its save.
   property FoamyPrefsQueue prefsQueue: null
   signal saveRequested(string key, var value)
   signal retryRequested
@@ -823,6 +824,8 @@ PanelKeyCatcher {
           toLabel: FoamyI18n.t("To")
           value: root.pref(modelData)
           enabled: !root.saving
+          queue: root.prefsQueue
+          queueKey: modelData
           onChanged: function (range) {
             root.saveRequested(modelData, range)
           }
