@@ -1,4 +1,4 @@
-// foamy-kit 0.13.1 c458ce7c07bb3ef9ced7a178cc8d33e421c68faba6c3d972fb3b7f10aa738689 — do not edit; change foamy-kit and run sync
+// foamy-kit 0.14.0 bfb9efb7ea097dcc0a70b20a4ea93cb720eb0bb34f373ac41f83a66660305573 — do not edit; change foamy-kit and run sync
 import QtQuick
 import QtQuick.Layouts
 import qs.Commons
@@ -34,6 +34,12 @@ import "FoamySchedule.js" as Schedule
 // refused paste into a time field (too large, timed out, not plain text)
 // says why in an error line under the row, through FoamyI18n.t, until that
 // field's next edit, as FoamyNumberField does.
+// When a save fails without changing `value`, call saveFailed(): the time
+// fields show `value` again (a field edited since keeps its draft) and the
+// same range can be sent again. With FoamyPrefsQueue, link the row to the
+// queue and its key instead (`queue: prefs; queueKey: modelData`), as
+// FoamyDropdown does: a refusal of that key, whether save() refuses the
+// range or a queued save of it is refused as it runs, calls saveFailed().
 // `labelComponent` is any Component whose root has a `text` property
 // (default: a plain-text body label); `labelItem` is it.
 ColumnLayout {
@@ -76,7 +82,39 @@ ColumnLayout {
     }
     if (range !== value && range !== _lastCommitted) {
       _lastCommitted = range
+      _sending = true
       changed(range)
+      _sending = false
+    }
+  }
+  // Tell the row its last range was not saved, as FoamyNumberField's
+  // saveFailed(): the time fields show `value` again and the same range can
+  // be sent again. A time field edited since that range was sent keeps its
+  // newer draft.
+  function saveFailed() {
+    var sent = _lastCommitted !== ""
+    _lastCommitted = ""
+    if (sent)
+      restoreInputs(true)
+  }
+  // True while changed() for a time range runs.
+  property bool _sending: false
+
+  // Optional link to the FoamyPrefsQueue the caller saves through (or any
+  // object with its failed(key, value, error) signal) and the key it saves,
+  // as FoamyDropdown has: a refusal of that key calls saveFailed() itself.
+  property QtObject queue: null
+  property string queueKey: ""
+  Connections {
+    target: root.queue
+    ignoreUnknownSignals: true
+    function onFailed(key, failedValue) {
+      if (root.queueKey === "" || key !== root.queueKey)
+        return
+      // During changed() it is the range just sent (save() refused it);
+      // later, only a refusal of the range this row last sent.
+      if (root._sending || String(failedValue) === root._lastCommitted)
+        root.saveFailed()
     }
   }
   onValueChanged: {
