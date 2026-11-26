@@ -129,11 +129,13 @@ A Zendesk admin creates the OAuth client once, in Admin Center › Apps and
 integrations › APIs › OAuth clients: kind **Public**, redirect URL
 `http://127.0.0.1:47823/callback` (or your port), allowed scope `read`.
 
-**Sign in** (it saves fields still being typed) opens the browser; the helper
-listens on `127.0.0.1` only, checks the `state` value, exchanges the code at
-once and shows who is signed in. While the sign-in waits for the browser,
-the connection fields are dimmed and take no input; to change them, press
-**Cancel** first. Tokens are stored in the Secret Service
+**Sign in** saves fields still being typed, then opens the browser. It does
+not start while such a save is refused (the field then shows the saved value
+again, and the settings page says why) or still waits behind another save.
+The helper listens on `127.0.0.1` only, checks the `state` value, exchanges
+the code at once and shows who is signed in. While the sign-in waits for
+the browser, the connection fields are dimmed and take no input; to change
+them, press **Cancel** first. Tokens are stored in the Secret Service
 keyring (through `secret-tool`), never in the plugin settings, a file or a
 log; the panel only learns the outcome. Access tokens are refreshed when they
 expire, and the new pair is stored before it is used (Zendesk invalidates the

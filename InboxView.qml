@@ -986,9 +986,16 @@ PanelKeyCatcher {
           portField.saveFailed()
       }
     }
-    // Saves any field still being edited; false (with the field's message) when one is invalid.
+    // Saves any field still being edited. False when one is invalid (the
+    // field says why), or when the saved connection is then not the one the
+    // fields held: the queue refused a save (the field shows the saved value
+    // again, the page the error) or keeps it waiting behind another save.
+    // Sign in would then use the connection saved before.
     function saveConnection() {
-      return addressField.commitEdit(false) && clientIdField.commitEdit(false) && portField.commitEdit(false)
+      var typed = [addressField.field.text.trim(), clientIdField.field.text.trim(), portField.field.text.trim()]
+      if (!(addressField.commitEdit(false) && clientIdField.commitEdit(false) && portField.commitEdit(false)))
+        return false
+      return root.pref("zendeskAddress") === typed[0] && root.pref("oauthClientId") === typed[1] && root.pref("oauthPort") === typed[2]
     }
     readonly property string redirectUrl: "http://127.0.0.1:" + (Number(root.pref("oauthPort")) || Schema.defaultPort) + "/callback"
     readonly property string accountTitle: {
