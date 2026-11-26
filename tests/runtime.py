@@ -91,6 +91,11 @@ ShellRoot {
   FileView { id: openerRelease; path: Quickshell.env("FOAMY_OUT") + "/xdg-open.release"; blockWrites: true; printErrors: false }
   // Lets the "held" stand-in sign-in finish (see fake()).
   FileView { id: loginRelease; path: Quickshell.env("FOAMY_OUT") + "/login.release"; blockWrites: true; printErrors: false }
+  // What the fake omarchy does (see FAKE_OMARCHY), and its release.
+  FileView { id: omarchyMode; path: Quickshell.env("FOAMY_OUT") + "/omarchy.mode"; blockWrites: true; printErrors: false }
+  FileView { id: omarchyRelease; path: Quickshell.env("FOAMY_OUT") + "/omarchy.release"; blockWrites: true; printErrors: false }
+  // The mock bar's inline save, while steps 92 and 93 save without it.
+  property QtObject inlineSaves: null
   // The Omarchy language picker's file: writing it switches the language live.
   FileView { id: languageFile; path: Quickshell.env("OMARCHY_LANGUAGE_FILE"); blockWrites: true; printErrors: false }
   // Every View in Zendesk asked for has ended (launched or failed).
@@ -245,6 +250,12 @@ ShellRoot {
     case 82: return [function() { return checked() && account.state !== "waiting"; }, 10000, "the sign-in from Settings ended"];
     case 84: return [function() { return account.loginProcess.running; }, 10000, "the sign-in to cancel started"];
     case 85: return [function() { return !account.busy && account.state === "signed_out"; }, 10000, "the cancelled sign-in ended"];
+    // The settings page's glide (FoamyMotion.slider) has ended.
+    case 90:
+    case 91:
+    case 92: return [function() { return isNaN(one.popup.bodyItem.settingsPage.wheel.destination); }, 10000, "the Zendesk section was scrolled into view"];
+    // Both CLI saves failed, and the account checks that their values asked for ended.
+    case 93: return [function() { return !one.prefs.busy && checked(); }, 10000, "the held save and the address after it ended"];
     }
     return null;
   }
@@ -1672,6 +1683,98 @@ ShellRoot {
       if (!check(JSON.stringify(shell.refused) === JSON.stringify([["scheduleWednesday", "09:00-16:00"]]), "the queue refuses Wednesday's new range (" + JSON.stringify(shell.refused) + ")")) return;
       if (!check(from.text === "08:00", "a refused range shows the saved range again at once (From shows " + from.text + ")")) return;
       one.moduleName = "foamy.zendesk";
+      // The connection fields next. The page follows the item it scrolls
+      // to for a moment as it grows (the error line just came back): hand
+      // that to the Zendesk section.
+      view.settingsPage.ensureVisible(shell.find(view.settingsPage, "zendeskSection"));
+      break;
+    case 90:
+      // In each connection field a new value, typed and sent with Return,
+      // is refused: the field shows the saved value again at once, not the
+      // unsaved text, and the same text, typed again, is sent again.
+      var page = view.settingsPage;
+      one.moduleName = "";
+      for (var connection of [["addressField", "zendeskAddress", "umbrella"], ["clientIdField", "oauthClientId", "other-client-2"], ["portField", "oauthPort", "48002"]]) {
+        var field = shell.find(page, connection[0]);
+        var savedText = one.prefs.value(connection[1]);
+        if (!check(shell.onPage(page, field) && field.field.text === savedText && savedText !== connection[2],
+                   connection[0] + " is on screen and shows the saved " + savedText + " (on screen: " + shell.onPage(page, field) + ", shows " + field.field.text + ")")) return;
+        for (var attempt of ["once", "again"]) {
+          ev.mouseClick(field.field, field.field.width / 2, field.field.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
+          ev.keyClick(Qt.Key_A, Qt.ControlModifier, -1);
+          for (var c of connection[2]) ev.keyClickChar(c, Qt.NoModifier, -1);
+          shell.refused = [];
+          ev.keyClick(Qt.Key_Return, Qt.NoModifier, -1);
+          if (!check(JSON.stringify(shell.refused) === JSON.stringify([[connection[1], connection[2]]]), connection[0] + " sends " + connection[2] + " " + attempt + " and the queue refuses it (" + JSON.stringify(shell.refused) + ")")) return;
+          if (!check(field.field.text === savedText, "a refused " + connection[0] + " shows the saved " + savedText + " again at once (shows " + field.field.text + ")")) return;
+        }
+      }
+      // The bar entry back, a save the queue takes (of the saved address,
+      // so nothing changes) clears the page's error line: the next step
+      // sees the error that Sign in brings.
+      one.moduleName = "foamy.zendesk";
+      one.prefs.save("zendeskAddress", one.prefs.value("zendeskAddress"));
+      page.ensureVisible(shell.find(page, "zendeskSection"));
+      break;
+    case 91:
+      // A new address typed, then a click on Sign in: the queue refuses the
+      // address, so the sign-in does not start (it would use the saved
+      // address). The field shows the saved address again, the page the
+      // save error.
+      var page = view.settingsPage;
+      var address = shell.find(page, "addressField");
+      var signIn = shell.find(page, "accountButton");
+      var saveError = shell.find(page, "settingsErrorText");
+      var savedAddress = one.prefs.value("zendeskAddress");
+      if (!check(shell.onPage(page, address) && shell.onPage(page, signIn) && !saveError.visible && account.state === "signed_out",
+                 "signed out, the address field and Sign in are on screen, with no save error (" + account.state + ", error " + saveError.text + ")")) return;
+      one.moduleName = "";
+      ev.mouseClick(address.field, address.field.width / 2, address.field.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
+      ev.keyClick(Qt.Key_A, Qt.ControlModifier, -1);
+      for (var c of "umbrella") ev.keyClickChar(c, Qt.NoModifier, -1);
+      shell.refused = [];
+      ev.mouseClick(signIn, signIn.width / 2, signIn.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
+      if (!check(JSON.stringify(shell.refused) === JSON.stringify([["zendeskAddress", "umbrella"]]), "Sign in sends the typed address and the queue refuses it (" + JSON.stringify(shell.refused) + ")")) return;
+      if (!check(account.state === "signed_out" && !account.loginProcess.running, "a sign-in whose address was refused does not start (" + account.state + ")")) return;
+      if (!check(address.field.text === savedAddress, "the address field shows the saved " + savedAddress + " again (shows " + address.field.text + ")")) return;
+      if (!check(one.prefs.error !== "" && saveError.visible && saveError.text === Kit.FoamyI18n.t(one.prefs.error),
+                 "the settings page shows the save error (" + one.prefs.error + "; shows " + saveError.text + ")")) return;
+      one.moduleName = "foamy.zendesk";
+      page.ensureVisible(shell.find(page, "zendeskSection"));
+      break;
+    case 92:
+      // Without the inline save the queue saves through the CLI, one save at
+      // a time; the fake omarchy holds the first. A new Check every choice
+      // is saved first, and the new address that a click on Sign in sends
+      // waits behind it. The sign-in does not start: it would use the saved
+      // address.
+      var page = view.settingsPage;
+      var address = shell.find(page, "addressField");
+      var signIn = shell.find(page, "accountButton");
+      var every = shell.find(page, "refreshSeconds");
+      var savedEvery = every.value;
+      var picked = every.options.map(function(option) { return every.optionValue(option); }).find(function(value) { return value !== savedEvery; });
+      if (!check(shell.onPage(page, address) && shell.onPage(page, signIn) && picked !== undefined && account.state === "signed_out",
+                 "signed out, the address field and Sign in are on screen, and Check every has an option other than the saved " + savedEvery)) return;
+      shell.inlineSaves = bar.shell;
+      bar.shell = null;
+      omarchyMode.setText("hold\n");
+      every.select(picked);
+      if (!check(one.prefs.saving, "without the inline save Check every is saved through the CLI")) return;
+      ev.mouseClick(address.field, address.field.width / 2, address.field.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
+      ev.keyClick(Qt.Key_A, Qt.ControlModifier, -1);
+      for (var c of "umbrella") ev.keyClickChar(c, Qt.NoModifier, -1);
+      shell.refused = [];
+      ev.mouseClick(signIn, signIn.width / 2, signIn.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
+      if (!check(shell.refused.length === 0 && one.prefs.busy && one.prefs.value("zendeskAddress") !== "umbrella",
+                 "the address that Sign in sends waits behind the held save (" + JSON.stringify(shell.refused) + ", saved " + one.prefs.value("zendeskAddress") + ")")) return;
+      if (!check(account.state === "signed_out" && !account.loginProcess.running, "a sign-in whose address waits to be saved does not start (" + account.state + ")")) return;
+      // The held save fails, then the address after it (step 93 waits).
+      omarchyRelease.setText("go\n");
+      break;
+    case 93:
+      bar.shell = shell.inlineSaves;
+      omarchyMode.setText("");
       shell.finished = true;
       console.log("FOAMY DONE runtime interactions passed"); Qt.quit();
     }
@@ -1698,6 +1801,23 @@ esac
 exit 0
 """
 
+# Stands in for `omarchy bar set`, the settings save without the inline save
+# (steps 92 and 93): with $FOAMY_OUT/omarchy.mode "hold" it waits (at most
+# 10 s) for omarchy.release and fails. Otherwise it is any other host
+# command: refused and logged as the harness's stub does (run.host_commands()).
+FAKE_OMARCHY = r"""#!/bin/sh
+if [ "$(cat "$FOAMY_OUT/omarchy.mode" 2>/dev/null)" != hold ]; then
+  printf '%s\n' "omarchy $*" >>"$FOAMY_OUT/host-commands.log"
+  exit 127
+fi
+i=0
+while [ ! -e "$FOAMY_OUT/omarchy.release" ] && [ "$i" -lt 200 ]; do
+  sleep 0.05
+  i=$((i + 1))
+done
+exit 1
+"""
+
 # The read file the "broken" account names (steps 22 to 24): it holds a
 # marker but can't be read. Write-only, so an atomic save could still replace
 # it (a file that can't be written can't be). Root reads it anyway, so the
@@ -1707,7 +1827,13 @@ if os.geteuid() == 0:
     print("FAIL: run tests/runtime.py as a normal user; root can read a write-only file")
     sys.exit(1)
 
-run = harness.Run("4.5", SHELL, plugin=plugin, prefix="foamy-zendesk-runtime-", fakebin={"xdg-open": FAKE_OPENER})
+run = harness.Run(
+    "4.5",
+    SHELL,
+    plugin=plugin,
+    prefix="foamy-zendesk-runtime-",
+    fakebin={"xdg-open": FAKE_OPENER, "omarchy": FAKE_OMARCHY},
+)
 broken = run.out / "read-broken.json"
 try:
     broken.write_text(BROKEN_READ)
