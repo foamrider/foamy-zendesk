@@ -1,5 +1,5 @@
 pragma Singleton
-// foamy-kit 0.14.2 293726eb336187d2a6fd0baa5e3a221209c099b0626af2aa4b6e1a012ec534f0 — do not edit; change foamy-kit and run sync
+// foamy-kit 0.15.1 ef4882d76a20b9a897c574e949d0a94292d57265201d15ec86bc93bdb15edc05 — do not edit; change foamy-kit and run sync
 import QtQuick
 import Quickshell.Io
 import qs.Commons as Commons
@@ -34,18 +34,19 @@ QtObject {
   readonly property color hoverFill: Qt.alpha(text, 0.08)
   readonly property color fieldFill: Qt.alpha(text, 0.055)
   readonly property color selectedFill: Qt.alpha(accent, 0.18)
-  // Menus (FoamyMenu) sit one step above the card they drop over.
-  readonly property color menuFill: Qt.tint(background, Qt.alpha(text, lightTheme ? 0.0 : 0.035))
+  // Menus (FoamyMenu) sit one step above the card they drop over: in a
+  // light theme lighter than the card, with a clearer edge (no shadow
+  // draws there to set them apart).
+  readonly property color menuFill: lightTheme ? Qt.tint(background, Qt.alpha("#ffffff", 0.7)) : Qt.tint(background, Qt.alpha(text, 0.035))
+  readonly property color menuBorder: lightTheme ? Qt.alpha(text, 0.40) : border
   // Inline help notes (FoamyInfoNote): a subtle surface under a heading.
   readonly property color noteFill: Qt.alpha(text, 0.045)
-  // Text on an accent fill (FoamyButton primary): the darker of the popup's
-  // text and background on a light accent, the lighter on a dark one.
-  readonly property color onAccent: {
-    var backgroundIsDark = luminance(background) < luminance(text)
-    if (luminance(accent) > 0.55)
-      return backgroundIsDark ? background : text
-    return backgroundIsDark ? text : background
-  }
+  // Text on an accent fill (FoamyButton primary): the popup's text or its
+  // background, whichever reads better on the accent (a mid-tone accent
+  // can go either way, so measured, not guessed from its brightness). Not
+  // `onAccent`: QML takes an `on` + capital name for a signal handler, and
+  // such a property never had a colour (primary labels were black).
+  readonly property color accentInk: contrastRatio(text, accent) >= contrastRatio(background, accent) ? text : background
 
   // --- hero band (FoamyHeroBand) ---------------------------------------------------
   // The foamy header band: the popup surface tinted toward the accent, from
@@ -119,9 +120,30 @@ QtObject {
     return Qt.tint(background, Qt.alpha(text, last / 100))
   }
 
-  // Status colour readable on the popup surface, for text.
-  function onSurface(c) {
-    return lightTheme ? Qt.darker(c, 1.35) : c
+  // Status colour readable on the popup surface, for text and thin marks
+  // (rings, icons). It darkens (light theme) or lightens (dark theme) in
+  // steps only until it reaches 4.5:1 on the popup background, so a colour
+  // that already reads keeps the theme's hue and a faint one (a yellow on
+  // white, a dim red on a dark fill) moves as far as it must. Large fills
+  // (bars) use the raw colour.
+  // `surface`: what it is drawn on, when not the popup background (a tinted
+  // fill: give the opaque colour as it shows).
+  function onSurface(c, surface) {
+    // A colour given as text ("#d20f39") is read as one first.
+    const base = Qt.color(c)
+    const under = surface === undefined ? background : Qt.color(surface)
+    let out = base
+    // Measured as drawn: rounded to 8 bits a channel (unrounded, a step
+    // can pass at 4.50 and draw at 4.49).
+    // At most 1.7 times darker or lighter: a very light colour (yellow on
+    // white) or a very dark one can stay under 4.5:1 there. Qt.lighter
+    // raises the HSV value and, once that is full, lowers the saturation,
+    // so a bright red stays red (Catppuccin #f38ba8 -> #ff92b0).
+    for (let step = 1; step <= 14 && contrastRatio(out, under) < 4.5; step++) {
+      const factor = 1 + step * 0.05
+      out = Qt.color((lightTheme ? Qt.darker(base, factor) : Qt.lighter(base, factor)).toString())
+    }
+    return out
   }
 
   property FileView colorsFile: FileView {
