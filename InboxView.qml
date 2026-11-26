@@ -18,6 +18,9 @@ PanelKeyCatcher {
   property bool saving: false
   property string settingsError: ""
   property bool retryable: false
+  // That queue itself: a dropdown linked to it (queue, queueKey) shows the
+  // saved choice again at once when the queue refuses its pick.
+  property FoamyPrefsQueue prefsQueue: null
   signal saveRequested(string key, var value)
   signal retryRequested
   function pref(key) {
@@ -648,6 +651,8 @@ PanelKeyCatcher {
         label: FoamyI18n.t("Size")
         value: root.pref("panelWidth")
         enabled: !root.saving
+        queue: root.prefsQueue
+        queueKey: "panelWidth"
         options: [
           {
             value: "standard",
@@ -708,6 +713,8 @@ PanelKeyCatcher {
         label: FoamyI18n.t("Desktop notifications")
         value: root.pref("notify")
         enabled: !root.saving
+        queue: root.prefsQueue
+        queueKey: "notify"
         options: [
           {
             value: "off",
@@ -763,6 +770,8 @@ PanelKeyCatcher {
         label: FoamyI18n.t("Outside the schedule")
         value: root.pref("scheduleOutsideMode")
         enabled: !root.saving
+        queue: root.prefsQueue
+        queueKey: "scheduleOutsideMode"
         options: [
           {
             value: "mute",
@@ -938,6 +947,8 @@ PanelKeyCatcher {
         label: FoamyI18n.t("Check every")
         value: String(root.pref("refreshSeconds"))
         enabled: !root.saving
+        queue: root.prefsQueue
+        queueKey: "refreshSeconds"
         options: Schema.refreshChoices.map(function (seconds) {
           return {
             value: String(seconds),

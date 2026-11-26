@@ -130,6 +130,12 @@ ShellRoot {
     enabled: shell.maxUnread >= 0
     function onUnreadCountChanged() { shell.maxUnread = Math.max(shell.maxUnread, Plugin.TicketStore.unreadCount); }
   }
+  // Each save the first panel's settings queue refused, as [key, value].
+  property var refused: []
+  Connections {
+    target: one.prefs
+    function onFailed(key, value) { shell.refused = shell.refused.concat([[key, value]]); }
+  }
   // Quickshell ends a Process by dropping it (running is false), ending its
   // collectors' streams and only then emitting exited: a check() that runs
   // in between (here from the collector's streamFinished) finds no process
@@ -1607,6 +1613,26 @@ ShellRoot {
       ev.keyClick(Qt.Key_X, Qt.NoModifier, -1);
       if (!check(address.editing && address.field.text === shell.savedAddress + "x", "after Cancel the address field takes typing again (" + address.field.text + ")")) return;
       ev.keyClick(Qt.Key_Escape, Qt.NoModifier, -1);
+      // A widget without a bar entry: its settings queue refuses every save.
+      one.moduleName = "";
+      view.settingsPage.resetScroll();
+      break;
+    case 86:
+      var size = shell.find(view.settingsPage, "panelWidth");
+      if (!check(view.editingSettings && shell.onPage(view.settingsPage, size) && size.value === "wide", "Settings shows the saved size, Wide")) return;
+      ev.mouseClick(size.triggerItem, size.triggerItem.width / 2, size.triggerItem.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
+      break;
+    case 87:
+      // Small, picked with the keys, is refused: the dropdown shows the
+      // saved Wide again at once, not Small for its 10 s hold.
+      var size = shell.find(view.settingsPage, "panelWidth");
+      if (!check(size.popupOpen, "a click on the size opens its list")) return;
+      shell.refused = [];
+      ev.keyClick(Qt.Key_Up, Qt.NoModifier, -1);
+      ev.keyClick(Qt.Key_Return, Qt.NoModifier, -1);
+      if (!check(JSON.stringify(shell.refused) === JSON.stringify([["panelWidth", "standard"]]), "the queue refuses the pick of Small (" + JSON.stringify(shell.refused) + ")")) return;
+      if (!check(size.shownValue === "wide", "a refused pick shows the saved size again at once (shows " + size.shownValue + ")")) return;
+      one.moduleName = "foamy.zendesk";
       shell.finished = true;
       console.log("FOAMY DONE runtime interactions passed"); Qt.quit();
     }

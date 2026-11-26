@@ -181,6 +181,7 @@ Ui.Panel {
         active: root.opened
         wide: root.wide
         preferences: prefs.effectiveSettings
+        prefsQueue: prefs
         saving: prefs.busy
         settingsError: prefs.error !== "" ? FoamyI18n.t(prefs.error) : ""
         retryable: prefs.canRetry
