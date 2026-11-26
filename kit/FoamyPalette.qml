@@ -1,5 +1,5 @@
 pragma Singleton
-// foamy-kit 0.14.1 873a308000022a89bd2ea2a137c02ff17b4a357c236456974807251a1ee35748 — do not edit; change foamy-kit and run sync
+// foamy-kit 0.14.2 54272978b084955b68c8f46fd2b50e8686ab9d66272d64165beb94a16a59c8e3 — do not edit; change foamy-kit and run sync
 import QtQuick
 import Quickshell.Io
 import qs.Commons as Commons
@@ -18,8 +18,15 @@ QtObject {
   readonly property color accent: Commons.Color.accent
   readonly property color urgent: Commons.Color.urgent
   // Secondary text (meta, section labels) and muted text (hints, empty states).
-  readonly property color secondaryText: Qt.tint(background, Qt.alpha(text, 0.72))
-  readonly property color mutedText: Qt.tint(background, Qt.alpha(text, 0.55))
+  // In light themes the tints .72 and .55 are too faint for small text in
+  // some themes (secondary 3.49:1 and muted 2.47:1 in Rosé Pine), so each
+  // darkens to the lightest tint that reaches its ratio on the surface:
+  // muted 4.5:1 (WCAG AA), secondary 5.5:1, so muted stays the lighter one.
+  // Muted: .55 White, .58 Flexoki Light, .62 Lupine, .82 Catppuccin Latte,
+  // .84 Rosé Pine. Secondary: .72, but .90 Catppuccin Latte and .93 Rosé
+  // Pine. Dark themes keep .72 and .55.
+  readonly property color secondaryText: lightTheme ? readableTint(0.72, 5.5) : Qt.tint(background, Qt.alpha(text, 0.72))
+  readonly property color mutedText: lightTheme ? readableTint(0.55, 4.5) : Qt.tint(background, Qt.alpha(text, 0.55))
   readonly property color border: Qt.alpha(text, 0.15)
   readonly property color divider: Qt.alpha(text, 0.12)
   readonly property color hoverFill: Qt.alpha(text, 0.08)
@@ -83,6 +90,30 @@ QtObject {
 
   function luminance(c) {
     return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
+  }
+
+  // WCAG 2 contrast ratio of two opaque colours (1 to 21).
+  function contrastRatio(a, b) {
+    function channel(v) {
+      return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)
+    }
+    function relative(c) {
+      return 0.2126 * channel(c.r) + 0.7152 * channel(c.g) + 0.0722 * channel(c.b)
+    }
+    var la = relative(a), lb = relative(b)
+    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
+  }
+
+  // The lightest tint of `text` over `background`, from `alpha` up in steps
+  // of .01, with at least `ratio` contrast on `background`; `text` itself
+  // when no tint reaches it.
+  function readableTint(alpha, ratio) {
+    for (let step = Math.round(alpha * 100); step < 100; step++) {
+      const tint = Qt.tint(background, Qt.alpha(text, step / 100))
+      if (contrastRatio(tint, background) >= ratio)
+        return tint
+    }
+    return text
   }
 
   // Status colour readable on the popup surface, for text.
