@@ -1632,9 +1632,25 @@ ShellRoot {
       ev.keyClick(Qt.Key_Return, Qt.NoModifier, -1);
       if (!check(JSON.stringify(shell.refused) === JSON.stringify([["panelWidth", "standard"]]), "the queue refuses the pick of Small (" + JSON.stringify(shell.refused) + ")")) return;
       if (!check(size.shownValue === "wide", "a refused pick shows the saved size again at once (shows " + size.shownValue + ")")) return;
-      // The schedule, with Wednesday's saved range.
+      // The schedule on, so that Outside the schedule shows too.
       one.moduleName = "foamy.zendesk";
       one.prefs.save("scheduleEnabled", true);
+      one.moduleName = "";
+      // The other three dropdowns, each picked as its list picks (select()):
+      // the queue refuses the pick, and the dropdown shows the saved value
+      // again at once. Check every saves its choice as a number.
+      for (var linked of [["notify", String], ["scheduleOutsideMode", String], ["refreshSeconds", Number]]) {
+        var dropdown = shell.find(view.settingsPage, linked[0]);
+        var savedValue = dropdown.value;
+        var picked = dropdown.options.map(function(option) { return dropdown.optionValue(option); }).find(function(value) { return value !== savedValue; });
+        if (!check(dropdown.visible && picked !== undefined, linked[0] + " shows, with an option other than the saved " + savedValue)) return;
+        shell.refused = [];
+        dropdown.select(picked);
+        if (!check(JSON.stringify(shell.refused) === JSON.stringify([[linked[0], linked[1](picked)]]), "the queue refuses the pick of " + picked + " in " + linked[0] + " (" + JSON.stringify(shell.refused) + ")")) return;
+        if (!check(dropdown.shownValue === savedValue, "a refused pick in " + linked[0] + " shows the saved value again at once (shows " + dropdown.shownValue + ", saved " + savedValue + ")")) return;
+      }
+      // Wednesday's saved range.
+      one.moduleName = "foamy.zendesk";
       one.prefs.save("scheduleWednesday", "08:00-16:00");
       break;
     case 88:
