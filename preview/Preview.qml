@@ -227,10 +227,10 @@ Item {
     } : ({})
     if (at("schedule"))
       view.preferences = Object.assign({}, view.preferences, week)
-    if (preview.wide)
-      view.preferences = Object.assign({}, view.preferences, {
-        panelWidth: "wide"
-      })
+    // Wide is the default size; a Small state says so.
+    view.preferences = Object.assign({}, view.preferences, {
+      panelWidth: preview.wide ? "wide" : "standard"
+    })
     if (at("failed") || at("offline"))
       store.error = "Can't reach Zendesk. Check your connection."
     if (at("truncated"))
@@ -588,9 +588,9 @@ Item {
     view.preferences = Object.assign(configured ? {
       zendeskAddress: "acme",
       oauthClientId: "foamy_zendesk"
-    } : ({}), preview.wide ? {
-      panelWidth: "wide"
-    } : ({}))
+    } : ({}), {
+      panelWidth: preview.wide ? "wide" : "standard"
+    })
   }
   // Opens Settings once the inbox is laid out, as a user does: the Wide card
   // then keeps the height the inbox gave it.

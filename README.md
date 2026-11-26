@@ -106,7 +106,7 @@ Settings (in the ⋯ menu, `s`, or right-click the bar icon), in this order:
   signed in, who you are and **Sign out**. Signed out, what a Zendesk admin
   must create first, the connection fields below, the redirect URL they
   give, then the state and **Sign in**.
-- **Size** (Small): **Wide** adds the reading pane, as above. **Refresh
+- **Size** (Wide): **Wide** has the reading pane, as above; **Small** is the list alone. **Refresh
   every** (1 to 15 minutes, default 1).
 - **Hide read tickets** (off), **Show unread first** (off), and **Group
   waiting tickets** (on): Pending and On-hold tickets you have read move to a

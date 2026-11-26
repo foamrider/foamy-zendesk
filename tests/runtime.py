@@ -92,7 +92,8 @@ ShellRoot {
   readonly property string lockedSignOut: "Sign-out didn't finish: the keyring is locked, so the Zendesk sign-in is still stored. Unlock the keyring and sign out again."
   readonly property string lockedKeyring: "The keyring that holds the Zendesk sign-in is locked. Unlock it and try again."
   // The shell reflects saved settings back to every instance, like the host.
-  property var entry: ({})
+  // Wide is the default; the steps start in Small and switch to Wide later.
+  property var entry: ({ panelWidth: "standard" })
   TestEvent { id: ev }
   FoamyWait { id: wait }
   // The fake xdg-open's log: every URL it was asked to open, in order.
@@ -376,6 +377,12 @@ ShellRoot {
       if (!check(Kit.FoamyShared.memberCount("zendesk") === 2, "two monitor instances share state")) return;
       if (!check(account.state === "not_configured" && account.port === 47823, "not connected; an empty redirect port means the default port")) return;
       if (!check(!one.barContent.countLabel.visible && button.tooltipText.indexOf("not signed in") >= 0, "no count while signed out")) return;
+      // A panel whose Size was never set opens Wide.
+      var fresh = Qt.createComponent(Qt.resolvedUrl("plugin/Panel.qml")).createObject(one.parent, { settings: ({}), x: 1500, y: 4, width: 45, height: 26 });
+      fresh.bar = bar;
+      var freshWide = fresh.wide;
+      fresh.destroy();
+      if (!check(freshWide, "Wide is the default size")) return;
       one.prefs.save("zendeskAddress", "acme");
       one.prefs.save("oauthClientId", "foamy-test");
       break;

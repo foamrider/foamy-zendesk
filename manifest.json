@@ -18,7 +18,7 @@
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
-      "panelWidth": "standard",
+      "panelWidth": "wide",
       "hideRead": false,
       "unreadFirst": false,
       "groupWaiting": true,
@@ -42,7 +42,7 @@
         "key": "panelWidth",
         "type": "enum",
         "label": "Size",
-        "defaultValue": "standard",
+        "defaultValue": "wide",
         "options": [
           "standard",
           "wide"
