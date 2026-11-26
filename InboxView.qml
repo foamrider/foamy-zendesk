@@ -972,6 +972,20 @@ PanelKeyCatcher {
     // the sign-in ends and the fields hide, which drops the user who just
     // signed in.
     readonly property bool connectionEditable: ZendeskAccount.state !== "waiting"
+    // A connection field whose save the queue refuses or fails shows the
+    // saved value again, and the same text can be sent again. A save the
+    // queue refuses at once fails inside the field's own commit.
+    Connections {
+      target: root.prefsQueue
+      function onFailed(key) {
+        if (key === "zendeskAddress")
+          addressField.saveFailed()
+        else if (key === "oauthClientId")
+          clientIdField.saveFailed()
+        else if (key === "oauthPort")
+          portField.saveFailed()
+      }
+    }
     // Saves any field still being edited; false (with the field's message) when one is invalid.
     function saveConnection() {
       return addressField.commitEdit(false) && clientIdField.commitEdit(false) && portField.commitEdit(false)

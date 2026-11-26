@@ -245,6 +245,8 @@ ShellRoot {
     case 82: return [function() { return checked() && account.state !== "waiting"; }, 10000, "the sign-in from Settings ended"];
     case 84: return [function() { return account.loginProcess.running; }, 10000, "the sign-in to cancel started"];
     case 85: return [function() { return !account.busy && account.state === "signed_out"; }, 10000, "the cancelled sign-in ended"];
+    // The settings page's glide (FoamyMotion.slider) has ended.
+    case 90: return [function() { return isNaN(one.popup.bodyItem.settingsPage.wheel.destination); }, 10000, "the Zendesk section was scrolled into view"];
     }
     return null;
   }
@@ -1671,6 +1673,33 @@ ShellRoot {
       ev.keyClick(Qt.Key_Return, Qt.NoModifier, -1);
       if (!check(JSON.stringify(shell.refused) === JSON.stringify([["scheduleWednesday", "09:00-16:00"]]), "the queue refuses Wednesday's new range (" + JSON.stringify(shell.refused) + ")")) return;
       if (!check(from.text === "08:00", "a refused range shows the saved range again at once (From shows " + from.text + ")")) return;
+      one.moduleName = "foamy.zendesk";
+      // The connection fields next. The page follows the item it scrolls
+      // to for a moment as it grows (the error line just came back): hand
+      // that to the Zendesk section.
+      view.settingsPage.ensureVisible(shell.find(view.settingsPage, "zendeskSection"));
+      break;
+    case 90:
+      // In each connection field a new value, typed and sent with Return,
+      // is refused: the field shows the saved value again at once, not the
+      // unsaved text, and the same text, typed again, is sent again.
+      var page = view.settingsPage;
+      one.moduleName = "";
+      for (var connection of [["addressField", "zendeskAddress", "umbrella"], ["clientIdField", "oauthClientId", "other-client-2"], ["portField", "oauthPort", "48002"]]) {
+        var field = shell.find(page, connection[0]);
+        var savedText = one.prefs.value(connection[1]);
+        if (!check(shell.onPage(page, field) && field.field.text === savedText && savedText !== connection[2],
+                   connection[0] + " is on screen and shows the saved " + savedText + " (on screen: " + shell.onPage(page, field) + ", shows " + field.field.text + ")")) return;
+        for (var attempt of ["once", "again"]) {
+          ev.mouseClick(field.field, field.field.width / 2, field.field.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
+          ev.keyClick(Qt.Key_A, Qt.ControlModifier, -1);
+          for (var c of connection[2]) ev.keyClickChar(c, Qt.NoModifier, -1);
+          shell.refused = [];
+          ev.keyClick(Qt.Key_Return, Qt.NoModifier, -1);
+          if (!check(JSON.stringify(shell.refused) === JSON.stringify([[connection[1], connection[2]]]), connection[0] + " sends " + connection[2] + " " + attempt + " and the queue refuses it (" + JSON.stringify(shell.refused) + ")")) return;
+          if (!check(field.field.text === savedText, "a refused " + connection[0] + " shows the saved " + savedText + " again at once (shows " + field.field.text + ")")) return;
+        }
+      }
       one.moduleName = "foamy.zendesk";
       shell.finished = true;
       console.log("FOAMY DONE runtime interactions passed"); Qt.quit();
