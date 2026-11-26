@@ -11,7 +11,7 @@ var dayLabels = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturd
 var fields = [
   // The popup: "standard" (the list, tickets open in place) or "wide" (the
   // list and a reading pane, 880 wide where the screen has room).
-  { key: "panelWidth", type: "enum", options: ["standard", "wide"], defaultValue: "standard" },
+  { key: "panelWidth", type: "enum", options: ["standard", "wide"], defaultValue: "wide" },
   { key: "hideRead", type: "boolean", defaultValue: false },
   { key: "unreadFirst", type: "boolean", defaultValue: false },
   { key: "groupWaiting", type: "boolean", defaultValue: true },

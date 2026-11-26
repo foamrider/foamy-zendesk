@@ -77,10 +77,19 @@ ShellRoot {
   // after a key typed while a sign-in waited (steps 81 and 82).
   property string savedAddress: ""
   property string typedWhileWaiting: ""
+  // Step 9's parts, each after the frames of the last: a tall ticket opened,
+  // the ticket below it clicked, its place checked.
+  property int anchorPhase: 0
+  // Step 59 ran up to the long inbox; the rest runs once it is laid out.
+  property bool wideGrown: false
+  property string anchorId: ""
+  // Step 5 ran up to "Mark all as read"; the rest runs after the next frames.
+  property bool undoShown: false
   readonly property string lockedSignOut: "Sign-out didn't finish: the keyring is locked, so the Zendesk sign-in is still stored. Unlock the keyring and sign out again."
   readonly property string lockedKeyring: "The keyring that holds the Zendesk sign-in is locked. Unlock it and try again."
   // The shell reflects saved settings back to every instance, like the host.
-  property var entry: ({})
+  // Wide is the default; the steps start in Small and switch to Wide later.
+  property var entry: ({ panelWidth: "standard" })
   TestEvent { id: ev }
   FoamyWait { id: wait }
   // The fake xdg-open's log: every URL it was asked to open, in order.
@@ -155,6 +164,15 @@ ShellRoot {
       shell.windowResult = { running: account.statusProcess.running, again: account.checkAgain, busy: account.busy };
     }
   }
+  // The notice bar's row for a save that failed ("" when there is none):
+  // what was not saved, then that it is kept only until the shell restarts.
+  // Read whether or not the popup is open, so not by the row's visibility.
+  function saveNotice() {
+    var row = find(one.popup.bodyItem, "saveError");
+    return row && Plugin.TicketStore.saveError !== "" ? row.text : "";
+  }
+  readonly property string readMarkersLost: "Can't save read markers\nKept only until the shell restarts."
+  readonly property string snoozeLost: "Can't save snooze or resume\nKept only until the shell restarts."
   function footer() {
     var view = one.popup.bodyItem;
     return view ? view.children.find(function(item) { return item.hasOwnProperty("statusError"); }) : null;
@@ -165,10 +183,19 @@ ShellRoot {
     for (var child of item.children) { var hit = find(child, name); if (hit) return hit; }
     return null;
   }
-  // The settings page scrolled to its end, where the Zendesk section is.
-  function toEnd(page) { page.flickable.contentY = Math.max(0, page.flickable.contentHeight - page.flickable.height); }
+  // The settings page scrolled to its top, where the account section is.
+  function toAccount(page) { page.flickable.contentY = 0; }
   // Whether all of the item shows in the page's scrolled view, so that a real click lands on it.
   function onPage(page, item) { var top = item.mapToItem(page.flickable, 0, 0).y; return item.visible && top >= 0 && top + item.height <= page.flickable.height; }
+  // The sample inbox, with #4821's newest comment longer than the 12 lines an
+  // open ticket shows of its newest unread comment, so the card cuts it.
+  function longSample() {
+    var list = Fixtures.tickets();
+    var more = [];
+    for (var i = 1; i <= 30; i++) more.push("Step " + i + ": I opened the project drive again and the VPN dropped within a few seconds, as before.");
+    list[0].comments[0].body += "\n\n" + more.join("\n");
+    return list;
+  }
   function check(ok, message) {
     if (!ok && !shell.finished) { shell.finished = true; console.log("FOAMY FAIL " + message); Qt.quit(); }
     return ok;
@@ -200,10 +227,10 @@ ShellRoot {
     case 24: return [function() { return shell.fetches.length !== shell.fetchProbe && !store.fetchProcess.running; }, 10000, "the next fetch finished"];
     case 26: return [function() { return shell.statusRuns >= 2 && !account.busy && account.user && account.user.name === "Check 2"; }, 10000, "both account checks finished"];
     case 28: return [function() { return store.loaded && one.popup.bodyItem; }, 10000, "the inbox with a read-only state folder arrived"];
-    case 29: return [function() { return shell.footer().status === "Can't save read markers"; }, 10000, "the failed save of the read markers is shown"];
+    case 29: return [function() { return shell.saveNotice() === shell.readMarkersLost; }, 10000, "the failed save of the read markers is shown"];
     case 30: return [function() { return store.loaded && store.host === "unlocked.zendesk.com"; }, 10000, "the next account's inbox arrived"];
-    case 31: return [function() { return shell.footer().status === "Can't save snooze or resume"; }, 10000, "the failed save of the snooze is shown"];
-    case 32: return [function() { return shell.footer().status !== "Can't save snooze or resume"; }, 10000, "a snooze saved again clears it"];
+    case 31: return [function() { return shell.saveNotice() === shell.snoozeLost; }, 10000, "the failed save of the snooze is shown"];
+    case 32: return [function() { return shell.saveNotice() !== shell.snoozeLost; }, 10000, "a snooze saved again clears it"];
     case 33: return [function() { return store.loaded && store.host === "big.zendesk.com"; }, 10000, "the cut-short inbox arrived"];
     case 34:
     case 35: return [function() { return shell.fetches.length > shell.fetchProbe && !store.fetchProcess.running; }, 10000, "the next fetch finished"];
@@ -217,7 +244,7 @@ ShellRoot {
     case 45: return [function() { return shell.launchedOne() && shell.saves > shell.saveBase && !store.saveTimer.running; }, 10000, "the open was launched and its mark saved"];
     case 46: return [shell.launchedOne, 10000, "the read ticket's open ended"];
     case 47: return [function() { return shell.saves > shell.saveBase && !store.saveTimer.running; }, 10000, "Mark as unread was saved"];
-    case 48: return [function() { return shell.launchesDone() && shell.footer().status === "Can't save read markers"; }, 10000, "the open's failed save is shown"];
+    case 48: return [function() { return shell.launchesDone() && shell.saveNotice() === shell.readMarkersLost; }, 10000, "the open's failed save is shown"];
     case 49: return [function() { return store.loaded && store.host === "fresh.zendesk.com" && store.readReady; }, 10000, "the next account's inbox arrived"];
     case 50: return [shell.launchedOne, 10000, "the previous account's open ended"];
     case 52: return [function() { return !account.busy && account.error !== ""; }, 10000, "the sign-out finished"];
@@ -306,7 +333,7 @@ ShellRoot {
     return { id: id, author: "Ola", mine: false, public: true, created: Fixtures.BASE - minutesAgo * 60000, body: "Comment " + id };
   }
   function many() {
-    var list = Fixtures.tickets();
+    var list = shell.longSample();
     for (var i = 1; i <= 10; i++) list = list.concat([Fixtures.update(i, true)[0]]);
     return list;
   }
@@ -346,6 +373,12 @@ ShellRoot {
       if (!check(Kit.FoamyShared.memberCount("zendesk") === 2, "two monitor instances share state")) return;
       if (!check(account.state === "not_configured" && account.port === 47823, "not connected; an empty redirect port means the default port")) return;
       if (!check(!one.barContent.countLabel.visible && button.tooltipText.indexOf("not signed in") >= 0, "no count while signed out")) return;
+      // A panel whose Size was never set opens Wide.
+      var fresh = Qt.createComponent(Qt.resolvedUrl("plugin/Panel.qml")).createObject(one.parent, { settings: ({}), x: 1500, y: 4, width: 45, height: 26 });
+      fresh.bar = bar;
+      var freshWide = fresh.wide;
+      fresh.destroy();
+      if (!check(freshWide, "Wide is the default size")) return;
       one.prefs.save("zendeskAddress", "acme");
       one.prefs.save("oauthClientId", "foamy-test");
       break;
@@ -353,8 +386,11 @@ ShellRoot {
       // The real helper runs; the isolated session has no keyring, so it says so.
       if (!check(account.state === "error" && account.error.indexOf("keyring") >= 0, "a missing keyring is explained (" + account.state + ": " + account.error + ")")) return;
       if (!check(!store.active, "nothing is fetched without a sign-in")) return;
+      // The bar says so without the popup: a warning sign, and the tooltip.
+      if (!check(button.trouble === "signin" && one.barContent.troubleSign.visible && button.tooltipText === "Zendesk — can't sign in",
+                 "a sign-in that can't be read marks the bar button (" + button.trouble + ", " + button.tooltipText + ")")) return;
       // From here on: signed in, with the sample inbox.
-      store.loadFixtures(Fixtures.tickets());
+      store.loadFixtures(shell.longSample());
       account.state = "signed_in";
       account.user = { name: "Alex", email: "alex@acme.example" };
       if (!check(store.count === 3 && store.unreadCount === 3, "fixture inbox loaded")) return;
@@ -389,11 +425,15 @@ ShellRoot {
       var waiting = shell.find(view, "ticket-4818");
       var fresh = shell.find(view, "ticket-4824");
       // Zendesk's dark-UI colours (the harness theme is dark): Open, Pending, New.
-      if (!check(tag !== null && tag.visible && tag.text === "Open" && Qt.colorEqual(tag.color, "#eb5c69")
-                 && Qt.colorEqual(shell.find(closed, "disclosure").color, tag.color)
+      // In the list the tag is soft (a tint of the colour), its word in a
+      // shade of the same colour that reads on the tint (4.5:1).
+      var tint = Qt.tint(Kit.FoamyPalette.background, tag ? tag.color : "transparent");
+      if (!check(tag !== null && tag.visible && tag.text === "Open" && tag.soft && Qt.colorEqual(tag.tone, "#eb5c69")
+                 && Status.contrast(tag.ink, tint) >= 4.5
+                 && Qt.colorEqual(shell.find(closed, "disclosure").color, Kit.FoamyPalette.onSurface(tag.tone))
                  && Qt.colorEqual(waiting.statusColor, "#2694d6") && Qt.colorEqual(fresh.statusColor, "#e38215")
                  && !Qt.colorEqual(waiting.statusColor, fresh.statusColor),
-                 "an unread ticket shows its status as a tag in Zendesk's colour, the triangle in the same colour")) return;
+                 "an unread ticket shows its status as a soft tag in Zendesk's colour, the triangle in the same colour")) return;
       // Light-UI fills: white beats black on Open and Pending (WCAG), black on New.
       var black = Qt.color("#000000"), white = Qt.color("#ffffff");
       if (!check(Qt.colorEqual(Status.inkOn(Qt.color("#cc3340"), black, white), white) && Qt.colorEqual(Status.inkOn(Qt.color("#1f73b7"), black, white), white)
@@ -410,7 +450,8 @@ ShellRoot {
       if (!check(card.expanded && card.detailsItem.visible && store.reading, "click expands the ticket")) return;
       if (!check(card.commentItem.textFormat === Text.PlainText, "comments use plain text")) return;
       if (!check(card.historyRepeater.count === 4 && card.historyRepeater.itemAt(1).textItem.text.indexOf("restart the client") >= 0, "expanded history includes the agent's reply")) return;
-      if (!check(card.shownCount === 3 && !card.historyRepeater.itemAt(3).visible && card.moreButton.visible, "the timeline shows the unread comments and the one before them")) return;
+      // One comment is unread: Alex's reply answered Anna's earlier one.
+      if (!check(card.shownCount === 2 && !card.historyRepeater.itemAt(2).visible && card.moreButton.visible, "the timeline shows the unread comment and the one before it")) return;
       if (!check(card.frameItem.visible && !card.unreadDot.visible && card.bodyItem.height < card.height / 3, "open, the card is framed and its header band is the only toggle")) return;
       // Real clicks: none of these may collapse the ticket.
       var click = function(item, x, y) { ev.mouseClick(item, x === undefined ? item.width / 2 : x, y === undefined ? item.height / 2 : y, Qt.LeftButton, Qt.NoModifier, -1); };
@@ -422,7 +463,7 @@ ShellRoot {
                  && !card.historyRepeater.itemAt(1).lengthButton.visible, "a long comment is clipped and fades, with its own Show more")) return;
       click(longest.lengthButton);
       if (!check(card.expanded && longest.full && !longest.clipped && !shell.find(longest, "fade").visible && longest.lengthButton.text === "Show less"
-                 && !card.historyRepeater.itemAt(1).full && card.shownCount === 3, "Show more expands only that comment")) return;
+                 && !card.historyRepeater.itemAt(1).full && card.shownCount === 2, "Show more expands only that comment")) return;
       click(longest.lengthButton);
       if (!check(card.expanded && !longest.full && longest.clipped && longest.lengthButton.text === "Show more", "Show less folds it back")) return;
       view.cursor.index = view.firstTicketStop;
@@ -437,14 +478,17 @@ ShellRoot {
                  "m with everything shown changes nothing")) return;
       if (!check(card.historyRepeater.itemAt(0).textItem.textFormat === Text.PlainText, "history uses plain text")) return;
       if (!check(card.read && store.unreadCount === 2 && one.barContent.countLabel.text === "2", "opening a ticket marks it read")) return;
-      // The hidden Mark as unread leaves no gap between the status and View.
+      // The open card's header: the solid status tag, and both actions at
+      // rest in their fixed slots at the end of the subject's line.
       var openTag = shell.find(card, "statusTag");
-      var tagEnd = openTag.mapToItem(card, openTag.width, 0).x;
-      if (!check(card.openButton.mapToItem(card, 0, 0).x - tagEnd <= 8
-                 && card.readButton.mapToItem(card, 0, 0).x < openTag.mapToItem(card, 0, 0).x,
-                 "the status tag sits by View; the hidden Mark as unread keeps its slot before it")) return;
-      if (!check(card.openedUpdates === 2 && card.historyRepeater.itemAt(0).fresh && !card.historyRepeater.itemAt(1).fresh && card.historyRepeater.itemAt(2).fresh,
-                 "the opened ticket still marks what was new; my reply never is")) return;
+      if (!check(openTag.visible && !openTag.soft && card.readButton.opacity === 1 && card.readButton.iconName === "mail"
+                 && Math.abs(card.readButton.mapToItem(card, card.readButton.width, 0).x - card.openButton.mapToItem(card, 0, 0).x) < 1,
+                 "open, the header has the solid status tag and both actions at rest")) return;
+      if (!check(shell.find(card, "cardAssignment").visible && shell.find(card, "cardAssignment").text === "Assigned to you"
+                 && shell.find(card, "meta").text === "#4821 · Anna",
+                 "open, the facts line names the requester, and the assignment stands at its end")) return;
+      if (!check(card.openedUpdates === 1 && card.historyRepeater.itemAt(0).fresh && !card.historyRepeater.itemAt(1).fresh && !card.historyRepeater.itemAt(2).fresh,
+                 "the opened ticket still marks what was new; my reply and what it answered never are")) return;
       if (!check(store.tickets.get(0).id === "4821" && view.repeater.itemAt(1).unreadDot.visible, "it stays in place; the next ticket still has its unread dot")) return;
       shell.savedY = card.mapToItem(view, 0, 0).y;
       shell.savedBody = card.commentItem.text;
@@ -458,47 +502,59 @@ ShellRoot {
       if (!check(shell.find(view, "statusBar").visible, "waiting updates are announced without moving the ticket")) return;
       if (!check(shell.opened().length === 1 && shell.opened()[0] === "https://acme.zendesk.com/agent/tickets/4821" && card.expanded && card.read && store.notice === "",
                  "View opens the ticket in Zendesk; it stays open and read")) return;
+      // The notice bar takes a click on its text: nothing under it reacts.
+      var updatesText = shell.find(view, "updatesText");
+      if (!check(updatesText.text === "1 update waiting" && shell.find(view, "showUpdates").visible, "the notice bar says an update waits, with Show")) return;
+      ev.mouseClick(updatesText, 4, updatesText.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
+      if (!check(card.expanded && store.pendingChanges === 1 && view.expandedIds.join() === "4821", "a click on the notice bar's text changes nothing")) return;
       // A real click on the header band (left of the actions) closes it.
       ev.mouseClick(card.bodyItem, card.bodyItem.width / 3, card.bodyItem.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
       break;
     case 5:
-      if (!check(store.pending === null && store.tickets.get(0).updates === 1 && store.tickets.get(0).history.count === 5, "collapse applies the waiting inbox; only the newer reply is unread")) return;
-      if (!check(!view.repeater.itemAt(0).showEarlier, "collapsing forgets Show earlier")) return;
-      view.repeater.itemAt(0).readButton.clicked();
-      if (!check(store.count === 3 && store.unreadCount === 2 && view.repeater.itemAt(0).read && one.barContent.countLabel.text === "2", "Mark as read keeps the ticket and lowers the count")) return;
-      if (!check(view.repeater.itemAt(0).compact && !view.repeater.itemAt(0).unreadDot.visible && shell.find(view.repeater.itemAt(0), "sender").text === "Anna ·"
-                 && shell.find(view.repeater.itemAt(0), "when").visible && shell.find(view.repeater.itemAt(0), "when").text !== "",
-                 "a read ticket takes one line: no unread dot, the sender and time by the subject")) return;
-      // A narrow popup (320 px): an Urgent one-line ticket from a long name
-      // shortens the sender first; the subject keeps the rest, the triangle its room.
-      var probe = Qt.createComponent(Qt.resolvedUrl("plugin/TicketRow.qml")).createObject(view, {
-        width: 272, compact: true, now: Fixtures.NOW,
-        ticket: { id: "9900", subject: "Printer on the third floor jams on every job", status: "Open", priority: "Urgent",
-                  sender: "Christopher Anderson", senderMine: false, received: Fixtures.BASE - 26 * 3600000, read: true, updates: 0, since: 0,
-                  history: null, body: "", mine: false, unassigned: true, assignee: "", group: "" } });
-      // Rows lay out on the next frame; do it now to measure.
-      shell.find(probe, "trailing").forceLayout();
-      shell.find(probe, "lead").forceLayout();
-      var probeSubject = shell.find(probe, "subject");
-      var probeSender = shell.find(probe, "sender");
-      var leadX = shell.find(probe, "lead").x;
-      var ok = probeSubject.width > 0 && probeSubject.width >= leadX - probeSubject.x - 9 && probeSender.truncated
-               && probe.readButton.mapToItem(probe, 0, 0).x > shell.find(probe, "disclosure").mapToItem(probe, 14, 0).x;
-      probe.destroy();
-      if (!check(ok, "a narrow one-line row shortens the sender first and keeps the subject visible")) return;
-      var oneLine = view.repeater.itemAt(0);
-      if (!check(!shell.find(oneLine, "statusTag").visible && shell.find(oneLine, "linePriority").visible
-                 && Qt.colorEqual(shell.find(oneLine, "disclosure").color, "#eb5c69"),
-                 "a one-line ticket shows its status only by the triangle's colour, and its priority by the sender")) return;
-      view.cursor.reset();
-      if (!check(!view.repeater.itemAt(0).readActionShown && view.repeater.itemAt(1).readActionShown && view.repeater.itemAt(0).readButton.visible,
-                 "Mark as unread waits for hover, keeping its place; Mark as read stays shown")) return;
-      view.cursor.index = view.firstTicketStop + 1;
-      if (!check(view.repeater.itemAt(0).readActionShown, "the keyboard cursor shows Mark as unread")) return;
-      view.repeater.itemAt(0).readButton.clicked();
-      if (!check(store.unreadCount === 3 && !view.repeater.itemAt(0).read && view.repeater.itemAt(0).unread === 1, "Mark as unread brings back the newest reply")) return;
-      view.markAllRead();
-      if (!check(store.count === 3 && store.unreadCount === 0 && store.canUndoMarkAll && !one.barContent.countLabel.visible, "Mark all as read keeps every ticket")) return;
+      if (!shell.undoShown) {
+        if (!check(store.pending === null && store.tickets.get(0).updates === 1 && store.tickets.get(0).history.count === 5, "collapse applies the waiting inbox; only the newer reply is unread")) return;
+        if (!check(!view.repeater.itemAt(0).showEarlier, "collapsing forgets Show earlier")) return;
+        view.repeater.itemAt(0).readButton.clicked();
+        if (!check(store.count === 3 && store.unreadCount === 2 && view.repeater.itemAt(0).read && one.barContent.countLabel.text === "2", "Mark as read keeps the ticket and lowers the count")) return;
+        if (!check(view.repeater.itemAt(0).compact && !view.repeater.itemAt(0).unreadDot.visible && shell.find(view.repeater.itemAt(0), "sender").text === "Anna ·"
+                   && shell.find(view.repeater.itemAt(0), "when").visible && shell.find(view.repeater.itemAt(0), "when").text !== "",
+                   "a read ticket takes one line: no unread dot, the sender and time by the subject")) return;
+        // A narrow popup (320 px): an Urgent one-line ticket from a long name
+        // leaves the requester out; the subject keeps the rest, the triangle its room.
+        var probe = Qt.createComponent(Qt.resolvedUrl("plugin/TicketRow.qml")).createObject(view, {
+          width: 272, compact: true, now: Fixtures.NOW,
+          ticket: { id: "9900", subject: "Printer on the third floor jams on every job", status: "Open", priority: "Urgent",
+                    sender: "Christopher Anderson", requester: "Christopher Anderson", senderMine: false, received: Fixtures.BASE - 26 * 3600000, read: true, updates: 0, since: 0,
+                    history: null, body: "", mine: false, unassigned: true, assignee: "", group: "" } });
+        // Rows lay out on the next frame; do it now to measure.
+        shell.find(probe, "trailing").forceLayout();
+        shell.find(probe, "lead").forceLayout();
+        var probeSubject = shell.find(probe, "subject");
+        var probeSender = shell.find(probe, "sender");
+        var leadX = shell.find(probe, "lead").x;
+        var ok = probeSubject.width > 0 && probeSubject.width >= leadX - probeSubject.x - 9 && !probeSender.visible
+                 && probe.readButton.mapToItem(probe, 0, 0).x > shell.find(probe, "disclosure").mapToItem(probe, 14, 0).x;
+        probe.destroy();
+        if (!check(ok, "a narrow one-line row leaves out the requester and keeps the subject visible")) return;
+        var oneLine = view.repeater.itemAt(0);
+        if (!check(!shell.find(oneLine, "statusTag").visible && shell.find(oneLine, "linePriority").visible
+                   && Qt.colorEqual(shell.find(oneLine, "disclosure").color, "#eb5c69"),
+                   "a one-line ticket shows its status only by the triangle's colour, and its priority by the sender")) return;
+        view.cursor.reset();
+        if (!check(!view.repeater.itemAt(0).readActionShown && view.repeater.itemAt(1).readActionShown && view.repeater.itemAt(0).readButton.visible,
+                   "Mark as unread waits for hover, keeping its place; Mark as read stays shown")) return;
+        view.cursor.index = view.firstTicketStop + 1;
+        if (!check(view.repeater.itemAt(0).readActionShown, "the keyboard cursor shows Mark as unread")) return;
+        view.repeater.itemAt(0).readButton.clicked();
+        if (!check(store.unreadCount === 3 && !view.repeater.itemAt(0).read && view.repeater.itemAt(0).unread === 1, "Mark as unread brings back the newest reply")) return;
+        view.markAllRead();
+        if (!check(store.count === 3 && store.unreadCount === 0 && store.canUndoMarkAll && !one.barContent.countLabel.visible, "Mark all as read keeps every ticket")) return;
+        // The notice bar comes and the popup grows with it: Undo is clicked
+        // once that is drawn.
+        shell.undoShown = true;
+        shell.step--;
+        return;
+      }
       view.cursor.index = view.settingsStop;
       view.moveRequested(0, -1);
       if (!check(view.cursor.index !== view.markAllStop, "keyboard skips the disabled Mark all")) return;
@@ -581,6 +637,48 @@ ShellRoot {
       account.state = "signed_in";
       break;
     case 9:
+      // Small, one ticket open and tall, the list scrolled: a click on the
+      // ticket below it closes the first and opens the second, and the
+      // second keeps its place in the view while the cards lay out.
+      if (shell.anchorPhase === 0) {
+        view.toggleTicket(store.tickets.get(0).id);
+        // Everything shown: the card is taller than the list.
+        for (var unfold = 0; unfold < 3; unfold++) view.repeater.itemAt(0).showMore();
+        shell.anchorPhase = 1;
+        shell.step--;
+        return;
+      }
+      if (shell.anchorPhase === 1) {
+        // Scrolled into the middle of the tall open card, its header band
+        // stays at the top of the list's view.
+        var tall = view.repeater.itemAt(0);
+        view.list.contentY = view.rowTop(tall) + 300;
+        var bandAt = tall.bodyItem.mapToItem(view.list, 0, 0).y;
+        if (!check(tall.height > view.list.height && tall.pinned && bandAt >= 0 && bandAt <= 2,
+                   "a long open ticket keeps its header at the top of the list (" + Math.round(bandAt) + " px)")) return;
+        var below = view.repeater.itemAt(1);
+        shell.anchorId = below.ticket.id;
+        view.list.contentY = view.rowTop(below) - 140;
+        if (!check(view.repeater.itemAt(0).height > 400 && Math.abs(view.rowTop(below) - view.list.contentY - 140) < 1, "a tall open ticket above the next one, scrolled")) return;
+        ev.mouseClick(below.bodyItem, below.bodyItem.width / 3, Math.min(below.bodyItem.height / 2, 20), Qt.LeftButton, Qt.NoModifier, -1);
+        shell.anchorPhase = 2;
+        shell.step--;
+        return;
+      }
+      if (shell.anchorPhase === 2) {
+        var anchored = shell.find(view, "ticket-" + shell.anchorId);
+        var shownAt = view.rowTop(anchored) - view.list.contentY;
+        // In view, and no lower than it was: higher only as far as it takes to
+        // show the whole card, or because the list reached its top (here, when
+        // the tall card above closes).
+        if (!check(anchored.expanded && !view.repeater.itemAt(0).expanded && shownAt >= 0 && shownAt <= 141,
+                   "the ticket opened below an open one stays in view, near where it was (" + Math.round(shownAt) + " px from the top)")) return;
+        view.toggleTicket(shell.anchorId);
+        shell.anchorPhase = 3;
+        shell.step--;
+        return;
+      }
+      view.list.contentY = 0;
       if (!check(view.list.contentHeight > view.list.height && one.popup.contentHeight <= one.popup.availableCardHeight, "long inbox fits screen and scrolls")) return;
       view.cursor.index = view.firstTicketStop + (store.count - 1) * 3;
       view.reveal();
@@ -598,9 +696,14 @@ ShellRoot {
       var last = view.repeater.itemAt(store.count - 1);
       if (!check(store.pendingChanges === 1 && shell.find(view, "statusBar").visible, "an update waits while reading a scrolled list")) return;
       if (!check(view.list.contentY === shell.savedScroll && last.mapToItem(view, 0, 0).y === shell.savedY, "the status bar never moves a scrolled ticket")) return;
+      // Small: Show closes the ticket, which lets the update in, and goes to the top.
+      var showSmall = shell.find(view, "showUpdates");
+      ev.mouseClick(showSmall, showSmall.width / 2, showSmall.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
+      if (!check(view.expandedIds.length === 0 && view.list.contentY === 0, "Show in Small closes the ticket and goes to the top")) return;
       one.close();
       break;
     case 12:
+      if (!check(store.pendingChanges === 0 || shell.fetchProbe === 1, "the update that Show let in is applied")) return;
       if (shell.fetchProbe === 1) {
         // Let the on-demand fetch end (the isolated session has no keyring), then go back to the sample inbox.
         two.close();
@@ -651,14 +754,33 @@ ShellRoot {
       if (!check(!store.snoozed && store.withinSchedule && store.scheduleOverride === null, "pressing again resumes the schedule")) return;
       if (!check(bar.saved.length === savedCount, "snoozing never saves settings")) return;
       one.prefs.save("scheduleEnabled", false);
+      // Without a weekly schedule, only an override needs the clock: one that
+      // runs out is dropped, and the clock stops with it.
+      store.scheduleOverride = { on: false, until: Date.now() + 3600000 };
+      if (!check(store.snoozed && store.clock.enabled, "a snooze runs the clock")) return;
+      store.scheduleOverride = { on: false, until: Date.now() - 1 };
+      if (!check(!store.snoozed, "a snooze that ran out no longer holds")) return;
       // Signed out: the inbox asks for a sign-in.
       account.state = "signed_out";
       store.loadFixtures(null);
       one.open();
       break;
     case 13:
+      if (!check(store.scheduleOverride === null && !store.clock.enabled, "a snooze that ran out is dropped, and the clock stops")) return;
       var empty = shell.find(view, "emptyState");
-      if (!check(empty.visible && empty.kind === "signin" && shell.find(view, "openSettings").visible, "signed out, the inbox offers the settings")) return;
+      if (!check(empty.visible && empty.kind === "signed_out" && shell.find(view, "emptyTitle").text === "Signed out"
+                 && shell.find(view, "emptyDetail").text === "Sign in again in the settings." && shell.find(view, "openSettings").visible
+                 && !shell.find(view, "emptyAction").visible,
+                 "signed out, the inbox says so and offers the settings")) return;
+      // Each account state has its own action.
+      var emptyAction = shell.find(view, "emptyAction");
+      account.state = "expired";
+      if (!check(emptyAction.visible && emptyAction.text === "Sign in" && !shell.find(view, "openSettings").visible && shell.find(view, "emptyTitle").text === "Sign-in expired",
+                 "an expired sign-in offers Sign in")) return;
+      account.state = "waiting";
+      if (!check(emptyAction.visible && emptyAction.text === "Cancel" && shell.find(view, "emptyTitle").text === "Waiting for the browser…",
+                 "a sign-in waiting for the browser offers Cancel")) return;
+      account.state = "signed_out";
       var footer = view.children.find(function(item) { return item.hasOwnProperty("statusError"); });
       if (!check(!footer.visible && view.list.anchors.bottom === view.bottom, "signed out, there is no footer")) return;
       view.editingSettings = true;
@@ -883,8 +1005,8 @@ ShellRoot {
       break;
     case 24:
       if (!check(store.unreadCount === 0 && store.error === "", "the next fetch keeps what was read this session (" + store.unreadCount + " unread)")) return;
-      if (!check(shell.footer().status === "Can't save read markers" && shell.footer().statusTooltip === "Kept only until the shell restarts.",
-                 "the footer says the read markers can't be saved (" + shell.footer().status + ")")) return;
+      if (!check(shell.saveNotice() === shell.readMarkersLost && !shell.footer().statusError && shell.footer().status === "Updated just now",
+                 "the notice bar says the read markers can't be saved; the footer keeps the age (" + shell.saveNotice() + ")")) return;
       break;
     case 25:
       // An account check asked for while the last one's reply is on its way.
@@ -915,9 +1037,8 @@ ShellRoot {
       store.markRead("9101");
       break;
     case 29:
-      var failed = shell.footer();
-      if (!check(failed.statusError && failed.statusTooltip === "Kept only until the shell restarts." && store.unreadCount === 0,
-                 "the footer says the read markers last only until the shell restarts; the ticket stays read")) return;
+      if (!check(shell.saveNotice() === shell.readMarkersLost && store.unreadCount === 0,
+                 "the notice bar says the read markers last only until the shell restarts; the ticket stays read")) return;
       // Then another account (its read file can be written) starts without it.
       one.popup.bodyItem.grabToImage(function(result) {
         result.saveToFile(Quickshell.env("FOAMY_OUT") + "/save-failed.png");
@@ -926,17 +1047,17 @@ ShellRoot {
       });
       break;
     case 30:
-      if (!check(!shell.footer().statusError, "another account's inbox starts without the failure")) return;
+      if (!check(shell.saveNotice() === "", "another account's inbox starts without the failure")) return;
       store.overridePath = Quickshell.env("FOAMY_OUT") + "/locked/schedule-override.json";
       store.toggleSnooze();
       break;
     case 31:
-      if (!check(store.snoozed && shell.footer().statusError && shell.footer().statusTooltip === "Kept only until the shell restarts.", "the snooze still holds, until the shell restarts")) return;
+      if (!check(store.snoozed && shell.saveNotice() === shell.snoozeLost, "the snooze still holds, until the shell restarts")) return;
       store.overridePath = Quickshell.env("FOAMY_OUT") + "/schedule-override.json";
       store.toggleSnooze();
       break;
     case 32:
-      if (!check(!store.snoozed && !shell.footer().statusError, "resumed and saved, the footer is back to normal")) return;
+      if (!check(!store.snoozed && shell.saveNotice() === "", "resumed and saved, the notice is gone")) return;
       // An inbox the helper cut short says so below its last ticket.
       store.helperCommand = function(args) {
         var reply = shell.inboxReply("big", 9301);
@@ -989,9 +1110,21 @@ ShellRoot {
       store.loadFixtures(named);
       break;
     case 36:
-      var footerOf = function(id) { return shell.find(shell.find(view, "ticket-" + id), "cardFooter").text.split("  ·  ")[0]; };
+      var footerOf = function(id) { return shell.find(view, "ticket-" + id).assignmentText; };
       if (!check(footerOf("4908") === "Assigned to Unassigned" && footerOf("4824") === "Unassigned",
                  "an agent named Unassigned is an assignee (" + footerOf("4908") + "; " + footerOf("4824") + ")")) return;
+      // A ticket whose comments haven't come, marked read: it can be marked
+      // unread again, which makes it unseen.
+      var deferred = Fixtures.tickets();
+      delete deferred[2].comments;
+      deferred[2].deferred = true;
+      store.loadFixtures(deferred);
+      store.markRead("4824");
+      var unloaded = shell.find(view, "ticket-4824");
+      view.cursor.index = view.firstTicketStop + store.ticketById("4824").index * view.stopsPerTicket + 1;
+      if (!check(unloaded.read && unloaded.readActionShown && unloaded.readButton.enabled, "a read ticket whose comments haven't come offers Mark as unread")) return;
+      unloaded.readButton.clicked();
+      if (!check(!store.ticketById("4824").ticket.read && store.ticketById("4824").ticket.unseen, "Mark as unread makes it unseen again")) return;
       store.loadFixtures(Fixtures.tickets());
       break;
     case 37:
@@ -1080,14 +1213,14 @@ ShellRoot {
       account.address = "lockable";
       break;
     case 44:
-      if (!check(store.unreadCount === 1 && !shell.footer().statusError, "the inbox is saved and unread")) return;
+      if (!check(store.unreadCount === 1 && shell.saveNotice() === "", "the inbox is saved and unread")) return;
       shell.saveBase = shell.saves;
       shell.openBase = shell.opened().length;
       var lockable = shell.find(view, "ticket-9401");
       ev.mouseClick(lockable.openButton, lockable.openButton.width / 2, lockable.openButton.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
       break;
     case 45:
-      if (!check(store.ticketById("9401").ticket.read && store.unreadCount === 0 && !one.barContent.countLabel.visible && !shell.footer().statusError,
+      if (!check(store.ticketById("9401").ticket.read && store.unreadCount === 0 && !one.barContent.countLabel.visible && shell.saveNotice() === "",
                  "the open's read mark is saved like Mark as read")) return;
       // Already read: opening it again writes nothing.
       shell.saveBase = shell.saves;
@@ -1108,9 +1241,8 @@ ShellRoot {
       ev.mouseClick(locking.openButton, locking.openButton.width / 2, locking.openButton.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
       break;
     case 48:
-      var failed = shell.footer();
-      if (!check(failed.statusError && failed.statusTooltip === "Kept only until the shell restarts." && store.ticketById("9401").ticket.read && store.unreadCount === 0,
-                 "an open whose read mark can't be saved shows the footer's save failure; the ticket stays read")) return;
+      if (!check(shell.saveNotice() === shell.readMarkersLost && store.ticketById("9401").ticket.read && store.unreadCount === 0,
+                 "an open whose read mark can't be saved says so in the notice bar; the ticket stays read")) return;
       // An open that ends after the account changed marks nothing in the next one,
       // which has a ticket with the same id and comment.
       openerMode.setText("hold\n");
@@ -1175,12 +1307,12 @@ ShellRoot {
       break;
     case 55:
       // Nothing selected: the overview beside the list. #4818 is Pending, so
-      // only #4824 (the longest wait) and #4821 wait for a reply.
+      // only #4821 (High) and #4824 need a reply.
       if (!check(one.popup.contentWidth === one.wideWidth && view.list.width === view.listWidth && view.overview.visible && !view.pane.visible
                  && view.repeater.itemAt(0).wide && !view.repeater.itemAt(0).openButton.visible && !view.repeater.itemAt(0).readButton.visible,
                  "Wide opens at its width with the overview beside the list, and rows without their own actions")) return;
-      if (!check(view.overview.awaitingRows.count === 2 && store.overview.awaiting.map(function(item) { return item.id; }).join() === "4824,4821",
-                 "the overview lists who waits for a reply")) return;
+      if (!check(view.overview.awaitingRows.count === 2 && store.overview.awaiting.map(function(item) { return item.id; }).join() === "4821,4824",
+                 "the overview lists what needs a reply, High first")) return;
       shell.savedY = one.popup.contentHeight;
       // Enter on the first ticket shows it in the pane and marks it read.
       view.cursor.index = view.firstTicketStop;
@@ -1188,9 +1320,9 @@ ShellRoot {
       var shown = view.repeater.itemAt(0);
       if (!check(view.selected && view.selected.ticket.id === "4821" && view.pane.visible && !view.overview.visible
                  && shown.selected && !shown.expanded && store.ticketById("4821").ticket.read, "Enter shows the ticket in the pane, read, not opened in place")) return;
-      if (!check(shell.find(view.pane, "newDivider").visible && view.pane.lastFresh === 2 && view.pane.comments.children.length >= 4
+      if (!check(shell.find(view.pane, "newDivider").visible && view.pane.lastFresh === 0 && view.pane.comments.children.length >= 4
                  && !shell.find(view.pane, "paneNote").visible,
-                 "the pane shows every comment, the unread ones under New")) return;
+                 "the pane shows every comment, the unread one under New")) return;
       break;
     case 56:
       if (!check(one.popup.contentWidth === one.wideWidth && one.popup.contentHeight === shell.savedY, "showing a ticket keeps the card's size")) return;
@@ -1198,25 +1330,30 @@ ShellRoot {
       view.cursor.index = view.paneFirstStop;
       if (!check(view.pane.readButton.hasCursor, "the pane's read action takes the cursor")) return;
       view.activateRequested();
-      if (!check(!store.ticketById("4821").ticket.read && view.pane.readButton.iconName === "check" && view.selected.ticket.id === "4821",
+      if (!check(!store.ticketById("4821").ticket.read && view.pane.readButton.iconName === "mail-open" && view.selected.ticket.id === "4821",
                  "Mark as unread in the pane keeps the ticket shown")) return;
       // An update while a ticket is shown waits, and says how to show it.
       store.receive(Fixtures.update(1, false));
-      if (!check(store.pendingChanges === 1 && shell.find(view, "statusText").text === "1 update waiting — close the ticket to show",
-                 "an update waits while a ticket is shown")) return;
+      if (!check(store.pendingChanges === 1 && shell.find(view, "updatesText").text === "1 update waiting" && shell.find(view, "showUpdates").visible,
+                 "an update waits while a ticket is shown, with Show")) return;
       shell.openBase = shell.opened().length;
       view.cursor.index = view.paneFirstStop + 1;
       view.activateRequested();
       break;
     case 57:
       if (!check(shell.opened().slice(shell.openBase).join() === "https://" + store.host + "/agent/tickets/4821", "View in Zendesk in the pane opens the ticket")) return;
+      // Wide: Show lets the waiting update in and keeps the ticket shown.
+      var showWide = shell.find(view, "showUpdates");
+      ev.mouseClick(showWide, showWide.width / 2, showWide.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
+      if (!check(store.pendingChanges === 0 && view.selected && view.selected.ticket.id === "4821" && store.ticketById("4821").ticket.history.count === 5,
+                 "Show in Wide applies the update and keeps the ticket shown")) return;
       // A click on the shown ticket's row closes it: the overview is back.
       var selectedRow = view.repeater.itemAt(view.selected.index);
       ev.mouseClick(selectedRow.bodyItem, selectedRow.bodyItem.width / 3, selectedRow.bodyItem.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
       if (!check(view.selected === null && view.overview.visible && !view.pane.visible, "a click on the shown ticket closes it")) return;
       break;
     case 58:
-      if (!check(store.ticketById("4821").ticket.history.count === 5, "the waiting update came in once the ticket closed")) return;
+      if (!check(store.ticketById("4821").ticket.history.count === 5, "the update that waited is in")) return;
       // A click on a waiting ticket in the overview shows it, the cursor on its row.
       // A new ticket makes three waiting, from a requester with a long name in
       // a long-named group.
@@ -1226,7 +1363,8 @@ ShellRoot {
       arrival[0].group = longName;
       arrival[0].comments[0].author = longName;
       // A comment taller than the pane, for scrolling it from the keyboard.
-      arrival[0].comments[0].body = Array(80).join("A line of a long comment.\n");
+      arrival[0].comments[0].body = Array(80).join("A line of a long comment.\n")
+        + "\nOn Thu, 5 Nov 2026 at 16:02, Alex <alex@acme.example> wrote:\n> The earlier mail.\n> Its second line.";
       // And one whose comments the helper deferred: it isn't counted as waiting.
       arrival.push({ id: "4950", subject: "Deferred comments", status: "Open", priority: "Normal", assignee: "Alex", mine: true,
                      group: "IT support", requester: "Ola", updated_at: "2026-11-06T09:00:00Z", deferred: true });
@@ -1254,8 +1392,19 @@ ShellRoot {
       // The conversation, from the keyboard: Down scrolls it to its end, then
       // the cursor moves on to Refresh; Up scrolls back to the top, then to View.
       var conversation = view.pane.conversation;
-      // The Column lays out before the next frame; the keys come after one.
-      view.pane.comments.forceLayout();
+      // A comment of over 40 lines is cut, with Show more; m shows it in full.
+      // The columns lay out before the next frame; the keys come after one.
+      var lengthLink = shell.find(view.pane, "lengthLink");
+      var longEntry = lengthLink;
+      while (longEntry && String(longEntry.objectName).indexOf("comment-") !== 0) longEntry = longEntry.parent;
+      view.pane.settle(longEntry);
+      if (!check(lengthLink && lengthLink.visible && view.pane.showMore() && !shell.find(view.pane, "fade").visible,
+                 "a comment of over 40 lines is cut in the pane, and m shows the rest")) return;
+      view.pane.settle(longEntry);
+      // m showed the rest from where the comment was cut, and stays there.
+      var cutAt = isNaN(view.pane.wheel.destination) ? conversation.contentY : view.pane.wheel.destination;
+      if (!check(cutAt > 0 && cutAt < conversation.contentHeight - conversation.height - 100, "m shows the rest from where the comment was cut, not from its end (" + Math.round(cutAt) + ")")) return;
+      view.pane.wheel.scrollTo(0, false);
       view.cursor.index = view.conversationStop;
       if (!check(shell.find(view.pane, "conversationCursor").visible && conversation.contentHeight > conversation.height,
                  "the cursor rings the conversation, which is taller than the pane")) return;
@@ -1277,7 +1426,19 @@ ShellRoot {
       if (!check(Math.abs(conversation.contentY - (bottom - 2 * wheel.notch)) < 1, "a key during a wheel animation scrolls from where the wheel goes")) return;
       steps = 0;
       while (view.cursor.index === view.conversationStop && steps++ < 100) view.moveRequested(0, -1);
-      if (!check(conversation.contentY === 0 && view.cursor.index === view.paneFirstStop + 1, "Up scrolls it back to the top, then moves on")) return;
+      if (!check(conversation.contentY === 0 && view.cursor.index === view.paneFirstStop + 2, "Up scrolls it back to the top, then moves on to Hide ticket")) return;
+      // Its quoted mail is folded behind Show quoted text; m shows it next.
+      var quoteLink = shell.find(view.pane, "quoteLink");
+      var quote = shell.find(view.pane, "commentQuote");
+      if (!check(quoteLink.visible && quoteLink.text === "Show quoted text" && !quote.visible && quote.text.indexOf("> The earlier mail.") >= 0
+                 && view.pane.showMore() && quote.visible && quoteLink.text === "Hide quoted text",
+                 "the quoted mail at a comment's end folds behind Show quoted text")) return;
+      // Shown once, the quote isn't followed: what changes next (here the
+      // quote folding again) leaves the view where the reader put it.
+      view.pane.wheel.scrollTo(0, false);
+      view.pane.showQuote(longEntry, false);
+      view.pane.settle(longEntry);
+      if (!check(conversation.contentY === 0 && isNaN(view.pane.wheel.destination), "nothing pulls the view back to a quote it showed (" + Math.round(conversation.contentY) + ")")) return;
       // Long names stay inside the pane.
       var facts = shell.find(view.pane, "paneFacts");
       var fitted = facts.children.every(function(item) { return !item.visible || item.width <= facts.width; });
@@ -1290,7 +1451,7 @@ ShellRoot {
       if (!check(fitted && author && author.truncated && author.width < view.pane.comments.width, "long names elide inside the pane")) return;
       // The deferred ticket's comments are missing, not empty.
       view.toggleTicket("4950");
-      if (!check(view.selected.ticket.id === "4950" && shell.find(view.pane, "paneNote").text === "Comments haven't loaded yet. Close the ticket to get them with the next update.",
+      if (!check(view.selected.ticket.id === "4950" && shell.find(view.pane, "paneNote").text === "Comments haven't loaded yet. They come with the next update.",
                  "a ticket whose comments haven't come says so")) return;
       view.toggleTicket("4950");
       // A click on a waiting ticket shows it too.
@@ -1298,12 +1459,45 @@ ShellRoot {
       ev.mouseClick(waitingRow, waitingRow.width / 2, waitingRow.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
       if (!check(view.selected && view.selected.ticket.id === "4824" && view.cursor.index === view.firstTicketStop + view.selected.index,
                  "a click on a waiting ticket in the overview shows it")) return;
+      // The pane's × hides the ticket: the overview is back.
+      var paneClose = shell.find(view.pane, "paneClose");
+      ev.mouseClick(paneClose, paneClose.width / 2, paneClose.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
+      if (!check(view.selected === null && view.overview.visible && !view.pane.visible, "the pane's Hide ticket shows the overview again")) return;
+      // #4824 is read now: with read tickets hidden it leaves the list, but
+      // still needs a reply. Chosen in the overview, it is listed while shown.
+      store.hideRead = true;
+      if (!check(store.ticketById("4824") === null && shell.find(view.overview, "awaiting-4824") !== null, "a hidden read ticket still shows in the overview")) return;
+      view.toggleTicket("4824");
+      if (!check(view.selected && view.selected.ticket.id === "4824" && store.ticketById("4824") !== null, "the overview shows a ticket that Hide read tickets keeps out of the list")) return;
+      view.toggleTicket("4824");
+      if (!check(store.ticketById("4824") === null && view.overview.visible, "closed, it leaves the list again")) return;
+      store.hideRead = false;
       view.editingSettings = true;
       break;
     case 59:
-      if (!check(one.popup.contentWidth === one.wideWidth && one.popup.contentHeight === shell.savedY && shell.find(view.settingsPage, "panelWidth").value === "wide",
-                 "Settings keep Wide's size")) return;
-      view.settingsPage.back();
+      if (!shell.wideGrown) {
+        if (!check(one.popup.contentWidth === one.wideWidth && one.popup.contentHeight === shell.savedY && shell.find(view.settingsPage, "panelWidth").value === "wide",
+                   "Settings keep Wide's size")) return;
+        view.settingsPage.back();
+        // A short inbox gives Wide its 640; a long one makes it grow.
+        if (!check(one.popup.contentHeight === one.popup.fittedContentHeight(Kit.FoamyStyle.popupMaxHeight), "a short inbox keeps Wide at 640 (" + one.popup.contentHeight + ")")) return;
+        store.loadFixtures(shell.many().concat(shell.many().map(function(ticket) { return Object.assign({}, ticket, { id: String(Number(ticket.id) + 1000) }); })));
+        shell.wideGrown = true;
+        shell.step--;
+        return;
+      }
+      // Needs a reply shows five; the link shows the rest, and folds them again.
+      var moreLink = shell.find(view.overview, "awaitingMore");
+      var total = store.overview.awaitingTotal;
+      if (!check(total > 5 && view.overview.awaitingRows.count === 5 && moreLink.visible && moreLink.text === (total - 5) + " more need a reply",
+                 "the overview shows five that need a reply and counts the rest (" + total + ")")) return;
+      moreLink.clicked();
+      if (!check(view.overview.awaitingRows.count === total && moreLink.text === "Show less", "its link shows every ticket that needs a reply")) return;
+      moreLink.clicked();
+      if (!check(view.overview.awaitingRows.count === 5, "Show less folds them again")) return;
+      // At most 70 % of the 1080 px screen.
+      if (!check(one.popup.contentHeight > one.popup.fittedContentHeight(Kit.FoamyStyle.popupMaxHeight) && one.popup.contentHeight <= Math.round(1080 * 0.7),
+                 "a long inbox makes Wide grow, up to 70 % of the screen (" + one.popup.contentHeight + ")")) return;
       one.prefs.save("panelWidth", "standard");
       break;
     case 60:
@@ -1384,19 +1578,28 @@ ShellRoot {
       store.refresh();
       break;
     case 65:
-      if (!check(store.count === 1 && store.error === "Zendesk answered HTTP 503." && shell.footer().statusError && shell.footer().status === store.error,
-                 "a failed fetch keeps the inbox and the footer says why (" + store.error + ")")) return;
+      var refreshError = shell.find(one.popup.bodyItem, "refreshError");
+      if (!check(store.count === 1 && store.error === "Zendesk answered HTTP 503." && shell.footer().statusError && shell.footer().status.indexOf("Updated") === 0
+                 && one.popup.bodyItem.refreshFailed && refreshError.text === store.error && refreshError.linkText === "Retry",
+                 "a failed fetch keeps the inbox, the notice bar says why with Retry, the footer keeps the age in red (" + store.error + ")")) return;
       if (!check(store.failures === 1 && store.pollTimer.running && store.pollTimer.interval === 2 * store.refreshSeconds * 1000 && store.retryAt > Date.now(),
                  "a failed fetch doubles the wait for the next (" + store.failures + ", " + store.pollTimer.interval + ")")) return;
+      if (!check(button.trouble === "" && !one.barContent.troubleSign.visible && one.barContent.icon.opacity === 1, "one failed check does not mark the bar button yet")) return;
       // An expired sign-in: the account checks again.
       shell.statusRuns = 0;
       shell.fetchReply = { ok: false, code: "EXPIRED", error: "Zendesk answered HTTP %1.\u001f401" };
       shell.fetchEndBase = shell.fetchesEnded;
-      store.refresh();
+      // The notice bar's Retry refreshes.
+      shell.find(refreshError, "retryRefresh").clicked();
       break;
     case 66:
       if (!check(shell.statusRuns === 1 && store.failures === 2 && account.state === "signed_in" && account.user && account.user.name === "Alex",
                  "an expired sign-in makes the account check again (" + shell.statusRuns + " checks, " + store.failures + " failures)")) return;
+      // Two failed checks in a row: the inbox is stale. The icon dims, the
+      // sign shows, and the tooltip says since when.
+      if (!check(button.trouble === "stale" && one.barContent.troubleSign.visible && one.barContent.icon.opacity < 1 && button.lastLoaded !== ""
+                 && button.tooltipText.indexOf("not updated since " + button.lastLoaded) >= 0,
+                 "a stale inbox marks the bar button and says since when (" + button.tooltipText + ")")) return;
       // A reply with a broken ticket is refused whole: the valid new ticket
       // before it is not applied either.
       var refused = shell.inboxReply("failing", 9602);
@@ -1449,6 +1652,7 @@ ShellRoot {
       marked[0].group = "<s>IT</s>";
       marked[0].comments[0].body = "<img src=\"https://example.invalid/x\"> <i>hi</i>";
       marked[0].comments[0].author = "<u>Anna</u>";
+      marked[0].requester = "<u>Anna</u>";
       store.loadFixtures(marked);
       account.state = "signed_in";
       account.user = { name: "Alex", email: "alex@acme.example" };
@@ -1467,19 +1671,24 @@ ShellRoot {
         })(root);
         return found;
       };
-      // The markers that the list row or the pane does not show as plain text.
-      var notPlain = function(root) {
+      // Of the markers `marks`, those that `root` does not show as plain text.
+      var notPlain = function(root, marks) {
         var plain = withMarkup(root).filter(function(item) { return item.textFormat === Text.PlainText; });
-        return markup.filter(function(mark) { return !plain.some(function(item) { return item.text.indexOf(mark) >= 0; }); });
+        return marks.filter(function(mark) { return !plain.some(function(item) { return item.text.indexOf(mark) >= 0; }); });
       };
       var rich = withMarkup(view).filter(function(item) { return item.textFormat !== Text.PlainText; });
-      var rowMissing = notPlain(shell.find(view, "ticket-4821"));
-      var paneMissing = notPlain(view.pane);
+      // A Wide row shows the subject and the requester; the pane the comment
+      // and its author too; the group shows in the overview only.
+      var rowMissing = notPlain(shell.find(view, "ticket-4821"), ["<b>Bold", "<u>Anna"]);
+      var paneMissing = notPlain(view.pane, ["<b>Bold", "<img", "<u>Anna"]);
       if (!check(rich.length === 0 && rowMissing.length === 0 && paneMissing.length === 0,
-                 "markup in a subject, comment, author or group shows as plain text in the list row and the pane (rich: "
+                 "markup in a subject, comment, author or requester shows as plain text in the list row and the pane (rich: "
                  + rich.map(function(item) { return item.text; }).join(" | ") + "; not plain in the row: " + rowMissing.join(" ")
                  + "; not plain in the pane: " + paneMissing.join(" ") + ")")) return;
       view.toggleTicket("4821");
+      var overviewMissing = notPlain(view.overview, ["<b>Bold", "<s>IT"]);
+      if (!check(withMarkup(view).every(function(item) { return item.textFormat === Text.PlainText; }) && overviewMissing.length === 0,
+                 "markup in a subject or group shows as plain text in the overview (not plain: " + overviewMissing.join(" ") + ")")) return;
       // A ticket read up to a large comment id gets a reply: shown in the pane, only the reply is new.
       var big = shell.bigId;
       store.loadFixtures(shell.bigTicket([shell.bigComment(big, 10)], "2026-11-06T09:30:00Z"));
@@ -1574,7 +1783,7 @@ ShellRoot {
       break;
     case 80:
       var page = view.settingsPage;
-      shell.toEnd(page);
+      shell.toAccount(page);
       var address = shell.find(page, "addressField");
       var signIn = shell.find(page, "accountButton");
       shell.savedAddress = one.prefs.value("zendeskAddress");
@@ -1608,7 +1817,7 @@ ShellRoot {
       break;
     case 83:
       var page = view.settingsPage;
-      shell.toEnd(page);
+      shell.toAccount(page);
       var signIn = shell.find(page, "accountButton");
       if (!check(shell.onPage(page, signIn) && shell.onPage(page, shell.find(page, "addressField")), "signed out again, Sign in and the address field are on screen")) return;
       ev.mouseClick(signIn, signIn.width / 2, signIn.height / 2, Qt.LeftButton, Qt.NoModifier, -1);
@@ -1863,6 +2072,13 @@ try:
         if mode != 0o200 or broken.read_text() != BROKEN_READ:
             print("FAIL: the unreadable read file was written over")
             sys.exit(1)
+    # A binding loop is a defect even when the value comes out right: it
+    # writes a warning to the shell log on every pass (as a snooze without a
+    # weekly schedule once did, step 30).
+    loops = sorted({line.strip() for line in run.log.splitlines() if "Binding loop detected" in line})
+    if run.ok and loops:
+        print("FAIL: QML binding loops:", *loops, sep="\n  ")
+        sys.exit(1)
     print(run.log if not run.ok else "PASS: real plugin runtime interactions")
     sys.exit(0 if run.ok else 1)
 finally:

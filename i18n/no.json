@@ -14,7 +14,6 @@
   "Can't sign in to Zendesk: the sign-in's lock file can't be used (%1).": "Kan ikke logge på Zendesk: låsefilen for påloggingen kan ikke brukes (%1).",
   "Can't use %1 (%2).": "Kan ikke bruke %1 (%2).",
   "Cancel": "Avbryt",
-  "Check every": "Sjekk hvert",
   "Checking the sign-in…": "Sjekker påloggingen…",
   "Choose a redirect port between 1024 and 65535.": "Velg en omdirigeringsport mellom 1024 og 65535.",
   "Closed": "Lukket",
@@ -26,7 +25,6 @@
   "Dim or hide Zendesk outside your working hours.": "Ton ned eller skjul Zendesk utenfor arbeidstiden din.",
   "Enter a number from %1 to %2": "Skriv inn et tall fra %1 til %2",
   "Enter the OAuth client's unique identifier.": "Skriv inn OAuth-klientens unike identifikator.",
-  "Enter the Zendesk address and OAuth client ID below.": "Skriv inn Zendesk-adressen og OAuth-klient-ID-en nedenfor.",
   "Enter your Zendesk address, like acme or acme.zendesk.com.": "Skriv inn Zendesk-adressen din, for eksempel acme eller acme.zendesk.com.",
   "Expand ticket": "Åpne saken",
   "Finish signing in in your browser.": "Fullfør påloggingen i nettleseren.",
@@ -38,7 +36,6 @@
   "High": "Høy",
   "HTTPS isn't supported on this CPU (foamy helpers need AES, carry-less multiply, AVX2, BMI2 and ADX on x86-64, or the crypto extensions on ARMv8)": "HTTPS støttes ikke på denne prosessoren (foamy-hjelpeprogrammene trenger AES, carry-less multiply, AVX2, BMI2 og ADX på x86-64, eller kryptoutvidelsene på ARMv8)",
   "Loading tickets…": "Henter saker…",
-  "Loading…": "Henter…",
   "Local time. Turn a day off to skip it. Overnight ranges are supported.": "Lokal tid. Slå av en dag for å hoppe over den. Perioder over midnatt støttes.",
   "Low": "Lav",
   "Mark all as read": "Merk alle som lest",
@@ -70,7 +67,6 @@
   "Port %1 is in use. Choose another redirect port (and update the OAuth client).": "Port %1 er i bruk. Velg en annen omdirigeringsport (og oppdater OAuth-klienten).",
   "Read state stays on this computer; nothing changes in Zendesk.": "Lesestatus lagres bare på denne maskinen; ingenting endres i Zendesk.",
   "Read tickets": "Leste saker",
-  "Read tickets leave the list and come back with their next update.": "Leste saker forsvinner fra listen og kommer tilbake ved neste oppdatering.",
   "Redirect URL for the OAuth client: %1": "Omdirigerings-URL for OAuth-klienten: %1",
   "Redirect port": "Omdirigeringsport",
   "Refresh": "Oppdater",
@@ -88,7 +84,6 @@
   "Sign in again to keep checking for updates.": "Logg på igjen for å fortsette å se etter oppdateringer.",
   "Sign in to Zendesk in the settings.": "Logg på Zendesk i innstillingene.",
   "Sign in to see your tickets": "Logg på for å se sakene dine",
-  "Sign in with your Zendesk account. The sign-in is kept in your keyring.": "Logg på med Zendesk-kontoen din. Påloggingen lagres i nøkkelringen.",
   "Sign out": "Logg av",
   "Sign-in expired": "Påloggingen er utløpt",
   "Sign-in was cancelled in the browser.": "Påloggingen ble avbrutt i nettleseren.",
@@ -135,8 +130,6 @@
   "Zendesk sent no user.": "Zendesk sendte ingen bruker.",
   "Zendesk — not signed in": "Zendesk – ikke pålogget",
   "Zendesk — outside your schedule": "Zendesk – utenfor tidsplanen",
-  "internal note": "internt notat",
-  "new": "ny",
   "outside your schedule": "utenfor tidsplanen",
   "unread": "ulest",
   "%1 marked as read": {
@@ -154,10 +147,6 @@
   "%1 unread": {
     "one": "%1 ulest",
     "other": "%1 uleste"
-  },
-  "%1 updates waiting — collapse tickets to show": {
-    "one": "%1 oppdatering venter – lukk sakene for å vise den",
-    "other": "%1 oppdateringer venter – lukk sakene for å vise dem"
   },
   "Show %1 earlier comments": {
     "one": "Vis %1 tidligere kommentar",
@@ -210,15 +199,12 @@
   "Can't open the browser": "Kan ikke åpne nettleseren",
   "Hide ticket": "Skjul saken",
   "Show ticket": "Vis saken",
-  "From %1": "Fra %1",
   "New comments": "Nye kommentarer",
   "Earlier comments": "Tidligere kommentarer",
   "Internal note": "Internt notat",
   "No comments to show": "Ingen kommentarer å vise",
   "Earlier comments are in Zendesk": "Eldre kommentarer finner du i Zendesk",
   "Unread": "Ulest",
-  "Waiting for a reply": "Venter på svar",
-  "Nobody is waiting for a reply": "Ingen venter på svar",
   "By group": "Per gruppe",
   "No group": "Ingen gruppe",
   "Panel": "Panel",
@@ -233,23 +219,9 @@
     "one": "%1 dag",
     "other": "%1 dager"
   },
-  "%1 updates waiting — close the ticket to show": {
-    "one": "%1 oppdatering venter – lukk saken for å vise den",
-    "other": "%1 oppdateringer venter – lukk saken for å vise dem"
-  },
-  "%1 more waiting": {
-    "one": "%1 til venter",
-    "other": "%1 til venter"
-  },
   "%1 more groups": {
     "one": "%1 gruppe til",
     "other": "%1 grupper til"
-  },
-  "Comments haven't loaded yet. Close the ticket to get them with the next update.": "Kommentarene er ikke hentet ennå. Lukk saken for å få dem med neste oppdatering.",
-  "Newer comments haven't loaded yet. Close the ticket to get them with the next update.": "Nyere kommentarer er ikke hentet ennå. Lukk saken for å få dem med neste oppdatering.",
-  "%1 more may be waiting: their comments haven't loaded yet": {
-    "one": "%1 til kan vente: kommentarene er ikke hentet ennå",
-    "other": "%1 til kan vente: kommentarene er ikke hentet ennå"
   },
   "Redo": "Gjør om",
   "Cut": "Klipp ut",
@@ -259,5 +231,43 @@
   "Clipboard paste timed out. Copy the text again.": "Innliming fra utklippstavlen tok for lang tid. Kopier teksten på nytt.",
   "Clipboard text is too large or contains invalid characters.": "Teksten på utklippstavlen er for stor eller inneholder ugyldige tegn.",
   "Could not paste clipboard text. Copy plain text and try again.": "Kunne ikke lime inn fra utklippstavlen. Kopier ren tekst og prøv igjen.",
-  "(no subject)": "(uten emne)"
+  "(no subject)": "(uten emne)",
+  "Comments haven't loaded yet": "Kommentarene er ikke hentet ennå",
+  "Collapse": "Lukk",
+  "Comments haven't loaded yet. They come with the next update.": "Kommentarene er ikke hentet ennå. De kommer med neste oppdatering.",
+  "Newer comments haven't loaded yet. They come with the next update.": "Nyere kommentarer er ikke hentet ennå. De kommer med neste oppdatering.",
+  "Show quoted text": "Vis sitert tekst",
+  "Hide quoted text": "Skjul sitert tekst",
+  "Needs a reply": "Trenger svar",
+  "Nothing needs a reply": "Ingen saker trenger svar",
+  "%1 more need a reply": {
+    "one": "%1 til trenger svar",
+    "other": "%1 til trenger svar"
+  },
+  "%1 more may need a reply: their comments haven't loaded yet": {
+    "one": "%1 til kan trenge svar: kommentarene er ikke hentet ennå",
+    "other": "%1 til kan trenge svar: kommentarene er ikke hentet ennå"
+  },
+  "dddd d MMMM": "dddd d. MMMM",
+  "Signed out": "Logget av",
+  "Sign in again in the settings.": "Logg på igjen i innstillingene.",
+  "Snoozed": "Slumrer",
+  "Outside your schedule": "Utenfor tidsplanen",
+  "%1 updates waiting": {
+    "one": "%1 oppdatering venter",
+    "other": "%1 oppdateringer venter"
+  },
+  "Show": "Vis",
+  "Account": "Konto",
+  "Before you can sign in, a Zendesk admin must create an OAuth client. The sign-in is kept in your keyring.": "Før du kan logge på, må en Zendesk-administrator opprette en OAuth-klient. Påloggingen lagres i nøkkelringen.",
+  "Enter the Zendesk address and OAuth client ID above.": "Skriv inn Zendesk-adressen og OAuth-klient-ID-en ovenfor.",
+  "Wide shows the list and a reading pane side by side.": "Bred viser listen og en leserute side om side.",
+  "Refresh every": "Oppdater hvert",
+  "Read tickets leave the list and come back with their next update. The two settings below then have no effect.": "Leste saker forsvinner fra listen og kommer tilbake ved neste oppdatering. De to innstillingene under har da ingen virkning.",
+  "Zendesk — sign-in expired": "Zendesk – påloggingen er utløpt",
+  "Zendesk — can't sign in": "Zendesk – kan ikke logge på",
+  "Zendesk — checking the sign-in…": "Zendesk – sjekker påloggingen…",
+  "Zendesk — can't load tickets": "Zendesk – kan ikke hente saker",
+  "Zendesk — not updated since %1": "Zendesk – ikke oppdatert siden %1",
+  "not updated since %1": "ikke oppdatert siden %1"
 }

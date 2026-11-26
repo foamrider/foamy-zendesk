@@ -14,7 +14,6 @@
   "Can't sign in to Zendesk: the sign-in's lock file can't be used (%1).": "Can't sign in to Zendesk: the sign-in's lock file can't be used (%1).",
   "Can't use %1 (%2).": "Can't use %1 (%2).",
   "Cancel": "Cancel",
-  "Check every": "Check every",
   "Checking the sign-in…": "Checking the sign-in…",
   "Choose a redirect port between 1024 and 65535.": "Choose a redirect port between 1024 and 65535.",
   "Closed": "Closed",
@@ -26,7 +25,6 @@
   "Dim or hide Zendesk outside your working hours.": "Dim or hide Zendesk outside your working hours.",
   "Enter a number from %1 to %2": "Enter a number from %1 to %2",
   "Enter the OAuth client's unique identifier.": "Enter the OAuth client's unique identifier.",
-  "Enter the Zendesk address and OAuth client ID below.": "Enter the Zendesk address and OAuth client ID below.",
   "Enter your Zendesk address, like acme or acme.zendesk.com.": "Enter your Zendesk address, like acme or acme.zendesk.com.",
   "Expand ticket": "Expand ticket",
   "Finish signing in in your browser.": "Finish signing in in your browser.",
@@ -38,7 +36,6 @@
   "High": "High",
   "HTTPS isn't supported on this CPU (foamy helpers need AES, carry-less multiply, AVX2, BMI2 and ADX on x86-64, or the crypto extensions on ARMv8)": "HTTPS isn't supported on this CPU (foamy helpers need AES, carry-less multiply, AVX2, BMI2 and ADX on x86-64, or the crypto extensions on ARMv8)",
   "Loading tickets…": "Loading tickets…",
-  "Loading…": "Loading…",
   "Local time. Turn a day off to skip it. Overnight ranges are supported.": "Local time. Turn a day off to skip it. Overnight ranges are supported.",
   "Low": "Low",
   "Mark all as read": "Mark all as read",
@@ -70,7 +67,6 @@
   "Port %1 is in use. Choose another redirect port (and update the OAuth client).": "Port %1 is in use. Choose another redirect port (and update the OAuth client).",
   "Read state stays on this computer; nothing changes in Zendesk.": "Read state stays on this computer; nothing changes in Zendesk.",
   "Read tickets": "Read tickets",
-  "Read tickets leave the list and come back with their next update.": "Read tickets leave the list and come back with their next update.",
   "Redirect URL for the OAuth client: %1": "Redirect URL for the OAuth client: %1",
   "Redirect port": "Redirect port",
   "Refresh": "Refresh",
@@ -88,7 +84,6 @@
   "Sign in again to keep checking for updates.": "Sign in again to keep checking for updates.",
   "Sign in to Zendesk in the settings.": "Sign in to Zendesk in the settings.",
   "Sign in to see your tickets": "Sign in to see your tickets",
-  "Sign in with your Zendesk account. The sign-in is kept in your keyring.": "Sign in with your Zendesk account. The sign-in is kept in your keyring.",
   "Sign out": "Sign out",
   "Sign-in expired": "Sign-in expired",
   "Sign-in was cancelled in the browser.": "Sign-in was cancelled in the browser.",
@@ -135,8 +130,6 @@
   "Zendesk sent no user.": "Zendesk sent no user.",
   "Zendesk — not signed in": "Zendesk — not signed in",
   "Zendesk — outside your schedule": "Zendesk — outside your schedule",
-  "internal note": "internal note",
-  "new": "new",
   "outside your schedule": "outside your schedule",
   "unread": "unread",
   "%1 marked as read": {
@@ -154,10 +147,6 @@
   "%1 unread": {
     "one": "%1 unread",
     "other": "%1 unread"
-  },
-  "%1 updates waiting — collapse tickets to show": {
-    "one": "%1 update waiting — collapse tickets to show",
-    "other": "%1 updates waiting — collapse tickets to show"
   },
   "Show %1 earlier comments": {
     "one": "Show %1 earlier comment",
@@ -210,15 +199,12 @@
   "Can't open the browser": "Can't open the browser",
   "Hide ticket": "Hide ticket",
   "Show ticket": "Show ticket",
-  "From %1": "From %1",
   "New comments": "New comments",
   "Earlier comments": "Earlier comments",
   "Internal note": "Internal note",
   "No comments to show": "No comments to show",
   "Earlier comments are in Zendesk": "Earlier comments are in Zendesk",
   "Unread": "Unread",
-  "Waiting for a reply": "Waiting for a reply",
-  "Nobody is waiting for a reply": "Nobody is waiting for a reply",
   "By group": "By group",
   "No group": "No group",
   "Panel": "Panel",
@@ -233,23 +219,9 @@
     "one": "%1 day",
     "other": "%1 days"
   },
-  "%1 updates waiting — close the ticket to show": {
-    "one": "%1 update waiting — close the ticket to show",
-    "other": "%1 updates waiting — close the ticket to show"
-  },
-  "%1 more waiting": {
-    "one": "%1 more waiting",
-    "other": "%1 more waiting"
-  },
   "%1 more groups": {
     "one": "%1 more group",
     "other": "%1 more groups"
-  },
-  "Comments haven't loaded yet. Close the ticket to get them with the next update.": "Comments haven't loaded yet. Close the ticket to get them with the next update.",
-  "Newer comments haven't loaded yet. Close the ticket to get them with the next update.": "Newer comments haven't loaded yet. Close the ticket to get them with the next update.",
-  "%1 more may be waiting: their comments haven't loaded yet": {
-    "one": "%1 more may be waiting: its comments haven't loaded yet",
-    "other": "%1 more may be waiting: their comments haven't loaded yet"
   },
   "Redo": "Redo",
   "Cut": "Cut",
@@ -259,5 +231,43 @@
   "Clipboard paste timed out. Copy the text again.": "Clipboard paste timed out. Copy the text again.",
   "Clipboard text is too large or contains invalid characters.": "Clipboard text is too large or contains invalid characters.",
   "Could not paste clipboard text. Copy plain text and try again.": "Could not paste clipboard text. Copy plain text and try again.",
-  "(no subject)": "(no subject)"
+  "(no subject)": "(no subject)",
+  "Comments haven't loaded yet": "Comments haven't loaded yet",
+  "Collapse": "Collapse",
+  "Comments haven't loaded yet. They come with the next update.": "Comments haven't loaded yet. They come with the next update.",
+  "Newer comments haven't loaded yet. They come with the next update.": "Newer comments haven't loaded yet. They come with the next update.",
+  "Show quoted text": "Show quoted text",
+  "Hide quoted text": "Hide quoted text",
+  "Needs a reply": "Needs a reply",
+  "Nothing needs a reply": "Nothing needs a reply",
+  "%1 more need a reply": {
+    "one": "%1 more needs a reply",
+    "other": "%1 more need a reply"
+  },
+  "%1 more may need a reply: their comments haven't loaded yet": {
+    "one": "%1 more may need a reply: its comments haven't loaded yet",
+    "other": "%1 more may need a reply: their comments haven't loaded yet"
+  },
+  "dddd d MMMM": "dddd d MMMM",
+  "Signed out": "Signed out",
+  "Sign in again in the settings.": "Sign in again in the settings.",
+  "Snoozed": "Snoozed",
+  "Outside your schedule": "Outside your schedule",
+  "%1 updates waiting": {
+    "one": "%1 update waiting",
+    "other": "%1 updates waiting"
+  },
+  "Show": "Show",
+  "Account": "Account",
+  "Before you can sign in, a Zendesk admin must create an OAuth client. The sign-in is kept in your keyring.": "Before you can sign in, a Zendesk admin must create an OAuth client. The sign-in is kept in your keyring.",
+  "Enter the Zendesk address and OAuth client ID above.": "Enter the Zendesk address and OAuth client ID above.",
+  "Wide shows the list and a reading pane side by side.": "Wide shows the list and a reading pane side by side.",
+  "Refresh every": "Refresh every",
+  "Read tickets leave the list and come back with their next update. The two settings below then have no effect.": "Read tickets leave the list and come back with their next update. The two settings below then have no effect.",
+  "Zendesk — sign-in expired": "Zendesk — sign-in expired",
+  "Zendesk — can't sign in": "Zendesk — can't sign in",
+  "Zendesk — checking the sign-in…": "Zendesk — checking the sign-in…",
+  "Zendesk — can't load tickets": "Zendesk — can't load tickets",
+  "Zendesk — not updated since %1": "Zendesk — not updated since %1",
+  "not updated since %1": "not updated since %1"
 }

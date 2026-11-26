@@ -1,8 +1,8 @@
 # foamy-kit.lock: written by foamy-kit sync.sh; do not edit.
 # Hashes are of each file's body (the file without its stamp line);
 # notices, REVIEW.md and kit/i18n-texts.json are hashed whole. tests/kit-check.sh verifies them.
-version 0.14.1
-source f9bb9f43d206424e7554ab82cc5b97507f458ebc
+version 0.14.2
+source 9b904f07c965b69e72d5867e184b6bc1269dbd08
 components FoamyAction,FoamyButton,FoamyClickAway,FoamyClipboard,FoamyCursor,FoamyDropdown,FoamyHeader,FoamyHeroBand,FoamyI18n,FoamyIcon,FoamyInfoNote,FoamyIpc,FoamyMenu,FoamyMotion,FoamyNative,FoamyNumberField,FoamyPalette,FoamyPanelFooter,FoamyPopup,FoamyPrefs,FoamySchedule,FoamySettings,FoamyShared,FoamyStyle,FoamyText,FoamyWallClock,FoamyWheelScroll,SafeTextField
 5079c3e4ecd2ca5399dff48f64327729d8e84916a4c73fbcb9e0491b16014990  .github/workflows/checks.yml
 98bd9e4430551129a6f4c309ee8ba59b66514db5ca1d4c5b7151ec308f6d632b  .github/workflows/verify-native.yml
@@ -20,7 +20,7 @@ cbc26d6a043bec397561973249cfec1a2a1ce2b9d4ce634d5daa43851d0c029d  kit/FoamyClipb
 7d0b9afb3874ce7463c04cd3e87d3740d39be4b20c9a2befbe7a231719533a0f  kit/FoamyHeroBand.qml
 ef1cbd050ad9980e584bd165d7a6e3543cfb9da7de868e7a86f16159ff1ecd9d  kit/FoamyI18n.qml
 a541e98f164e6c2e83b493341e50b128ba539dc4f32cf2253fb688731a513c3c  kit/FoamyI18nText.js
-4adb3f4f9bfce18656707b8575ceceae2d42bc752e25b0fa8ab82aaa5e99867f  kit/FoamyIcon.qml
+4f95941a0a7b6051d5a9e5570679dc03425510f6e2813dae2738766680ee5124  kit/FoamyIcon.qml
 c0b06867bfa1e08d7f7ba42acb6718cb9db71120664edb068455af5008280069  kit/FoamyInfoNote.qml
 59287c6def66c4158c02d1569fd08656ef9684f82ed324544c4141b79a086ace  kit/FoamyIpc.qml
 04c7e30a4501692cfa778a7999d12f42e81c03047cf06a1a8c69a966f74b915a  kit/FoamyIpcPreference.qml
@@ -31,7 +31,7 @@ e9b6a91b5308809f93fce754319135cbac17fa92ab9546fca6bd51691dd9d50e  kit/FoamyMenuI
 ac985fdddb1be105d4ca5590c31fb7972e55cf5b05a792ef618a80afda25980f  kit/FoamyMotion.qml
 0e877660044748bd8926a24de47ee8f6f194e085fb20b794e0621b039eda1eb4  kit/FoamyNative.js
 78a78dba44e93b9e3e757749603f6ca3ec758020181811f1ba1ddce378618944  kit/FoamyNumberField.qml
-873a308000022a89bd2ea2a137c02ff17b4a357c236456974807251a1ee35748  kit/FoamyPalette.qml
+293726eb336187d2a6fd0baa5e3a221209c099b0626af2aa4b6e1a012ec534f0  kit/FoamyPalette.qml
 2bf04951d2e8f9b8db9dc873cfe976414781934e68a84bdd31e615774255b201  kit/FoamyPanelFooter.qml
 16d82ed7113fdb973317a19874ad7d0358f287b2fe8c8e566eec69e01474bd4f  kit/FoamyPopup.qml
 6cc5852ff9a1eabd8b4868035a9e246f36382c48fc90bebeafb87859239d3432  kit/FoamyPrefs.js

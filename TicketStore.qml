@@ -61,8 +61,19 @@ QtObject {
   property var week: []
   property var scheduleOverride: null
   readonly property bool overriding: !!scheduleOverride && clock.date.getTime() < scheduleOverride.until
+  // The clock runs while a schedule or an override is set, not while one is
+  // in force: `overriding` reads the clock, and a clock that it turned on
+  // would set its date while `overriding` is evaluated (a binding loop). An
+  // override that has run out is dropped after this change is handled (a
+  // drop inside it would loop the same way), so the clock stops again.
   property FoamyWallClock clock: FoamyWallClock {
-    enabled: store.scheduleEnabled || store.overriding
+    enabled: store.scheduleEnabled || store.scheduleOverride !== null
+  }
+  onOverridingChanged: if (!overriding && scheduleOverride !== null)
+    Qt.callLater(dropOverride)
+  function dropOverride() {
+    if (!overriding && scheduleOverride !== null)
+      scheduleOverride = null
   }
   readonly property bool withinSchedule: Schedule.effective(clock.date, scheduleEnabled, week, scheduleOverride)
   // Snoozed from the popup (not just outside the scheduled hours).
@@ -105,8 +116,18 @@ QtObject {
   property int firstWaitingIndex: -1
   property int waitingCount: 0
   property int unreadCount: 0
-  // The Wide panel's overview of the listed tickets (Model.overview).
+  // The Wide panel's overview of the whole inbox (Model.overview): read
+  // tickets count too, whatever "Hide read tickets" says.
   property var overview: Model.overview([])
+  // The overview lists every ticket that needs a reply, not only the first
+  // five. Kept here, not in a popup: `overview.awaiting` is the rows that
+  // show, and the keyboard cursor counts its stops from it. Folded again when
+  // the last popup closes.
+  property bool overviewExpanded: false
+  function expandOverview(all) {
+    overviewExpanded = all === true
+  }
+  onOverviewExpandedChanged: sync()
   // Counts every sync(), so a binding that looks a ticket up in `tickets`
   // (the Wide panel's selected ticket) follows moves and changes.
   property int revision: 0
@@ -151,7 +172,15 @@ QtObject {
     if (tickets.count > wanted.length)
       tickets.remove(wanted.length, tickets.count - wanted.length)
     firstWaitingIndex = waitingAt
-    overview = Model.overview(wanted)
+    // "Hide read tickets" filters the list only: a read ticket still needs
+    // its reply and still belongs to its group.
+    var inbox = hideRead ? Model.visible(state, {
+      groupWaiting: groupWaiting,
+      held: held
+    }) : wanted
+    overview = Model.overview(inbox, {
+      all: overviewExpanded
+    })
     revision++
   }
 
@@ -211,6 +240,10 @@ QtObject {
       return
     holds = next
     sync()
+  }
+  // Whether the inbox holds the ticket, listed or not (Hide read tickets).
+  function inInbox(id) {
+    return Object.prototype.hasOwnProperty.call(state.tickets, String(id))
   }
   function ticketById(id) {
     for (var i = 0; i < tickets.count; i++)
@@ -358,6 +391,8 @@ QtObject {
   property var seen: Model.notices()
   // A popup is open on some monitor: its inbox shows what came in.
   readonly property bool watching: FoamyShared.demandCount("zendesk") > 0
+  onWatchingChanged: if (!watching)
+    overviewExpanded = false
   // Sends a notification (an argv); tests replace it.
   property var sendNotification: function (argv) {
     Quickshell.execDetached(argv)
@@ -579,6 +614,7 @@ QtObject {
     generation++
     fetchProcess.running = false
     state = Model.empty()
+    overviewExpanded = false
     pending = null
     pendingChanges = 0
     lastBatch = []
