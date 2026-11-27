@@ -1,8 +1,10 @@
 //! HTTPS to the Zendesk account: the kit's TLS (Graviola, system roots),
 //! proxies from the environment, bounded replies, and one absolute deadline
 //! per request for every socket read and write (the connector below is
-//! foamy-train's, which closes ureq's CONNECT-reply gap).
+//! foamy-train's, which closes ureq's CONNECT-reply gap), and a connect that
+//! falls back between IPv6 and IPv4 addresses (foamy-todoist's).
 
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -10,7 +12,7 @@ use foamy_helper::{Failure, tls};
 use serde_json::Value;
 use ureq::config::AutoHeaderValue;
 use ureq::tls::{Certificate, RootCerts, TlsConfig, TlsProvider};
-use ureq::unversioned::resolver::DefaultResolver;
+use ureq::unversioned::resolver::{DefaultResolver, Resolver};
 use ureq::unversioned::transport::{
     Buffers, ConnectProxyConnector, ConnectionDetails, Connector, NextTimeout, RustlsConnector,
     TcpConnector, Transport,
@@ -94,6 +96,104 @@ impl<In: Transport> Connector<In> for DeadlineConnector {
     }
 }
 
+/// How long a connect to one address may take while other addresses are
+/// left to try. A healthy route answers well within it, and it leaves room
+/// for one lost SYN (Linux resends it after 1 s).
+const ATTEMPT: Duration = Duration::from_millis(2500);
+
+/// Opens the TCP connection like ureq's `TcpConnector`, one address at a
+/// time, but each attempt except the last gets at most [`ATTEMPT`] and the
+/// addresses alternate between IPv6 and IPv4 (RFC 8305). ureq alone splits
+/// the budget geometrically, so a host that lists eight AAAA records first
+/// left its IPv4 addresses a few milliseconds when the IPv6
+/// route drops packets.
+#[derive(Debug, Default)]
+struct FallbackConnector(TcpConnector);
+
+impl<In: Transport> Connector<In> for FallbackConnector {
+    type Out = <TcpConnector as Connector<In>>::Out;
+
+    fn connect(
+        &self,
+        details: &ConnectionDetails,
+        chained: Option<In>,
+    ) -> Result<Option<Self::Out>, ureq::Error> {
+        if chained.is_some() {
+            return self.0.connect(details, chained);
+        }
+        let started = Instant::now();
+        let budget = *details.timeout.after;
+        let addrs = interleave(&details.addrs);
+        let mut last = None;
+        for (index, &addr) in addrs.iter().enumerate() {
+            let left = budget.saturating_sub(started.elapsed());
+            if left.is_zero() {
+                break;
+            }
+            // The last address keeps the whole remaining budget, so a host
+            // with one address waits as long as before.
+            let attempt = if index + 1 == addrs.len() {
+                left
+            } else {
+                left.min(ATTEMPT)
+            };
+            let mut one = details.resolver.empty();
+            one.push(addr);
+            let single = ConnectionDetails {
+                uri: details.uri,
+                addrs: one,
+                config: details.config,
+                request_level: details.request_level,
+                resolver: details.resolver,
+                now: (details.current_time)(),
+                timeout: NextTimeout {
+                    after: attempt.into(),
+                    ..details.timeout
+                },
+                current_time: details.current_time.clone(),
+                run_connector: details.run_connector.clone(),
+                register_shutdown: details.register_shutdown.clone(),
+            };
+            match self.0.connect(&single, None) {
+                Err(error @ ureq::Error::Timeout(_)) => last = Some(error),
+                Err(ureq::Error::Io(error)) if elsewhere(&error) => {
+                    last = Some(ureq::Error::Io(error));
+                }
+                done => return done,
+            }
+        }
+        if started.elapsed() >= budget {
+            return Err(ureq::Error::Timeout(details.timeout.reason));
+        }
+        Err(last
+            .unwrap_or_else(|| std::io::Error::from(std::io::ErrorKind::ConnectionRefused).into()))
+    }
+}
+
+/// A failure of this address only: another one may still connect. The same
+/// kinds ureq moves on for.
+fn elsewhere(error: &std::io::Error) -> bool {
+    use std::io::ErrorKind::*;
+    matches!(
+        error.kind(),
+        ConnectionRefused | HostUnreachable | NetworkUnreachable | AddrNotAvailable
+    )
+}
+
+/// The resolver's addresses with the families alternating, starting with
+/// the family of its first: v6 v6 v4 v4 becomes v6 v4 v6 v4.
+fn interleave(addrs: &[SocketAddr]) -> Vec<SocketAddr> {
+    let first_v6 = addrs.first().is_some_and(SocketAddr::is_ipv6);
+    let (first, other): (Vec<SocketAddr>, Vec<SocketAddr>) =
+        addrs.iter().partition(|addr| addr.is_ipv6() == first_v6);
+    let mut out = Vec::with_capacity(addrs.len());
+    for index in 0..first.len().max(other.len()) {
+        out.extend(first.get(index));
+        out.extend(other.get(index));
+    }
+    out
+}
+
 /// Every read and write capped at the time left before the request's deadline.
 #[derive(Debug)]
 struct DeadlineTransport<T> {
@@ -159,6 +259,11 @@ pub struct Client {
 
 impl Client {
     pub fn new(base: String, timeout: Duration) -> Client {
+        Client::with_resolver(base, timeout, DefaultResolver::default())
+    }
+
+    /// [`Client::new`] with another resolver: tests give fixed addresses.
+    fn with_resolver(base: String, timeout: Duration, resolver: impl Resolver) -> Client {
         let deadline = Deadline::default();
         let mut config = Agent::config_builder()
             .http_status_as_error(false)
@@ -181,12 +286,12 @@ impl Client {
         }
         let connector =
             ().chain(ConnectProxyConnector::default())
-                .chain(TcpConnector::default())
+                .chain(FallbackConnector::default())
                 .chain(DeadlineConnector(deadline.clone()))
                 .chain(RustlsConnector::default());
         Client {
             base,
-            agent: Agent::with_parts(config.build(), connector, DefaultResolver::default()),
+            agent: Agent::with_parts(config.build(), connector, resolver),
             deadline,
             timeout,
         }
@@ -271,8 +376,9 @@ fn classify(error: ureq::Error) -> Failure {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::{Read, Write};
-    use std::net::TcpListener;
+    use std::io::{ErrorKind, Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use ureq::unversioned::resolver::ResolvedSocketAddrs;
 
     #[test]
     fn only_loopback_overrides_are_accepted() {
@@ -385,5 +491,126 @@ mod tests {
         // `/plain` was asked after `/moved` returned, so a followed redirect
         // would be in the list by now.
         assert_eq!(*paths.lock().unwrap(), ["/big", "/moved", "/plain"]);
+    }
+
+    /// The addresses the test chooses, whatever the URL's host.
+    #[derive(Debug)]
+    struct Fixed(Vec<SocketAddr>);
+
+    impl Resolver for Fixed {
+        fn resolve(
+            &self,
+            _uri: &ureq::http::Uri,
+            _config: &ureq::config::Config,
+            _timeout: NextTimeout,
+        ) -> Result<ResolvedSocketAddrs, ureq::Error> {
+            let mut addrs = self.empty();
+            for &addr in &self.0 {
+                addrs.push(addr);
+            }
+            Ok(addrs)
+        }
+    }
+
+    /// An address that never answers a connect, like a route that drops
+    /// packets: a listener whose accept queue is full, so the kernel drops
+    /// every new SYN. Keep the returned listener and streams alive.
+    fn silent(ip: &str) -> (SocketAddr, TcpListener, Vec<TcpStream>) {
+        let listener = TcpListener::bind((ip, 0)).unwrap();
+        let addr = listener.local_addr().unwrap();
+        let mut queued = Vec::new();
+        loop {
+            match TcpStream::connect_timeout(&addr, Duration::from_millis(200)) {
+                Ok(stream) => queued.push(stream),
+                Err(error) if error.kind() == ErrorKind::TimedOut => {
+                    return (addr, listener, queued);
+                }
+                Err(error) => panic!("filling the accept queue: {error}"),
+            }
+            assert!(queued.len() < 8192, "the accept queue never filled");
+        }
+    }
+
+    /// An address that refuses at once: nothing listens there any more.
+    fn refusing() -> SocketAddr {
+        TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+    }
+
+    #[test]
+    fn a_silent_ipv6_route_falls_back_to_ipv4() {
+        // A CloudFront-like host: AAAA records first. The IPv6 ones never
+        // answer; the IPv4 one is a working server.
+        let (v6, _listener, _queued) = silent("::1");
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let v4 = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buffer = [0u8; 1024];
+            let _ = stream.read(&mut buffer);
+            let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}");
+        });
+        let client =
+            Client::with_resolver(format!("http://{v4}"), TIMEOUT, Fixed(vec![v6, v6, v6, v4]));
+        let started = Instant::now();
+        let reply = client
+            .request("GET", "/x", None, None)
+            .unwrap_or_else(|failure| panic!("no fallback: {failure:?}"));
+        assert_eq!(reply.status, 200);
+        server.join().unwrap();
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "IPv4 was reached only after {:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn a_host_that_never_answers_times_out_at_the_deadline() {
+        let (v4, _listener4, _queued4) = silent("127.0.0.1");
+        let (v6, _listener6, _queued6) = silent("::1");
+        let limit = Duration::from_secs(3);
+        let client = Client::with_resolver(
+            "http://127.0.0.1:9".to_string(),
+            limit,
+            Fixed(vec![v6, v4, v6, v4]),
+        );
+        let started = Instant::now();
+        let failure = client.request("GET", "/x", None, None).unwrap_err();
+        assert_eq!(failure.code, "TIMEOUT");
+        assert!(
+            started.elapsed() < limit + Duration::from_millis(500),
+            "the connect outlasted the request's limit: {:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn a_host_that_refuses_everywhere_is_a_network_failure() {
+        let client = Client::with_resolver(
+            "http://127.0.0.1:9".to_string(),
+            TIMEOUT,
+            Fixed(vec![refusing(), refusing()]),
+        );
+        let started = Instant::now();
+        let failure = client.request("GET", "/x", None, None).unwrap_err();
+        assert_eq!(failure.code, "NETWORK");
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn the_address_families_alternate() {
+        let v6: SocketAddr = "[2001:db8::1]:443".parse().unwrap();
+        let v4: SocketAddr = "192.0.2.1:443".parse().unwrap();
+        for (given, expected) in [
+            (vec![v6, v6, v4, v4], vec![v6, v4, v6, v4]),
+            (vec![v4, v6, v6, v6], vec![v4, v6, v6, v6]),
+            (vec![v6, v6], vec![v6, v6]),
+            (vec![], vec![]),
+        ] {
+            assert_eq!(interleave(&given), expected, "{given:?}");
+        }
     }
 }
