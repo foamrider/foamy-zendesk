@@ -120,6 +120,11 @@ Item {
         return true
     return false
   }
+  // The cursor on `stop` as the keys left it: their accent border shows.
+  function keysAt(view, stop) {
+    view.cursor.index = stop
+    view.cursor.byKeys = true
+  }
 
   function many() {
     var list = Fixtures.tickets()
@@ -272,18 +277,18 @@ Item {
         })
     }
     if (previewState === "focused" || previewState === "stress-focused")
-      view.cursor.index = view.firstTicketStop
+      keysAt(view, view.firstTicketStop)
     // The keyboard cursor on a read ticket's "Mark as unread" (hidden at rest).
     if (previewState === "mark-unread-cursor") {
       const read = store.ticketById("4818")
-      view.cursor.index = view.firstTicketStop + read.index * view.stopsPerTicket + 1
+      keysAt(view, view.firstTicketStop + read.index * view.stopsPerTicket + 1)
     }
     // The overview's first waiting ticket under the keyboard cursor.
     if (previewState === "wide-focused")
-      view.cursor.index = view.paneFirstStop
+      keysAt(view, view.paneFirstStop)
     // The keyboard cursor on the selected ticket's conversation.
     if (previewState === "wide-conversation")
-      view.cursor.index = view.conversationStop
+      keysAt(view, view.conversationStop)
     if (at("scrolling"))
       Qt.callLater(function () {
         view.list.contentY = 160
@@ -343,7 +348,7 @@ Item {
       preview.loadStress(RowsData.assignedElsewhere(), {})
     // #5049 is read and waits for the agent: a one-line row.
     if (previewState === "stress-rows-read-cursor")
-      view.cursor.index = view.firstTicketStop + store.ticketById("5049").index * view.stopsPerTicket + 1
+      keysAt(view, view.firstTicketStop + store.ticketById("5049").index * view.stopsPerTicket + 1)
     // The host mirrors the popup body for a right-to-left language.
     view.LayoutMirroring.enabled = previewState === "stress-rows-rtl" || previewState === "stress-open-rtl"
     view.LayoutMirroring.childrenInherit = true
@@ -398,7 +403,7 @@ Item {
       openCard(view, "5123", false, "top")
     else if (state === "stress-open-cursor") {
       openCard(view, "5102", false, "top")
-      view.cursor.index = view.firstTicketStop + store.ticketById("5102").index * view.stopsPerTicket + 1
+      keysAt(view, view.firstTicketStop + store.ticketById("5102").index * view.stopsPerTicket + 1)
     }
   }
   // Scrolls the list once the open card has unfolded and laid out.
@@ -498,7 +503,7 @@ Item {
     if (previewState === "wide-stress-pane-unread")
       view.toggleRead("5102", view.selected.index)
     if (previewState === "wide-stress-pane-close-cursor")
-      view.cursor.index = view.paneFirstStop + 2
+      keysAt(view, view.paneFirstStop + 2)
     if (previewState === "wide-stress-pane-long-clip")
       steps.push(function () {
         paneRevealEnd(view, 51102, 12)
@@ -529,7 +534,7 @@ Item {
     interval: 120
     onTriggered: {
       var view = preview.popup.ensureBody()
-      view.cursor.index = view.paneFirstStop + 9
+      preview.keysAt(view, view.paneFirstStop + 9)
       view.reveal()
     }
   }
@@ -556,7 +561,7 @@ Item {
     if (name.indexOf("wide-stress-overview-all") === 0 || name === "wide-stress-overview-folded")
       more.clicked()
     if (name === "wide-stress-overview-focused")
-      view.cursor.index = view.paneFirstStop + 1
+      keysAt(view, view.paneFirstStop + 1)
     // The keyboard: the cursor on the tenth row, which the view scrolls to
     // (once the new rows are laid out, as a key press finds them).
     overviewKeys.stop()

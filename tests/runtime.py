@@ -239,6 +239,22 @@ ShellRoot {
     list[0].comments[0].body += "\n\n" + more.join("\n");
     return list;
   }
+  // Draws the keys' cursor (FoamyCursor.byKeys): a cursor surface with its
+  // 1 px accent border, an action with its border.
+  function keysBorder(item) {
+    if (!item.visible || !item.hasCursor) return false;
+    if (item.borderSpec !== undefined) return item.byKeys && item.borderTop > 0 && Qt.colorEqual(item.borderSpec.color, item.accent);
+    return item.border.width > 0;
+  }
+  // The objectNames (or "?") of the items under `item` that draw it.
+  function keysBorders(item) {
+    var found = [];
+    (function walk(node) {
+      if (node.hasCursor !== undefined && shell.keysBorder(node)) found.push(node.objectName || "?");
+      for (var i = 0; i < node.children.length; i++) walk(node.children[i]);
+    })(item);
+    return found;
+  }
   function check(ok, message) {
     if (!ok && !shell.finished) { shell.finished = true; console.log("FOAMY FAIL " + message); Qt.quit(); }
     return ok;
@@ -462,9 +478,26 @@ ShellRoot {
       if (!check(shell.find(view, "emptyState").visible === false && view.band.meta.indexOf("3 unread") === 0, "header counts unread")) return;
       if (!check(view.band.settingsInMenu && view.band.menuItems[0].iconName === "moon" && view.band.menuItems[0].text === "Snooze until tomorrow",
                  "Snooze and Settings are in the ⋯ menu")) return;
-      for (var m = 0; m < 3; m++) view.moveRequested(0, 1);
+      // Opened with the pointer: no keys' border until a key moves the cursor.
+      if (!check(shell.keysBorders(view).length === 0, "opened, no element shows the keys' border (" + shell.keysBorders(view) + ")")) return;
+      view.moveRequested(0, 1);
+      var markAll = shell.find(view, "markAllRead");
+      if (!check(view.cursor.index === view.markAllStop && shell.keysBorder(markAll) && shell.keysBorders(view).length === 1,
+                 "↓: Mark all as read shows the keys' border, nothing else (" + shell.keysBorders(view) + ")")) return;
+      for (var m = 0; m < 2; m++) view.moveRequested(0, 1);
       if (!check(view.cursor.index === view.firstTicketStop, "keyboard walks Mark all and ⋯ before tickets")) return;
       var closed = view.repeater.itemAt(0);
+      if (!check(shell.keysBorder(closed.bodyItem) && shell.keysBorders(view).length === 1, "↓ onto a ticket: its card shows the keys' border (" + shell.keysBorders(view) + ")")) return;
+      view.moveRequested(0, 1);
+      if (!check(shell.keysBorder(closed.readButton) && shell.keysBorders(view).length === 1, "↓ onto its read action: the action shows the keys' border (" + shell.keysBorders(view) + ")")) return;
+      // The pointer onto another ticket: the cursor there, no keys' border anywhere.
+      var pointed = view.repeater.itemAt(1).bodyItem;
+      ev.mouseMove(pointed, pointed.width / 3, pointed.height / 2, -1, Qt.NoButton, Qt.NoModifier);
+      if (!check(view.cursor.index === view.firstTicketStop + view.stopsPerTicket && pointed.hasCursor && shell.keysBorders(view).length === 0,
+                 "the pointer on the next ticket: the cursor there, no keys' border (" + JSON.stringify([view.cursor.index, shell.keysBorders(view)]) + ")")) return;
+      // The pointer off the stops again, so it takes no cursor in later steps.
+      ev.mouseMove(view.band, 10, 10, -1, Qt.NoButton, Qt.NoModifier);
+      view.cursor.index = view.firstTicketStop;
       if (!check(closed.unreadDot.visible && !closed.frameItem.visible && closed.bodyItem.height === closed.bodyItem.parent.height,
                  "closed, an unread ticket has the dot and the whole card is its target")) return;
       // #4821 is Open and High, #4818 Pending, #4824 New and Normal; all unread.
@@ -1376,6 +1409,13 @@ ShellRoot {
     case 56:
       if (!check(one.popup.contentWidth === one.wideWidth && one.popup.contentHeight === shell.savedY, "showing a ticket keeps the card's size")) return;
       // The pane's read action, from the keyboard: unread again, still shown.
+      // The pane's actions from the keys: the keys' border; the pointer takes it away.
+      view.cursor.index = view.paneFirstStop - 1;
+      view.moveRequested(0, 1);
+      if (!check(shell.keysBorder(view.pane.readButton) && shell.keysBorders(view).length === 1, "↓ onto the pane's read action: the keys' border (" + shell.keysBorders(view) + ")")) return;
+      ev.mouseMove(view.pane.openButton, view.pane.openButton.width / 2, view.pane.openButton.height / 2, -1, Qt.NoButton, Qt.NoModifier);
+      if (!check(view.pane.openButton.hasCursor && shell.keysBorders(view).length === 0, "the pointer on View in Zendesk: no keys' border (" + shell.keysBorders(view) + ")")) return;
+      ev.mouseMove(view.band, 10, 10, -1, Qt.NoButton, Qt.NoModifier);
       view.cursor.index = view.paneFirstStop;
       if (!check(view.pane.readButton.hasCursor, "the pane's read action takes the cursor")) return;
       view.activateRequested();
@@ -1433,6 +1473,7 @@ ShellRoot {
       var revealed = overviewScroll.contentY > 0 && rowY >= overviewScroll.contentY && rowY + lastRow.height <= overviewScroll.contentY + overviewScroll.height;
       view.overview.anchors.fill = view.overview.parent;
       if (!check(revealed && view.cursor.index === view.paneFirstStop + 2, "the keyboard scrolls the overview to the waiting ticket under the cursor")) return;
+      if (!check(shell.keysBorder(lastRow) && shell.keysBorders(view).length === 1, "the overview's row under the keys shows their border (" + shell.keysBorders(view) + ")")) return;
       // Enter on the last waiting ticket: the selection leaves the pane two
       // stops, and the cursor lands on the ticket's row.
       view.activateRequested();

@@ -503,6 +503,7 @@ PanelKeyCatcher {
         tooltipText: FoamyI18n.t("Mark all as read")
         actionEnabled: TicketStore.unreadCount > 0
         hasCursor: cursor.at(root.markAllStop)
+        cursorByKeys: cursor.byKeys
         onHoveredChanged: if (hovered && actionEnabled)
           cursor.hover(root.markAllStop)
         onClicked: root.markAllRead()
@@ -722,6 +723,7 @@ PanelKeyCatcher {
           expanded: !root.wide && root.expandedIds.indexOf(model.id) >= 0
           selected: root.wide && root.expandedIds.indexOf(model.id) >= 0
           cursorPart: cursor.index >= firstStop && cursor.index < firstStop + root.stopsPerTicket ? cursor.index - firstStop : -1
+          byKeys: cursor.byKeys
           onHovered: function (part) {
             cursor.hover(firstStop + part)
           }
@@ -771,6 +773,7 @@ PanelKeyCatcher {
       openedSince: root.openedSince
       now: root.fixedNow > 0 ? root.fixedNow : clock.date.getTime()
       cursorPart: root.selected && cursor.index >= root.paneFirstStop && cursor.index < root.paneFirstStop + root.paneStops ? cursor.index - root.paneFirstStop : -1
+      byKeys: cursor.byKeys
       onHovered: function (part) {
         cursor.hover(root.paneFirstStop + part)
       }
@@ -789,6 +792,7 @@ PanelKeyCatcher {
       showWaiting: TicketStore.groupWaiting
       now: root.fixedNow > 0 ? root.fixedNow : clock.date.getTime()
       cursorRow: !root.selected && cursor.index >= root.paneFirstStop && cursor.index < root.paneFirstStop + root.paneStops ? cursor.index - root.paneFirstStop : -1
+      byKeys: cursor.byKeys
       onHovered: function (row) {
         cursor.hover(root.paneFirstStop + row)
       }

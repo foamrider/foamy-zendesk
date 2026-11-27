@@ -53,6 +53,8 @@ Item {
   property string sectionTitle: ""
   property int sectionCount: 0
   property int cursorPart: -1
+  // The keys moved the cursor here: its accent border (FoamyCursor.byKeys).
+  property bool byKeys: false
   signal hovered(int part)
   signal toggleRequested
   signal openRequested
@@ -417,6 +419,7 @@ Item {
         color: ticketRow.expanded ? (hasCursor ? Qt.tint(FoamyPalette.bandFill, fill) : FoamyPalette.bandFill) : ticketRow.selected ? (hasCursor ? Qt.tint(FoamyPalette.selectedFill, fill) : FoamyPalette.selectedFill) : (hasCursor ? fill : "transparent")
         foreground: FoamyPalette.text
         hasCursor: ticketRow.cursorPart === 0
+        byKeys: ticketRow.byKeys
         onHovered: ticketRow.hovered(0)
         onClicked: ticketRow.toggleRequested()
         HoverHandler {
@@ -620,6 +623,7 @@ Item {
               }
             }
             hasCursor: ticketRow.cursorPart === 1
+            cursorByKeys: ticketRow.byKeys
             onHoveredChanged: if (hovered)
               ticketRow.hovered(1)
             onClicked: ticketRow.readToggleRequested()
@@ -634,6 +638,7 @@ Item {
             tooltipText: FoamyI18n.t("View in Zendesk")
             foreground: ticketRow.muted ? FoamyPalette.secondaryText : FoamyPalette.text
             hasCursor: ticketRow.cursorPart === 2
+            cursorByKeys: ticketRow.byKeys
             onHoveredChanged: if (hovered)
               ticketRow.hovered(2)
             onClicked: ticketRow.openRequested()
