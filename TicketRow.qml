@@ -185,6 +185,10 @@ Item {
   // the agent and in the open card (as in the Wide pane's header). A dimmed
   // row keeps the soft one.
   readonly property bool urgentPill: ticket.priority === "Urgent" && !muted
+  // The strongest fill the header shows (under the cursor), opaque: the
+  // triangle, a soft tag and a priority pill on it are measured there, so
+  // they keep one colour.
+  readonly property color headSurface: expanded ? Qt.tint(FoamyPalette.bandFill, bodySurface.fill) : selected ? Qt.tint(FoamyPalette.background, Qt.tint(FoamyPalette.selectedFill, bodySurface.fill)) : Qt.tint(FoamyPalette.background, bodySurface.fill)
   readonly property color priorityTone: urgentPill ? FoamyPalette.error : FoamyPalette.onSurface(ticket.priority === "Urgent" ? FoamyPalette.error : FoamyPalette.warning)
   // Zendesk's colour for a status, in this theme's mode (Status.js).
   function statusColorOf(status) {
@@ -377,6 +381,7 @@ Item {
       height: rest.y + rest.implicitHeight + ticketRow.pad
       Rectangle {
         id: frame
+        objectName: "frame"
         anchors.fill: parent
         visible: ticketRow.expanded
         radius: FoamyStyle.radius
@@ -493,7 +498,7 @@ Item {
             anchors.left: parent.left
             anchors.verticalCenter: firstLine.verticalCenter
             name: ticketRow.expanded ? "chevron-down" : "chevron-right"
-            color: FoamyPalette.onSurface(ticketRow.statusColor)
+            color: FoamyPalette.onSurface(ticketRow.statusColor, ticketRow.headSurface)
             width: Commons.Style.space(14)
             height: width
           }
@@ -534,6 +539,7 @@ Item {
               text: FoamyI18n.t(ticketRow.ticket.status)
               status: ticketRow.ticket.status
               soft: true
+              surface: ticketRow.headSurface
             }
             StatusLabel {
               id: linePriority
@@ -542,6 +548,7 @@ Item {
               text: FoamyI18n.t(ticketRow.ticket.priority)
               tone: ticketRow.priorityTone
               strong: ticketRow.urgentPill
+              surface: ticketRow.headSurface
             }
           }
           // A one-line ticket's requester, with the separator that goes
@@ -654,6 +661,7 @@ Item {
               text: FoamyI18n.t(ticketRow.ticket.status)
               status: ticketRow.ticket.status
               soft: !ticketRow.expanded
+              surface: ticketRow.headSurface
             }
             StatusLabel {
               id: priorityPill
@@ -662,6 +670,7 @@ Item {
               text: FoamyI18n.t(ticketRow.ticket.priority)
               tone: ticketRow.priorityTone
               strong: ticketRow.urgentPill
+              surface: ticketRow.headSurface
             }
           }
           PlainText {
@@ -850,7 +859,7 @@ Item {
                     // Whole pixels, so the texts after it stay sharp.
                     width: Math.ceil(implicitWidth)
                     text: FoamyI18n.t("Internal note")
-                    color: FoamyPalette.onSurface(FoamyPalette.warning)
+                    color: FoamyPalette.onSurface(FoamyPalette.warning, entryItem.surface)
                     font.pixelSize: FoamyStyle.font.bodySmall
                     font.weight: Font.DemiBold
                     wrapMode: Text.NoWrap

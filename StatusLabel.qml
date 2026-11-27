@@ -14,13 +14,14 @@ Rectangle {
   property string status: ""
   property bool soft: false
   property bool strong: false
-  // What a soft tag lies on (a row's tint, a filled row): its ink is chosen against it.
+  // What a soft tag or a priority pill lies on (a row's tint, a filled
+  // row), opaque: its ink is chosen against it.
   property color surface: FoamyPalette.background
   property color tone: status !== "" ? Status.color(status, FoamyPalette.lightTheme) : FoamyPalette.secondaryText
   readonly property bool tag: status !== ""
   readonly property bool solid: (tag && !soft) || strong
   readonly property real softAlpha: 0.16
-  readonly property color ink: solid ? Status.inkOn(tone, FoamyPalette.text, FoamyPalette.background) : tag ? Status.softInk(tone, FoamyPalette.text, surface, softAlpha) : tone
+  readonly property color ink: solid ? Status.inkOn(tone, FoamyPalette.text, FoamyPalette.background) : tag ? Status.softInk(tone, FoamyPalette.text, surface, softAlpha) : FoamyPalette.onSurface(tone, Qt.tint(surface, color))
   implicitWidth: caption.implicitWidth + FoamyStyle.gap * 2
   implicitHeight: caption.implicitHeight + FoamyStyle.gapSmall * 2
   // A tag has corners, a priority pill is round: the two never look alike.
