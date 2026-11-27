@@ -1,4 +1,4 @@
-// foamy-kit 0.14.2 4f95941a0a7b6051d5a9e5570679dc03425510f6e2813dae2738766680ee5124 — do not edit; change foamy-kit and run sync
+// foamy-kit 0.15.1 2e3f8de7516e085d5146b3ae08577ef3eecec3cf6ca3cfa6a3da075fa9918e45 — do not edit; change foamy-kit and run sync
 import QtQuick
 
 // Foamy icon set: inline Lucide SVG paths (ISC, see LICENSE-LUCIDE), the
@@ -18,7 +18,7 @@ import QtQuick
 // https://github.com/simple-icons/simple-icons/blob/c37b20d397a710fdd402aae3cb643b820b142074/icons/todoist.svg
 // (source: https://doist.com/press). 0.13.0 adds calendar-range, flag,
 // target and text (Lucide 1.65.0), 0.14.2 mail and mail-open (Lucide
-// 1.65.0). Brand marks are drawn filled (`filled`).
+// 1.65.0), 0.15.0 tag (Lucide 1.65.0). Brand marks are drawn filled (`filled`).
 // Refresh with tools/update-icons.py.
 //
 //   FoamyIcon { name: "refresh-cw"; color: FoamyPalette.text; width: FoamyStyle.iconSize; height: width }
@@ -139,6 +139,7 @@ Image {
       "swap": "<path d=\"M4 7h16m-4-4 4 4-4 4M20 17H4m4-4-4 4 4 4\"/>",
       "sync": "<path d=\"M20 9a8 8 0 0 0-14-3L3 9m0-5v5h5M4 15a8 8 0 0 0 14 3l3-3m0 5v-5h-5\"/>",
       "tablet": "<rect x=\"4\" y=\"2\" width=\"16\" height=\"20\" rx=\"2\"/><path d=\"M12 18h.01\"/>",
+      "tag": "<path d=\"M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z\"/><circle cx=\"7.5\" cy=\"7.5\" r=\".5\"/>",
       "target": "<circle cx=\"12\" cy=\"12\" r=\"10\"/><circle cx=\"12\" cy=\"12\" r=\"6\"/><circle cx=\"12\" cy=\"12\" r=\"2\"/>",
       "terminal": "<path d=\"m4 17 6-5-6-5M12 19h8\"/>",
       "text": "<path d=\"M21 5H3\"/><path d=\"M15 12H3\"/><path d=\"M17 19H3\"/>",
