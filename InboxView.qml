@@ -626,6 +626,7 @@ PanelKeyCatcher {
         bottomPadding: FoamyStyle.gapLarge
         spacing: FoamyStyle.gap
         Rectangle {
+          id: emptyDisc
           anchors.horizontalCenter: parent.horizontalCenter
           width: 44
           height: 44
@@ -639,7 +640,7 @@ PanelKeyCatcher {
             height: 22
             name: emptyState.iconName
             // Measured on the tinted disc it is drawn on.
-            color: FoamyPalette.onSurface(emptyState.tone, Qt.tint(FoamyPalette.background, parent.color))
+            color: FoamyPalette.onSurface(emptyState.tone, Qt.tint(FoamyPalette.background, emptyDisc.color))
             // Turns while the sign-in is checked or the first inbox is being
             // fetched, like the footer's Refresh.
             RotationAnimation on rotation {
@@ -829,8 +830,11 @@ PanelKeyCatcher {
   component NoticeRow: Item {
     id: noticeRow
     property alias text: noticeLabel.text
-    // An error: in the urgent colour, announced as an alert.
+    // An error: in the theme's red, stepped until it reads on `surface`,
+    // announced as an alert.
     property bool failing: false
+    // What the row lies on: the notice bar's fill (statusBar.color).
+    required property color surface
     property string linkText: ""
     // Object names of the text and the link, for the tests.
     property string textName: ""
@@ -847,8 +851,7 @@ PanelKeyCatcher {
       anchors.rightMargin: noticeLink.visible ? FoamyStyle.gapSmall : FoamyStyle.gapLarge
       anchors.verticalCenter: parent.verticalCenter
       font.pixelSize: FoamyStyle.font.bodySmall
-      // Measured on the notice bar's fill (statusBar.color).
-      color: noticeRow.failing ? FoamyPalette.onSurface(FoamyPalette.error, Qt.tint(FoamyPalette.background, FoamyPalette.menuFill)) : FoamyPalette.text
+      color: noticeRow.failing ? FoamyPalette.onSurface(FoamyPalette.error, noticeRow.surface) : FoamyPalette.text
       maximumLineCount: 2
       elide: Text.ElideRight
       Accessible.role: noticeRow.failing ? Accessible.AlertMessage : Accessible.StaticText
@@ -910,6 +913,7 @@ PanelKeyCatcher {
       bottomPadding: FoamyStyle.gapSmall
       NoticeRow {
         objectName: "updatesNotice"
+        surface: statusBar.color
         visible: TicketStore.pendingChanges > 0
         textName: "updatesText"
         text: FoamyI18n.tn("%1 updates waiting", TicketStore.pendingChanges)
@@ -919,6 +923,7 @@ PanelKeyCatcher {
       }
       NoticeRow {
         objectName: "markedNotice"
+        surface: statusBar.color
         visible: TicketStore.notice !== "" && !root.openFailed
         textName: "statusText"
         text: TicketStore.notice
@@ -929,8 +934,10 @@ PanelKeyCatcher {
       // A failed refresh while an inbox is shown: the footer keeps its age.
       NoticeRow {
         objectName: "refreshError"
+        surface: statusBar.color
         visible: root.refreshFailed
         failing: true
+        textName: "refreshText"
         text: TicketStore.error
         linkName: "retryRefresh"
         // Without the helper there is nothing to try again.
@@ -939,6 +946,7 @@ PanelKeyCatcher {
       }
       NoticeRow {
         objectName: "openError"
+        surface: statusBar.color
         visible: root.openFailed
         failing: true
         text: TicketStore.notice
@@ -946,6 +954,7 @@ PanelKeyCatcher {
       // What was marked or snoozed is kept only in memory.
       NoticeRow {
         objectName: "saveError"
+        surface: statusBar.color
         visible: TicketStore.saveError !== ""
         failing: true
         text: TicketStore.saveError + "\n" + FoamyI18n.t("Kept only until the shell restarts.")

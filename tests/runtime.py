@@ -104,10 +104,36 @@ ShellRoot {
   // What the fake omarchy does (see FAKE_OMARCHY), and its release.
   FileView { id: omarchyMode; path: Quickshell.env("FOAMY_OUT") + "/omarchy.mode"; blockWrites: true; printErrors: false }
   FileView { id: omarchyRelease; path: Quickshell.env("FOAMY_OUT") + "/omarchy.release"; blockWrites: true; printErrors: false }
-  // The theme's colors.toml (step 93 switches it to a dim red live), and
-  // the kit's dark theme with a dim red (2.70:1 on its background).
-  FileView { id: themeFile; path: Kit.FoamyPalette.themePath; blockWrites: true; printErrors: false }
+  // The theme's colors.toml (steps 93 to 98 switch it live), the kit's dark
+  // theme with a dim red (2.70:1 on its background), and its light theme.
+  FileView { id: themeFile; path: Kit.FoamyPalette.themePath; blockAllReads: true; blockWrites: true; printErrors: false }
   FileView { id: dimRed; path: Quickshell.env("FOAMY_OUT") + "/dim-red.toml"; blockLoading: true; printErrors: false }
+  FileView { id: lightToml; path: Quickshell.env("FOAMY_OUT") + "/light.toml"; blockLoading: true; printErrors: false }
+  // The theme before step 93 switched it: the file's text and its colours.
+  property string savedTheme: ""
+  property string savedColours: ""
+  // The open card's priority word under the cursor (steps 97 and 98).
+  property color pillUnderCursor: "transparent"
+  function colours() {
+    return [Commons.Color.background, Commons.Color.foreground, Commons.Color.accent, Commons.Color.urgent,
+            Kit.FoamyPalette.background, Kit.FoamyPalette.error, Kit.FoamyPalette.warning, Kit.FoamyPalette.lightTheme].map(String).join();
+  }
+  // A theme switch as the host's applyTheme does: its colours, then the
+  // theme's file that FoamyPalette watches.
+  function applyTheme(text) {
+    Commons.Color.loadColors(text);
+    themeFile.setText(text);
+  }
+  // `item` (a text or an icon) shows, and reads at 4.5:1 on `surface`, the
+  // opaque colour drawn under it; `old`, its colour before this change, does
+  // not (else the theme proves nothing).
+  function readsOn(name, item, surface, old) {
+    if (!check(item && item.visible, name + " shows")) return false;
+    var before = Kit.FoamyPalette.contrastRatio(old, surface);
+    if (!check(before < 4.5, "the theme makes " + name + " fail in its old colour (" + old + " " + before.toFixed(2) + ":1 on " + surface + ")")) return false;
+    var drawn = Kit.FoamyPalette.contrastRatio(item.color, surface);
+    return check(drawn >= 4.5, name + " reads at 4.5:1 on what it is drawn on (" + item.color + " " + drawn.toFixed(2) + ":1 on " + surface + ")");
+  }
   // The mock bar's inline save, while steps 92 and 93 save without it.
   property QtObject inlineSaves: null
   // The Omarchy language picker's file: writing it switches the language live.
@@ -289,6 +315,9 @@ ShellRoot {
     // Both CLI saves failed, and the account checks that their values asked for ended.
     case 93: return [function() { return !one.prefs.busy && checked(); }, 10000, "the held save and the address after it ended"];
     case 94: return [function() { return Kit.FoamyPalette.error.toString() === "#a54242" && Commons.Color.urgent.toString() === "#a54242"; }, 10000, "the dim red theme was read"];
+    case 96: return [function() { return Kit.FoamyPalette.lightTheme && Kit.FoamyPalette.warning.toString() === "#df8e1d" && Commons.Color.background.toString() === "#eff1f5"; }, 10000, "the light theme was read"];
+    case 97: return [function() { return !one.wide; }, 10000, "Small was saved"];
+    case 99: return [function() { return shell.colours() === shell.savedColours; }, 10000, "the theme from before step 93 was read again"];
     }
     return null;
   }
@@ -1990,21 +2019,81 @@ ShellRoot {
     case 93:
       bar.shell = shell.inlineSaves;
       omarchyMode.setText("");
-      // A theme whose red does not read on the popup, switched to as the
-      // host's applyTheme does: its colours, then the theme's file that
-      // FoamyPalette watches (step 94 waits).
-      Commons.Color.loadColors(dimRed.text());
-      themeFile.setText(dimRed.text());
+      // Steps 94 to 98 switch the theme live. Only the run's own copy in
+      // its temporary HOME may be written, never a real theme.
+      var home = Quickshell.env("HOME");
+      if (!check(home === Quickshell.env("FOAMY_OUT").replace(/\/out$/, "/home") && themeFile.path.indexOf(home + "/") === 0,
+                 "the theme file is in the run's temporary HOME (" + themeFile.path + ", HOME " + home + ")")) return;
+      themeFile.reload();
+      shell.savedTheme = themeFile.text();
+      shell.savedColours = shell.colours();
+      if (!check(shell.savedTheme !== "" && dimRed.text() !== "" && lightToml.text() !== "",
+                 "the theme files are read (" + themeFile.path + ", dim-red.toml, light.toml)")) return;
+      // A theme whose red does not read on the popup (step 94 waits).
+      shell.applyTheme(dimRed.text());
       break;
     case 94:
-      // A failing notice reads at 4.5:1 on the notice bar as drawn, where
-      // the theme's raw red does not.
-      var statusBar = shell.find(view, "statusBar");
-      var refreshRow = shell.find(view, "refreshError");
-      var refreshText = refreshRow.children.find(function(item) { return item.hasOwnProperty("maximumLineCount"); });
-      var drawn = Kit.FoamyPalette.contrastRatio(refreshText.color, statusBar.color);
-      if (!check(Kit.FoamyPalette.contrastRatio(Kit.FoamyPalette.error, statusBar.color) < 4.5 && drawn >= 4.5,
-                 "a failing notice reads on the notice bar in a dim red theme (" + refreshText.color + " " + drawn.toFixed(2) + ":1 on " + statusBar.color + ")")) return;
+      // An expired sign-in after a failed refresh: the empty state's icon on
+      // its red disc, and the failing notice on the notice bar.
+      view.editingSettings = false;
+      account.state = "expired";
+      store.loadFixtures([]);
+      store.error = "Zendesk answered HTTP 503.";
+      break;
+    case 95:
+      var card = one.popup.cardItem.color;
+      var icon = shell.find(view, "emptyIcon");
+      if (!check(one.opened && shell.find(view, "emptyState").kind === "expired", "the popup shows the expired sign-in")) return;
+      if (!shell.readsOn("the empty state's icon", icon, Qt.tint(card, icon.parent.color), Kit.FoamyPalette.onSurface(Kit.FoamyPalette.error))) return;
+      if (!shell.readsOn("a failing notice", shell.find(view, "refreshText"), Qt.tint(card, shell.find(view, "statusBar").color), Commons.Color.urgent)) return;
+      // A light theme, whose yellow must darken: #4821's newest comment is
+      // an internal note, shown in the Wide pane (step 96 waits).
+      shell.applyTheme(lightToml.text());
+      var noted = Fixtures.tickets();
+      noted[0].comments[0].public = false;
+      store.loadFixtures(noted);
+      account.state = "signed_in";
+      account.user = { name: "Alex", email: "alex@acme.example" };
+      account.error = "";
+      view.cursor.index = view.firstTicketStop;
+      view.activateRequested();
+      break;
+    case 96:
+      var paneEntry = view.pane.comments.children.find(function(item) { return item.model && item.model.internal; });
+      if (!check(view.pane.visible && paneEntry, "the pane shows #4821 with its internal note")) return;
+      if (!shell.readsOn("the pane's Internal note label", shell.find(paneEntry, "noteLabel"), Qt.tint(one.popup.cardItem.color, shell.find(paneEntry, "bubble").color),
+                         Kit.FoamyPalette.onSurface(Kit.FoamyPalette.warning))) return;
+      // Small opens the ticket shown in the pane in place (step 97 waits).
+      one.prefs.save("panelWidth", "standard");
+      break;
+    case 97:
+      // The open card: the note label on its tinted surface, and the
+      // priority word on its pill, on the header with and without the cursor.
+      var row = shell.find(view, "ticket-4821");
+      var noteEntry = row.historyRepeater.itemAt(0);
+      if (!check(row.expanded && noteEntry.internal, "#4821 is open in Small with its internal note (open: " + view.expandedIds.join() + ")")) return;
+      var frame = shell.find(row, "frame").color;
+      if (!shell.readsOn("the open card's Internal note label", shell.find(noteEntry, "noteLabel"), Qt.tint(frame, shell.find(noteEntry, "noteSurface").color),
+                         Kit.FoamyPalette.onSurface(Kit.FoamyPalette.warning))) return;
+      // The cursor is still where Enter left it in Wide.
+      var pill = shell.find(row, "priorityPill");
+      if (!check(row.bodyItem.hasCursor, "the cursor is on #4821's header")) return;
+      if (!shell.readsOn("the priority word under the cursor", pill.children[0], Qt.tint(Qt.tint(frame, row.bodyItem.color), pill.color), row.priorityTone)) return;
+      shell.pillUnderCursor = pill.children[0].color;
+      view.cursor.reset();
+      break;
+    case 98:
+      var row = shell.find(view, "ticket-4821");
+      var pill = shell.find(row, "priorityPill");
+      if (!check(!row.bodyItem.hasCursor, "the cursor is off #4821's header")) return;
+      if (!shell.readsOn("the priority word at rest", pill.children[0], Qt.tint(Qt.tint(shell.find(row, "frame").color, row.bodyItem.color), pill.color), row.priorityTone)) return;
+      if (!check(Qt.colorEqual(pill.children[0].color, shell.pillUnderCursor), "the priority word keeps its colour off the cursor (" + shell.pillUnderCursor + ", then " + pill.children[0].color + ")")) return;
+      // The theme from before step 93 (step 99 waits for its colours).
+      shell.applyTheme(shell.savedTheme);
+      break;
+    case 99:
+      themeFile.reload();
+      if (!check(themeFile.text() === shell.savedTheme, "the theme file is back as it was before step 93")) return;
       shell.finished = true;
       console.log("FOAMY DONE runtime interactions passed"); Qt.quit();
     }
@@ -2075,6 +2164,7 @@ try:
     (run.out / "locked").mkdir(mode=0o555)
     (run.out / "lockable").mkdir()
     shutil.copyfile(kit / "tests/fixtures/themes/dim-red.toml", run.out / "dim-red.toml")
+    shutil.copyfile(kit / "preview/themes/light.toml", run.out / "light.toml")
     run.run(timeout=90)
     if os.environ.get("FOAMY_TEST_OUTPUT"):
         output = Path(os.environ["FOAMY_TEST_OUTPUT"])

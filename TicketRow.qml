@@ -185,6 +185,9 @@ Item {
   // the agent and in the open card (as in the Wide pane's header). A dimmed
   // row keeps the soft one.
   readonly property bool urgentPill: ticket.priority === "Urgent" && !muted
+  // The strongest fill the header shows (under the cursor), opaque: a
+  // priority pill on it is measured there, so its word keeps one colour.
+  readonly property color headSurface: expanded ? Qt.tint(FoamyPalette.bandFill, bodySurface.fill) : selected ? Qt.tint(FoamyPalette.background, Qt.tint(FoamyPalette.selectedFill, bodySurface.fill)) : Qt.tint(FoamyPalette.background, bodySurface.fill)
   readonly property color priorityTone: urgentPill ? FoamyPalette.error : FoamyPalette.onSurface(ticket.priority === "Urgent" ? FoamyPalette.error : FoamyPalette.warning)
   // Zendesk's colour for a status, in this theme's mode (Status.js).
   function statusColorOf(status) {
@@ -377,6 +380,7 @@ Item {
       height: rest.y + rest.implicitHeight + ticketRow.pad
       Rectangle {
         id: frame
+        objectName: "frame"
         anchors.fill: parent
         visible: ticketRow.expanded
         radius: FoamyStyle.radius
@@ -542,6 +546,7 @@ Item {
               text: FoamyI18n.t(ticketRow.ticket.priority)
               tone: ticketRow.priorityTone
               strong: ticketRow.urgentPill
+              surface: ticketRow.headSurface
             }
           }
           // A one-line ticket's requester, with the separator that goes
@@ -662,6 +667,7 @@ Item {
               text: FoamyI18n.t(ticketRow.ticket.priority)
               tone: ticketRow.priorityTone
               strong: ticketRow.urgentPill
+              surface: ticketRow.headSurface
             }
           }
           PlainText {
