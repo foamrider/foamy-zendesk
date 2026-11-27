@@ -32,7 +32,7 @@ Item {
     // The realistic inbox, Small.
     "stress", "stress-scrolled", "stress-bottom", "stress-open", "stress-open-all", "stress-open-other", "stress-hide-read", "stress-unread-first", "stress-ungrouped", "stress-focused", "narrow-stress",
     // The realistic inbox, Wide.
-    "wide-stress", "wide-stress-list-bottom", "wide-stress-ticket", "wide-stress-ticket-scrolled", "wide-stress-internal", "wide-stress-unassigned", "wide-stress-nocomments", "wide-stress-hide-read"]
+    "wide-stress", "wide-stress-list-bottom", "wide-stress-ticket", "wide-stress-ticket-cursor", "wide-stress-ticket-scrolled", "wide-stress-internal", "wide-stress-unassigned", "wide-stress-nocomments", "wide-stress-hide-read"]
 
   // "…-rows-notes": the realistic inbox plus RowsData's tickets (a newest
   // comment that is the agent's own or a colleague's internal note, a parked
@@ -59,9 +59,10 @@ Item {
   // "stress-open-deferred": a ticket whose newer comments haven't loaded.
   // "stress-open-empty": a ticket sent without comments.
   // "stress-open-cursor": the keyboard cursor on the open card's Mark as unread.
+  // "stress-open-band-cursor": the keyboard cursor on the open card's band.
   // "stress-open-rtl": the open card mirrored.
   // "stress-open-note-first": the newest comment is a colleague's internal note.
-  readonly property var rowsOpenStates: ["stress-open-scrolled", "stress-open-mid", "stress-open-leaving", "narrow-stress-open-mid", "narrow-stress-open", "narrow-stress-open-scrolled", "stress-open-names", "narrow-stress-open-names", "stress-open-notes", "stress-open-note-first", "stress-open-clip", "narrow-stress-open-clip", "stress-open-short", "stress-open-unloaded", "stress-open-deferred", "stress-open-empty", "stress-open-cursor", "stress-open-rtl"]
+  readonly property var rowsOpenStates: ["stress-open-scrolled", "stress-open-mid", "stress-open-leaving", "narrow-stress-open-mid", "narrow-stress-open", "narrow-stress-open-scrolled", "stress-open-names", "narrow-stress-open-names", "stress-open-notes", "stress-open-note-first", "stress-open-clip", "narrow-stress-open-clip", "stress-open-short", "stress-open-unloaded", "stress-open-deferred", "stress-open-empty", "stress-open-cursor", "stress-open-band-cursor", "stress-open-rtl"]
   readonly property var rowsStates: ["stress-rows-notes", "wide-stress-rows-notes", "narrow-stress-rows-notes", "stress-rows-all-read", "narrow-stress-rows-all-read", "stress-rows-read-cursor", "stress-rows-rtl", "stress-rows-assignee"].concat(rowsOpenStates)
 
   // The reading pane's own states, all Wide with the realistic inbox:
@@ -82,8 +83,9 @@ Item {
     // into view), and folded again from there ("Show less": the cursor moves
     // to the last row that stays).
     "wide-stress-overview-all", "wide-stress-overview-all-end", "wide-stress-overview-all-focused", "wide-stress-overview-folded",
-    // The first screen scrolled as far as it goes, and the keyboard cursor on a row.
-    "wide-stress-overview-end", "wide-stress-overview-focused",
+    // The first screen scrolled as far as it goes, the keyboard cursor on a
+    // row, and on the "7 more need a reply" link.
+    "wide-stress-overview-end", "wide-stress-overview-focused", "wide-stress-overview-more-cursor",
     // The realistic inbox plus OverviewData.js: Urgent and High tickets that
     // have waited more than an hour (red waits), a very long group name and
     // more than five groups; the same scrolled to the groups.
@@ -304,8 +306,11 @@ Item {
         view.list.contentY = 99999
         view.list.returnToBounds()
       })
-    if (previewState === "stress-open" || previewState === "stress-open-all" || previewState === "wide-stress-ticket" || previewState === "wide-stress-ticket-scrolled")
+    if (previewState === "stress-open" || previewState === "stress-open-all" || previewState === "wide-stress-ticket" || previewState === "wide-stress-ticket-cursor" || previewState === "wide-stress-ticket-scrolled")
       view.toggleTicket("5102")
+    // The keyboard cursor on the selected row (its accent-tinted fill).
+    if (previewState === "wide-stress-ticket-cursor")
+      keysAt(view, view.firstTicketStop + view.selected.index * view.stopsPerTicket)
     if (previewState === "stress-open-all")
       unfoldTicket("5102")
     // A short, read, one-line ticket opened in place.
@@ -404,6 +409,9 @@ Item {
     else if (state === "stress-open-cursor") {
       openCard(view, "5102", false, "top")
       keysAt(view, view.firstTicketStop + store.ticketById("5102").index * view.stopsPerTicket + 1)
+    } else if (state === "stress-open-band-cursor") {
+      openCard(view, "5102", false, "top")
+      keysAt(view, view.firstTicketStop + store.ticketById("5102").index * view.stopsPerTicket)
     }
   }
   // Scrolls the list once the open card has unfolded and laid out.
@@ -562,6 +570,8 @@ Item {
       more.clicked()
     if (name === "wide-stress-overview-focused")
       keysAt(view, view.paneFirstStop + 1)
+    if (name === "wide-stress-overview-more-cursor")
+      keysAt(view, view.paneFirstStop + store.overview.awaiting.length)
     // The keyboard: the cursor on the tenth row, which the view scrolls to
     // (once the new rows are laid out, as a key press finds them).
     overviewKeys.stop()
