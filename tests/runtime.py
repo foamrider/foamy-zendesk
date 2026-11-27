@@ -41,6 +41,7 @@ import "plugin/kit/FoamyNative.js" as FoamyNative
 import "plugin/preview/Fixtures.js" as Fixtures
 import "plugin/Model.js" as Model
 import "plugin/Status.js" as Status
+import qs.Commons as Commons
 ShellRoot {
   id: shell
   property int step: 0
@@ -103,6 +104,10 @@ ShellRoot {
   // What the fake omarchy does (see FAKE_OMARCHY), and its release.
   FileView { id: omarchyMode; path: Quickshell.env("FOAMY_OUT") + "/omarchy.mode"; blockWrites: true; printErrors: false }
   FileView { id: omarchyRelease; path: Quickshell.env("FOAMY_OUT") + "/omarchy.release"; blockWrites: true; printErrors: false }
+  // The theme's colors.toml (step 93 switches it to a dim red live), and
+  // the kit's dark theme with a dim red (2.70:1 on its background).
+  FileView { id: themeFile; path: Kit.FoamyPalette.themePath; blockWrites: true; printErrors: false }
+  FileView { id: dimRed; path: Quickshell.env("FOAMY_OUT") + "/dim-red.toml"; blockLoading: true; printErrors: false }
   // The mock bar's inline save, while steps 92 and 93 save without it.
   property QtObject inlineSaves: null
   // The Omarchy language picker's file: writing it switches the language live.
@@ -283,6 +288,7 @@ ShellRoot {
     case 92: return [function() { return isNaN(one.popup.bodyItem.settingsPage.wheel.destination); }, 10000, "the Zendesk section was scrolled into view"];
     // Both CLI saves failed, and the account checks that their values asked for ended.
     case 93: return [function() { return !one.prefs.busy && checked(); }, 10000, "the held save and the address after it ended"];
+    case 94: return [function() { return Kit.FoamyPalette.error.toString() === "#a54242" && Commons.Color.urgent.toString() === "#a54242"; }, 10000, "the dim red theme was read"];
     }
     return null;
   }
@@ -1984,6 +1990,21 @@ ShellRoot {
     case 93:
       bar.shell = shell.inlineSaves;
       omarchyMode.setText("");
+      // A theme whose red does not read on the popup, switched to as the
+      // host's applyTheme does: its colours, then the theme's file that
+      // FoamyPalette watches (step 94 waits).
+      Commons.Color.loadColors(dimRed.text());
+      themeFile.setText(dimRed.text());
+      break;
+    case 94:
+      // A failing notice reads at 4.5:1 on the notice bar as drawn, where
+      // the theme's raw red does not.
+      var statusBar = shell.find(view, "statusBar");
+      var refreshRow = shell.find(view, "refreshError");
+      var refreshText = refreshRow.children.find(function(item) { return item.hasOwnProperty("maximumLineCount"); });
+      var drawn = Kit.FoamyPalette.contrastRatio(refreshText.color, statusBar.color);
+      if (!check(Kit.FoamyPalette.contrastRatio(Kit.FoamyPalette.error, statusBar.color) < 4.5 && drawn >= 4.5,
+                 "a failing notice reads on the notice bar in a dim red theme (" + refreshText.color + " " + drawn.toFixed(2) + ":1 on " + statusBar.color + ")")) return;
       shell.finished = true;
       console.log("FOAMY DONE runtime interactions passed"); Qt.quit();
     }
@@ -2053,6 +2074,7 @@ try:
     # the one the fake opener locks (steps 42 to 46).
     (run.out / "locked").mkdir(mode=0o555)
     (run.out / "lockable").mkdir()
+    shutil.copyfile(kit / "tests/fixtures/themes/dim-red.toml", run.out / "dim-red.toml")
     run.run(timeout=90)
     if os.environ.get("FOAMY_TEST_OUTPUT"):
         output = Path(os.environ["FOAMY_TEST_OUTPUT"])

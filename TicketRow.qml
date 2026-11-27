@@ -850,7 +850,7 @@ Item {
                     // Whole pixels, so the texts after it stay sharp.
                     width: Math.ceil(implicitWidth)
                     text: FoamyI18n.t("Internal note")
-                    color: FoamyPalette.onSurface(FoamyPalette.warning)
+                    color: FoamyPalette.onSurface(FoamyPalette.warning, entryItem.surface)
                     font.pixelSize: FoamyStyle.font.bodySmall
                     font.weight: Font.DemiBold
                     wrapMode: Text.NoWrap

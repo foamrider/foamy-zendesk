@@ -545,7 +545,7 @@ Item {
               id: noteLabel
               visible: entry.model.internal
               text: FoamyI18n.t("Internal note")
-              color: FoamyPalette.onSurface(FoamyPalette.warning)
+              color: FoamyPalette.onSurface(FoamyPalette.warning, entry.surface)
               font.pixelSize: FoamyStyle.font.bodySmall
               font.weight: Font.DemiBold
               wrapMode: Text.NoWrap

@@ -3,7 +3,6 @@ import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import qs.Commons
-import qs.Commons as Commons
 import qs.Ui
 import "kit"
 import "kit/FoamyPrefs.js" as Prefs
@@ -639,7 +638,8 @@ PanelKeyCatcher {
             width: 22
             height: 22
             name: emptyState.iconName
-            color: FoamyPalette.onSurface(emptyState.tone)
+            // Measured on the tinted disc it is drawn on.
+            color: FoamyPalette.onSurface(emptyState.tone, Qt.tint(FoamyPalette.background, parent.color))
             // Turns while the sign-in is checked or the first inbox is being
             // fetched, like the footer's Refresh.
             RotationAnimation on rotation {
@@ -847,7 +847,8 @@ PanelKeyCatcher {
       anchors.rightMargin: noticeLink.visible ? FoamyStyle.gapSmall : FoamyStyle.gapLarge
       anchors.verticalCenter: parent.verticalCenter
       font.pixelSize: FoamyStyle.font.bodySmall
-      color: noticeRow.failing ? Commons.Color.urgent : FoamyPalette.text
+      // Measured on the notice bar's fill (statusBar.color).
+      color: noticeRow.failing ? FoamyPalette.onSurface(FoamyPalette.error, Qt.tint(FoamyPalette.background, FoamyPalette.menuFill)) : FoamyPalette.text
       maximumLineCount: 2
       elide: Text.ElideRight
       Accessible.role: noticeRow.failing ? Accessible.AlertMessage : Accessible.StaticText
