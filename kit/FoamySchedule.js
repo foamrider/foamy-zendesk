@@ -1,5 +1,5 @@
 .pragma library
-// foamy-kit 0.15.1 a193e7309a38d468c199253d7ffa05aa630070decdf27f641b51d47d907f804e — do not edit; change foamy-kit and run sync
+// foamy-kit 0.15.2 a193e7309a38d468c199253d7ffa05aa630070decdf27f641b51d47d907f804e — do not edit; change foamy-kit and run sync
 
 // A weekly on/off schedule with a snooze/resume override (from foamy-train,
 // shared with foamy-zendesk). Times are local; a day's range is "HH:MM-HH:MM"
