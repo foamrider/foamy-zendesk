@@ -404,7 +404,16 @@ PanelKeyCatcher {
     }
     reveal()
   }
-  onActivateRequested: activateCursor()
+  // A key that moves the cursor without move() (Enter on "Show less", on an
+  // overview row or a read action with read tickets hidden; m opening a
+  // ticket from the overview): the cursor it lands on is the keys'.
+  function byKey(action) {
+    var before = cursor.index
+    action()
+    if (cursor.index >= 0 && cursor.index !== before)
+      cursor.byKeys = true
+  }
+  onActivateRequested: byKey(activateCursor)
   onCloseRequested: {
     closeReading()
     root.closeView()
@@ -422,7 +431,7 @@ PanelKeyCatcher {
     else if (text === "r")
       TicketStore.refresh()
     else if (text === "m")
-      showMore()
+      byKey(showMore)
   }
   // The ticket under the cursor opens; once open, each press shows one more
   // thing: the newest clipped comment in full, then the earlier comments.
@@ -476,6 +485,7 @@ PanelKeyCatcher {
     maxButtons: root.markAllShown ? 2 : 1
     settingsHasCursor: cursor.at(root.settingsStop)
     menuHasCursor: cursor.at(root.settingsStop)
+    cursorByKeys: cursor.byKeys
     onSettingsClicked: root.editingSettings = true
     onSettingsHovered: function (hovered) {
       if (hovered)
@@ -503,6 +513,7 @@ PanelKeyCatcher {
         tooltipText: FoamyI18n.t("Mark all as read")
         actionEnabled: TicketStore.unreadCount > 0
         hasCursor: cursor.at(root.markAllStop)
+        cursorByKeys: cursor.byKeys
         onHoveredChanged: if (hovered && actionEnabled)
           cursor.hover(root.markAllStop)
         onClicked: root.markAllRead()
@@ -722,6 +733,7 @@ PanelKeyCatcher {
           expanded: !root.wide && root.expandedIds.indexOf(model.id) >= 0
           selected: root.wide && root.expandedIds.indexOf(model.id) >= 0
           cursorPart: cursor.index >= firstStop && cursor.index < firstStop + root.stopsPerTicket ? cursor.index - firstStop : -1
+          byKeys: cursor.byKeys
           onHovered: function (part) {
             cursor.hover(firstStop + part)
           }
@@ -771,6 +783,7 @@ PanelKeyCatcher {
       openedSince: root.openedSince
       now: root.fixedNow > 0 ? root.fixedNow : clock.date.getTime()
       cursorPart: root.selected && cursor.index >= root.paneFirstStop && cursor.index < root.paneFirstStop + root.paneStops ? cursor.index - root.paneFirstStop : -1
+      byKeys: cursor.byKeys
       onHovered: function (part) {
         cursor.hover(root.paneFirstStop + part)
       }
@@ -789,6 +802,7 @@ PanelKeyCatcher {
       showWaiting: TicketStore.groupWaiting
       now: root.fixedNow > 0 ? root.fixedNow : clock.date.getTime()
       cursorRow: !root.selected && cursor.index >= root.paneFirstStop && cursor.index < root.paneFirstStop + root.paneStops ? cursor.index - root.paneFirstStop : -1
+      byKeys: cursor.byKeys
       onHovered: function (row) {
         cursor.hover(root.paneFirstStop + row)
       }
@@ -813,6 +827,7 @@ PanelKeyCatcher {
     refreshing: TicketStore.loading
     refreshEnabled: TicketStore.connected && !TicketStore.loading
     refreshHasCursor: cursor.at(root.refreshStop)
+    cursorByKeys: cursor.byKeys
     onRefreshHovered: function (hovered) {
       if (hovered)
         cursor.hover(root.refreshStop)
@@ -972,9 +987,9 @@ PanelKeyCatcher {
     retryable: root.retryable
     onBack: root.editingSettings = false
     onRetry: root.retryRequested()
-    // Wide keeps its size on Settings; the sections keep the standard
-    // settings width, centred.
-    readonly property real columnWidth: FoamyStyle.popupWidthWide - FoamyStyle.padding * 2
+    // Wide keeps its size on Settings; Back, the title, the error line and
+    // the sections keep the standard settings width, centred.
+    columnWidth: FoamyStyle.popupWidthWide - FoamyStyle.padding * 2
 
     // The account comes first: "Open settings" on the first run lands on it.
     // Signed in, it is who and Sign out. Signed out, a form read from the
@@ -984,8 +999,7 @@ PanelKeyCatcher {
     FoamySettingsSection {
       id: zendeskSection
       objectName: "zendeskSection"
-      width: Math.min(parent.width, settingsView.columnWidth)
-      anchors.horizontalCenter: parent.horizontalCenter
+      width: parent.width
       title: FoamyI18n.t("Account")
       description: ZendeskAccount.signedIn ? "" : FoamyI18n.t("Before you can sign in, a Zendesk admin must create an OAuth client. The sign-in is kept in your keyring.")
       info: FoamyI18n.t("A Zendesk admin creates the OAuth client once, in Admin Center › Apps and integrations › APIs › OAuth clients: kind Public, redirect URL %1, read access. Enter its unique identifier as the OAuth client ID.", [settingsView.redirectUrl])
@@ -1098,8 +1112,7 @@ PanelKeyCatcher {
     }
 
     FoamySettingsSection {
-      width: Math.min(parent.width, settingsView.columnWidth)
-      anchors.horizontalCenter: parent.horizontalCenter
+      width: parent.width
       title: FoamyI18n.t("Panel")
       FoamyDropdown {
         objectName: "panelWidth"
@@ -1146,8 +1159,7 @@ PanelKeyCatcher {
       }
     }
     FoamySettingsSection {
-      width: Math.min(parent.width, settingsView.columnWidth)
-      anchors.horizontalCenter: parent.horizontalCenter
+      width: parent.width
       title: FoamyI18n.t("Read tickets")
       description: FoamyI18n.t("Read state stays on this computer; nothing changes in Zendesk.")
       FoamyToggle {
@@ -1179,8 +1191,7 @@ PanelKeyCatcher {
     }
 
     FoamySettingsSection {
-      width: Math.min(parent.width, settingsView.columnWidth)
-      anchors.horizontalCenter: parent.horizontalCenter
+      width: parent.width
       title: FoamyI18n.t("Notifications")
       description: FoamyI18n.t("A desktop notification for a new ticket or a new reply from someone else. None while this inbox is open, outside your schedule or while snoozed.")
       FoamyDropdown {
@@ -1223,8 +1234,7 @@ PanelKeyCatcher {
     }
     FoamySettingsSection {
       id: scheduleSection
-      width: Math.min(parent.width, settingsView.columnWidth)
-      anchors.horizontalCenter: parent.horizontalCenter
+      width: parent.width
       title: FoamyI18n.t("Schedule")
       description: settingsView.scheduleOn ? FoamyI18n.t("Local time. Turn a day off to skip it. Overnight ranges are supported.") : ""
       FoamyToggle {

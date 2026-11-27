@@ -239,6 +239,34 @@ ShellRoot {
     list[0].comments[0].body += "\n\n" + more.join("\n");
     return list;
   }
+  // Draws the keys' cursor (FoamyCursor.byKeys): a cursor surface with its
+  // 1 px accent border, an action with its border.
+  function keysBorder(item) {
+    if (!item.visible || !item.hasCursor) return false;
+    if (item.borderSpec !== undefined) return item.byKeys && item.borderTop > 0 && Qt.colorEqual(item.borderSpec.color, item.accent);
+    return item.border.width > 0;
+  }
+  // The objectNames (or "?") of the items under `item` that draw it.
+  function keysBorders(item) {
+    var found = [];
+    (function walk(node) {
+      if (node.hasCursor !== undefined && shell.keysBorder(node)) found.push(node.objectName || "?");
+      for (var i = 0; i < node.children.length; i++) walk(node.children[i]);
+    })(item);
+    return found;
+  }
+  // ↓ from the stop before `first` to `last`: each stop on the way shows the
+  // keys' border once. The stops where it doesn't, as "stop:index:borders".
+  function keysWalk(view, first, last) {
+    var bad = [];
+    view.cursor.index = first - 1;
+    for (var stop = first; stop <= last; stop++) {
+      view.moveRequested(0, 1);
+      var drawn = shell.keysBorders(view);
+      if (view.cursor.index !== stop || drawn.length !== 1) bad.push(stop + ":" + view.cursor.index + ":" + drawn);
+    }
+    return bad;
+  }
   function check(ok, message) {
     if (!ok && !shell.finished) { shell.finished = true; console.log("FOAMY FAIL " + message); Qt.quit(); }
     return ok;
@@ -462,9 +490,29 @@ ShellRoot {
       if (!check(shell.find(view, "emptyState").visible === false && view.band.meta.indexOf("3 unread") === 0, "header counts unread")) return;
       if (!check(view.band.settingsInMenu && view.band.menuItems[0].iconName === "moon" && view.band.menuItems[0].text === "Snooze until tomorrow",
                  "Snooze and Settings are in the ⋯ menu")) return;
-      for (var m = 0; m < 3; m++) view.moveRequested(0, 1);
+      // Opened with the pointer: no keys' border until a key moves the cursor.
+      if (!check(shell.keysBorders(view).length === 0, "opened, no element shows the keys' border (" + shell.keysBorders(view) + ")")) return;
+      view.moveRequested(0, 1);
+      var markAll = shell.find(view, "markAllRead");
+      if (!check(view.cursor.index === view.markAllStop && shell.keysBorder(markAll) && shell.keysBorders(view).length === 1,
+                 "↓: Mark all as read shows the keys' border, nothing else (" + shell.keysBorders(view) + ")")) return;
+      for (var m = 0; m < 2; m++) view.moveRequested(0, 1);
       if (!check(view.cursor.index === view.firstTicketStop, "keyboard walks Mark all and ⋯ before tickets")) return;
       var closed = view.repeater.itemAt(0);
+      if (!check(shell.keysBorder(closed.bodyItem) && shell.keysBorders(view).length === 1, "↓ onto a ticket: its card shows the keys' border (" + shell.keysBorders(view) + ")")) return;
+      view.moveRequested(0, 1);
+      if (!check(shell.keysBorder(closed.readButton) && shell.keysBorders(view).length === 1, "↓ onto its read action: the action shows the keys' border (" + shell.keysBorders(view) + ")")) return;
+      // The pointer onto another ticket: the cursor there, no keys' border anywhere.
+      var pointed = view.repeater.itemAt(1).bodyItem;
+      ev.mouseMove(pointed, pointed.width / 3, pointed.height / 2, -1, Qt.NoButton, Qt.NoModifier);
+      if (!check(view.cursor.index === view.firstTicketStop + view.stopsPerTicket && pointed.hasCursor && shell.keysBorders(view).length === 0,
+                 "the pointer on the next ticket: the cursor there, no keys' border (" + JSON.stringify([view.cursor.index, shell.keysBorders(view)]) + ")")) return;
+      // The pointer off the stops again, so it takes no cursor in later steps.
+      ev.mouseMove(view.band, 10, 10, -1, Qt.NoButton, Qt.NoModifier);
+      // Every stop from the keys, the band's ⋯ and the footer's Refresh too.
+      var walked = shell.keysWalk(view, 0, view.refreshStop);
+      if (!check(walked.length === 0, "↓ through every stop: each shows the keys' border once (" + walked + ")")) return;
+      view.cursor.index = view.firstTicketStop;
       if (!check(closed.unreadDot.visible && !closed.frameItem.visible && closed.bodyItem.height === closed.bodyItem.parent.height,
                  "closed, an unread ticket has the dot and the whole card is its target")) return;
       // #4821 is Open and High, #4818 Pending, #4824 New and Normal; all unread.
@@ -1376,6 +1424,17 @@ ShellRoot {
     case 56:
       if (!check(one.popup.contentWidth === one.wideWidth && one.popup.contentHeight === shell.savedY, "showing a ticket keeps the card's size")) return;
       // The pane's read action, from the keyboard: unread again, still shown.
+      // The pane's actions from the keys: the keys' border; the pointer takes it away.
+      view.cursor.index = view.paneFirstStop - 1;
+      view.moveRequested(0, 1);
+      if (!check(shell.keysBorder(view.pane.readButton) && shell.keysBorders(view).length === 1, "↓ onto the pane's read action: the keys' border (" + shell.keysBorders(view) + ")")) return;
+      view.moveRequested(0, 1);
+      if (!check(shell.keysBorder(view.pane.openButton) && shell.keysBorders(view).length === 1, "↓ onto View in Zendesk: the keys' border (" + shell.keysBorders(view) + ")")) return;
+      view.moveRequested(0, 1);
+      if (!check(shell.keysBorder(shell.find(view.pane, "paneClose")) && shell.keysBorders(view).length === 1, "↓ onto Hide ticket: the keys' border (" + shell.keysBorders(view) + ")")) return;
+      ev.mouseMove(view.pane.openButton, view.pane.openButton.width / 2, view.pane.openButton.height / 2, -1, Qt.NoButton, Qt.NoModifier);
+      if (!check(view.pane.openButton.hasCursor && shell.keysBorders(view).length === 0, "the pointer on View in Zendesk: no keys' border (" + shell.keysBorders(view) + ")")) return;
+      ev.mouseMove(view.band, 10, 10, -1, Qt.NoButton, Qt.NoModifier);
       view.cursor.index = view.paneFirstStop;
       if (!check(view.pane.readButton.hasCursor, "the pane's read action takes the cursor")) return;
       view.activateRequested();
@@ -1433,6 +1492,7 @@ ShellRoot {
       var revealed = overviewScroll.contentY > 0 && rowY >= overviewScroll.contentY && rowY + lastRow.height <= overviewScroll.contentY + overviewScroll.height;
       view.overview.anchors.fill = view.overview.parent;
       if (!check(revealed && view.cursor.index === view.paneFirstStop + 2, "the keyboard scrolls the overview to the waiting ticket under the cursor")) return;
+      if (!check(shell.keysBorder(lastRow) && shell.keysBorders(view).length === 1, "the overview's row under the keys shows their border (" + shell.keysBorders(view) + ")")) return;
       // Enter on the last waiting ticket: the selection leaves the pane two
       // stops, and the cursor lands on the ticket's row.
       view.activateRequested();
@@ -1544,6 +1604,30 @@ ShellRoot {
       if (!check(view.overview.awaitingRows.count === total && moreLink.text === "Show less", "its link shows every ticket that needs a reply")) return;
       moreLink.clicked();
       if (!check(view.overview.awaitingRows.count === 5, "Show less folds them again")) return;
+      // The keys through the overview: five rows and the link, each with the keys' border.
+      var overviewWalk = shell.keysWalk(view, view.paneFirstStop, view.paneFirstStop + 5);
+      if (!check(overviewWalk.length === 0 && moreLink.hasCursor, "↓ through the overview and its link: the keys' border on each (" + overviewWalk + ")")) return;
+      // Enter on "Show less": the cursor lands on the fifth row, a key's cursor.
+      view.activateRequested();
+      view.cursor.index = view.paneFirstStop + total - 1;
+      view.moveRequested(0, 1);
+      if (!check(moreLink.hasCursor && moreLink.text === "Show less", "↓ onto Show less")) return;
+      view.activateRequested();
+      var fifth = view.overview.awaitingRows.itemAt(4);
+      if (!check(view.overview.awaitingRows.count === 5 && view.cursor.index === view.paneFirstStop + 4 && shell.keysBorder(fifth) && shell.keysBorders(view).length === 1,
+                 "Enter on Show less: the fifth row has the keys' border (" + JSON.stringify([view.cursor.index, shell.keysBorders(view)]) + ")")) return;
+      // The pointer onto the link takes the cursor there, with no keys' border.
+      ev.mouseMove(moreLink, moreLink.width / 2, moreLink.height / 2, -1, Qt.NoButton, Qt.NoModifier);
+      if (!check(view.cursor.index === view.paneFirstStop + 5 && moreLink.hasCursor && shell.keysBorders(view).length === 0,
+                 "the pointer on the more link: the cursor there, no keys' border (" + JSON.stringify([view.cursor.index, shell.keysBorders(view)]) + ")")) return;
+      // The keys come to the row the pointer rests in; a move inside it takes the cursor back.
+      ev.mouseMove(fifth, fifth.width / 2, fifth.height / 2, -1, Qt.NoButton, Qt.NoModifier);
+      view.moveRequested(0, 1);
+      view.moveRequested(0, -1);
+      if (!check(shell.keysBorder(fifth), "the keys back on the row under the pointer: their border")) return;
+      ev.mouseMove(fifth, fifth.width / 2 + 3, fifth.height / 2, -1, Qt.NoButton, Qt.NoModifier);
+      if (!check(fifth.hasCursor && shell.keysBorders(view).length === 0, "a pointer move inside the row: no keys' border (" + shell.keysBorders(view) + ")")) return;
+      ev.mouseMove(view.band, 10, 10, -1, Qt.NoButton, Qt.NoModifier);
       // At most 70 % of the 1080 px screen.
       if (!check(one.popup.contentHeight > one.popup.fittedContentHeight(Kit.FoamyStyle.popupMaxHeight) && one.popup.contentHeight <= Math.round(1080 * 0.7),
                  "a long inbox makes Wide grow, up to 70 % of the screen (" + one.popup.contentHeight + ")")) return;

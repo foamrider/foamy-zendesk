@@ -27,6 +27,8 @@ Item {
   // Zendesk, 2 Hide ticket, 3 the conversation (Up and Down scroll it:
   // scrollBy), -1 elsewhere.
   property int cursorPart: -1
+  // The keys moved the cursor here: its accent border (FoamyCursor.byKeys).
+  property bool byKeys: false
   signal hovered(int part)
   signal readToggleRequested
   signal openRequested
@@ -291,6 +293,7 @@ Item {
           tooltipText: pane.readActionName
           foreground: FoamyPalette.secondaryText
           hasCursor: pane.cursorPart === 0
+          cursorByKeys: pane.byKeys
           onHoveredChanged: if (hovered)
             pane.hovered(0)
           onClicked: pane.readToggleRequested()
@@ -301,6 +304,7 @@ Item {
           iconName: "external-link"
           tooltipText: FoamyI18n.t("View in Zendesk")
           hasCursor: pane.cursorPart === 1
+          cursorByKeys: pane.byKeys
           onHoveredChanged: if (hovered)
             pane.hovered(1)
           onClicked: pane.openRequested()
@@ -312,6 +316,7 @@ Item {
           tooltipText: FoamyI18n.t("Hide ticket")
           foreground: FoamyPalette.secondaryText
           hasCursor: pane.cursorPart === 2
+          cursorByKeys: pane.byKeys
           onHoveredChanged: if (hovered)
             pane.hovered(2)
           onClicked: pane.closeRequested()

@@ -32,6 +32,8 @@ Item {
   // The keyboard cursor on a ticket that needs a reply (its index), or -1.
   // One past the last ticket is the link under them.
   property int cursorRow: -1
+  // The keys moved the cursor here: its accent border (FoamyCursor.byKeys).
+  property bool byKeys: false
   signal hovered(int row)
   signal selectRequested(string id)
   readonly property alias awaitingRows: awaitingRepeater
@@ -282,6 +284,7 @@ Item {
               color: hasCursor ? Qt.tint(FoamyPalette.fieldFill, fill) : FoamyPalette.fieldFill
               foreground: FoamyPalette.text
               hasCursor: overview.cursorRow === index
+              byKeys: overview.byKeys
               onHovered: overview.hovered(index)
               onClicked: overview.selectRequested(modelData.id)
               Accessible.role: Accessible.Button
@@ -381,6 +384,9 @@ Item {
               anchors.verticalCenter: parent.verticalCenter
               text: overview.summary.awaitingAll ? FoamyI18n.t("Show less") : FoamyI18n.tn("%1 more need a reply", overview.summary.awaitingMore)
               hasCursor: overview.cursorRow === overview.summary.awaiting.length
+              byKeys: overview.byKeys
+              // The pointer takes the cursor here, as on the rows.
+              onHovered: overview.hovered(overview.summary.awaiting.length)
               // The store holds what shows: its `awaiting` is also the
               // keyboard cursor's stops (InboxView). Folding takes rows away:
               // a cursor on one of them moves to the last row that stays.
