@@ -272,6 +272,9 @@ Item {
               required property var modelData
               required property int index
               readonly property bool flagged: modelData.priority === "Urgent" || modelData.priority === "High"
+              // The row's fill under the cursor, opaque: the priority word and
+              // a late wait are measured there, so they keep one colour.
+              readonly property color cursorSurface: Qt.tint(FoamyPalette.background, Qt.tint(FoamyPalette.fieldFill, fill))
               objectName: "awaiting-" + modelData.id
               width: parent.width
               height: Math.max(FoamyStyle.rowHeight + FoamyStyle.gap, lines.implicitHeight + (FoamyStyle.gapSmall + 1) * 2)
@@ -304,7 +307,7 @@ Item {
                 anchors.rightMargin: FoamyStyle.rowPadding
                 anchors.verticalCenter: parent.verticalCenter
                 text: overview.waited(row.modelData.received)
-                color: overview.overdue(row.modelData) ? FoamyPalette.onSurface(FoamyPalette.error) : FoamyPalette.secondaryText
+                color: overview.overdue(row.modelData) ? FoamyPalette.onSurface(FoamyPalette.error, row.cursorSurface) : FoamyPalette.secondaryText
                 font.pixelSize: FoamyStyle.font.bodySmall
                 font.weight: Font.DemiBold
                 wrapMode: Text.NoWrap
@@ -339,6 +342,7 @@ Item {
                     text: FoamyI18n.t(row.modelData.priority)
                     strong: row.modelData.priority === "Urgent"
                     tone: strong ? FoamyPalette.error : FoamyPalette.onSurface(FoamyPalette.warning)
+                    surface: row.cursorSurface
                   }
                   PlainText {
                     objectName: "meta"
