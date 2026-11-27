@@ -297,8 +297,9 @@ Item {
                 text: FoamyI18n.t(row.modelData.status)
                 status: row.modelData.status
                 soft: true
-                // Its ink is chosen against the filled row, not the pane.
-                surface: Qt.tint(FoamyPalette.background, row.color)
+                // Its ink is chosen against the filled row under the cursor,
+                // so the word keeps one colour at rest and under the cursor.
+                surface: row.cursorSurface
               }
               PlainText {
                 id: age
